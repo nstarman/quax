@@ -16,6 +16,8 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jaxtyping import ArrayLike, PyTree
 
+from ._compat import jit_p
+
 
 CT = TypeVar("CT", bound=Callable)
 
@@ -538,8 +540,8 @@ class _DenseArrayValue(ArrayValue):
         return core.get_aval(self.array)  # pyright: ignore
 
 
-@register(jax._src.pjit.pjit_p)  # pyright: ignore
-def pjit_quax(
+@register(jit_p)
+def jit_quax(
     *args: ArrayLike | ArrayValue, jaxpr: Any, inline: bool, **kwargs: Any
 ) -> Any:
     del kwargs
