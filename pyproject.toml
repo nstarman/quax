@@ -1,6 +1,6 @@
 [project]
 name = "quax"
-version = "0.2.0"
+version = "0.2.1"
 description = "Multiple dispatch in JAX via custom interpreters."
 readme = "README.md"
 requires-python =">=3.10"
