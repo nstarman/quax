@@ -7,9 +7,9 @@ import jax.core
 import jax.extend as jex
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

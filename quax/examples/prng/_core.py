@@ -11,9 +11,10 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float, Integer, UInt, UInt32
+from jaxtyping import Array, Float, Integer, UInt, UInt32
 
 import quax
+from quax._compat import ArrayLike
 
 
 RealArray: TypeAlias = ArrayLike

@@ -10,9 +10,10 @@ import jax
 import jax.numpy as jnp
 import packaging.version
 from jax import lax
-from jaxtyping import Array, ArrayLike, Bool
+from jaxtyping import Array, Bool
 
 from quax import ArrayValue, quaxify, register
+from quax._compat import ArrayLike
 
 
 JAX_VERSION = packaging.version.parse(jax.__version__)

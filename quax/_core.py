@@ -14,9 +14,9 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import plum
 from jax.custom_derivatives import SymbolicZero as SZ
-from jaxtyping import ArrayLike, PyTree
+from jaxtyping import PyTree
 
-from ._compat import jit_p
+from ._compat import ArrayLike, jit_p
 
 
 CT = TypeVar("CT", bound=Callable)

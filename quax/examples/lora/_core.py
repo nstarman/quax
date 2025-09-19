@@ -6,9 +6,10 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
-from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree, Shaped
+from jaxtyping import Array, PRNGKeyArray, PyTree, Shaped
 
 import quax
+from quax._compat import ArrayLike
 
 
 class LoraArray(quax.ArrayValue):

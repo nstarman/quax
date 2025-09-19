@@ -4,9 +4,10 @@ import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, Shaped
+from jaxtyping import Array, Shaped
 
 import quax
+from quax._compat import ArrayLike
 
 
 class TridiagonalMatrix(quax.ArrayValue):

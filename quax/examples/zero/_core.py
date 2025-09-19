@@ -5,9 +5,10 @@ import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike
+from jaxtyping import Array
 
 import quax
+from quax._compat import ArrayLike
 
 
 T = TypeVar("T")
