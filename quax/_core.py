@@ -334,9 +334,13 @@ class _Quaxify(eqx.Module, Generic[CT]):
             out = jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
             return out
 
-    def __get__(self, instance: object | None, owner: Any):
+    def __get__(
+        self, instance: object | None, owner: Any
+    ) -> Union["_Quaxify[CT]", eqx.Partial["_Quaxify[CT]"]]:
+        # Getting from a class
         if instance is None:
             return self
+        # Getting from an instance
         return eqx.Partial(self, instance)
 
 
