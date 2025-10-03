@@ -2,7 +2,7 @@ import abc
 import functools as ft
 import itertools as it
 from collections.abc import Callable, Sequence
-from typing import Any, cast, Generic, TypeGuard, TypeVar, Union
+from typing import Any, cast, Generic, overload, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax
@@ -18,6 +18,7 @@ from jaxtyping import ArrayLike, PyTree
 from ._compat import jit_p
 
 
+T = TypeVar("T")
 CT = TypeVar("CT", bound=Callable)
 
 #
@@ -283,11 +284,15 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
 #
 
 
-def _wrap_tracer(trace: _QuaxTrace, x):
-    if _is_value(x):
-        return _QuaxTracer(trace, x)
-    else:
-        return x
+# Any -> Any so overloads carry the public types. mypy can’t prove the else
+# branch is T (since T may be Value). To type the body, use Union[Value, T]
+# + cast(T, x), or constrain T to exclude Value.
+@overload
+def _wrap_tracer(trace: _QuaxTrace, x: "Value") -> _QuaxTracer: ...
+@overload
+def _wrap_tracer(trace: _QuaxTrace, x: T) -> T: ...
+def _wrap_tracer(trace: _QuaxTrace, x: Any) -> Any:
+    return _QuaxTracer(trace, x) if _is_value(x) else x
 
 
 def _unwrap_tracer(trace, x):
