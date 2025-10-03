@@ -484,7 +484,7 @@ class Value(eqx.Module):
         """
 
 
-def _is_value(x) -> TypeGuard[Value]:
+def _is_value(x: object) -> TypeGuard[Value]:
     return isinstance(x, Value)
 
 
