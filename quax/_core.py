@@ -93,7 +93,7 @@ class _QuaxTracer(core.Tracer):
         self.value = value
 
     @property
-    def aval(self):
+    def aval(self) -> core.AbstractValue:
         return self.value.aval()
 
     def full_lower(self):
