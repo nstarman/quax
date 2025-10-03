@@ -95,7 +95,7 @@ class _QuaxTracer(core.Tracer):
     def aval(self) -> core.AbstractValue:
         return self.value.aval()
 
-    def full_lower(self):
+    def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
         if isinstance(self.value, _DenseArrayValue):
             return core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
         else:
