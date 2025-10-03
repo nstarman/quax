@@ -6,7 +6,7 @@ from typing import Any, cast, Generic, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax
-import jax.core as core
+import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
 import jax.numpy as jnp
