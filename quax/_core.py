@@ -64,12 +64,12 @@ def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT]
             existing_rule = _rules[primitive]  # pyright: ignore
         except KeyError:
 
-            def existing_rule():
-                assert False
+            def new_rule():
+                raise NotImplementedError("Abstract primitive")  # pragma: no cover
 
-            existing_rule.__name__ = f"{primitive}_dispatcher"
-            existing_rule.__qualname__ = f"{primitive}_dispatcher"
-            existing_rule = plum.Dispatcher().abstract(existing_rule)
+            new_rule.__name__ = f"{primitive}_dispatcher"
+            new_rule.__qualname__ = f"{primitive}_dispatcher"
+            existing_rule = plum.Dispatcher().abstract(new_rule)
 
             _rules[primitive] = existing_rule
         existing_rule.dispatch(rule, precedence=precedence)
