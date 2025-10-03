@@ -109,9 +109,7 @@ def _default_process(
     for x in values:
         if isinstance(x, Value):
             x_default = type(x).default
-            if x_default is Value.default:
-                pass
-            else:
+            if x_default is not Value.default:
                 defaults.add(x_default)
         elif eqx.is_array_like(x):
             # Ignore any unwrapped _DenseArrayValues
