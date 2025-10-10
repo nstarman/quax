@@ -24,7 +24,7 @@ classifiers = [
 ]
 urls = {repository = "https://github.com/patrick-kidger/quax" }
 dependencies = [
-    "jax>=0.5.3",
+    "jax>=0.5.3,!=0.7.0,!=0.7.1",
     "jaxtyping>=0.3.3",
     "equinox>=0.13.2",
     "plum-dispatch>=2.2.1",
