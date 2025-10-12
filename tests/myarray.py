@@ -368,11 +368,8 @@ def conv_general_dilated_p(
 
 
 @register(lax.convert_element_type_p)
-def convert_element_type_p(operand: MyArray, **kw: Any) -> MyArray:
-    return replace(
-        operand,
-        array=lax.convert_element_type_p.bind(operand.array, **kw),
-    )
+def convert_element_type_myarray(operand: MyArray, **kw: Any) -> MyArray:
+    return replace(operand, array=lax.convert_element_type_p.bind(operand.array, **kw))
 
 
 # ==============================================================================

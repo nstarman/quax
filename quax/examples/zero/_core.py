@@ -61,7 +61,9 @@ def _(value: Zero, *, broadcast_dimensions, shape, sharding=None) -> Zero:
 
 
 @quax.register(lax.convert_element_type_p)
-def _(value: Zero, *, new_dtype, weak_type, sharding=None) -> Zero:
+def convert_element_type_zero(
+    value: Zero, *, new_dtype, weak_type, sharding=None
+) -> Zero:
     # sharding was added around JAX 0.4.31, it seems.
     del weak_type, sharding
     return Zero(value.shape, new_dtype)

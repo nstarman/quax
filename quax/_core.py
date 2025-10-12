@@ -2,12 +2,11 @@ import abc
 import functools as ft
 import itertools as it
 from collections.abc import Callable, Sequence
-from typing import Any, cast, Generic, TypeGuard, TypeVar, Union
+from typing import Any, cast, Generic, overload, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax
-import jax._src
-import jax.core as core
+import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
 import jax.numpy as jnp
@@ -19,6 +18,7 @@ from jaxtyping import ArrayLike, PyTree
 from ._compat import jit_p
 
 
+T = TypeVar("T")
 CT = TypeVar("CT", bound=Callable)
 
 #
@@ -65,12 +65,12 @@ def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT]
             existing_rule = _rules[primitive]  # pyright: ignore
         except KeyError:
 
-            def existing_rule():
-                assert False
+            def new_rule():
+                raise NotImplementedError("Abstract primitive")  # pragma: no cover
 
-            existing_rule.__name__ = f"{primitive}_dispatcher"
-            existing_rule.__qualname__ = f"{primitive}_dispatcher"
-            existing_rule = plum.Dispatcher().abstract(existing_rule)
+            new_rule.__name__ = f"{primitive}_dispatcher"
+            new_rule.__qualname__ = f"{primitive}_dispatcher"
+            existing_rule = plum.Dispatcher().abstract(new_rule)
 
             _rules[primitive] = existing_rule
         existing_rule.dispatch(rule, precedence=precedence)
@@ -93,10 +93,10 @@ class _QuaxTracer(core.Tracer):
         self.value = value
 
     @property
-    def aval(self):
+    def aval(self) -> core.AbstractValue:
         return self.value.aval()
 
-    def full_lower(self):
+    def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
         if isinstance(self.value, _DenseArrayValue):
             return core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
         else:
@@ -110,9 +110,7 @@ def _default_process(
     for x in values:
         if isinstance(x, Value):
             x_default = type(x).default
-            if x_default is Value.default:
-                pass
-            else:
+            if x_default is not Value.default:
                 defaults.add(x_default)
         elif eqx.is_array_like(x):
             # Ignore any unwrapped _DenseArrayValues
@@ -286,11 +284,15 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
 #
 
 
-def _wrap_tracer(trace: _QuaxTrace, x):
-    if _is_value(x):
-        return _QuaxTracer(trace, x)
-    else:
-        return x
+# Any -> Any so overloads carry the public types. mypy can’t prove the else
+# branch is T (since T may be Value). To type the body, use Union[Value, T]
+# + cast(T, x), or constrain T to exclude Value.
+@overload
+def _wrap_tracer(trace: _QuaxTrace, x: "Value") -> _QuaxTracer: ...
+@overload
+def _wrap_tracer(trace: _QuaxTrace, x: T) -> T: ...
+def _wrap_tracer(trace: _QuaxTrace, x: Any) -> Any:
+    return _QuaxTracer(trace, x) if _is_value(x) else x
 
 
 def _unwrap_tracer(trace, x):
@@ -332,9 +334,13 @@ class _Quaxify(eqx.Module, Generic[CT]):
             out = jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
             return out
 
-    def __get__(self, instance: object | None, owner: Any):
+    def __get__(
+        self, instance: object | None, owner: Any
+    ) -> Union["_Quaxify[CT]", eqx.Partial["_Quaxify[CT]"]]:
+        # Getting from a class
         if instance is None:
             return self
+        # Getting from an instance
         return eqx.Partial(self, instance)
 
 
@@ -487,7 +493,7 @@ class Value(eqx.Module):
         """
 
 
-def _is_value(x) -> TypeGuard[Value]:
+def _is_value(x: object) -> TypeGuard[Value]:
     return isinstance(x, Value)
 
 
