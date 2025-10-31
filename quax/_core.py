@@ -638,4 +638,52 @@ def cond_quax(
     return result
 
 
-# TODO: also register higher-order primitives like `lax.scan_p` etc.
+@register(jax.lax.scan_p)
+def _(
+    *args: ArrayValue | ArrayLike,
+    num_consts: int,
+    num_carry: int,
+    jaxpr,
+    **kwargs,
+):
+    consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
+    carry_flat, carry_struct = jtu.tree_flatten(
+        args[num_consts : num_consts + num_carry]
+    )
+    xs_flat, xs_struct = jtu.tree_flatten(args[num_consts + num_carry :])
+
+    trace_in = (
+        *consts_flat,
+        *carry_flat,
+        *[x[0, ...] for x in xs_flat],
+    )
+
+    num_consts_flat = len(consts_flat)
+    num_carry_flat = len(carry_flat)
+
+    jax_fn = core.jaxpr_as_fun(jaxpr)
+
+    def quax_fn(*args_flat):
+        consts = jtu.tree_unflatten(consts_struct, args_flat[:num_consts_flat])
+        carry = jtu.tree_unflatten(
+            carry_struct, args_flat[num_consts_flat : num_consts_flat + num_carry_flat]
+        )
+        xs = jtu.tree_unflatten(
+            xs_struct, args_flat[num_consts_flat + num_carry_flat :]
+        )
+        return quaxify(jax_fn)(*consts, *carry, *xs)
+
+    quax_jaxpr, out_tree = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
+    out_struct = jtu.tree_structure(out_tree)
+
+    out_flat = jax.lax.scan_p.bind(
+        *consts_flat,
+        *carry_flat,
+        *xs_flat,
+        jaxpr=quax_jaxpr,
+        num_consts=num_consts_flat,
+        num_carry=num_carry_flat,
+        **kwargs,
+    )
+
+    return jtu.tree_unflatten(out_struct, out_flat)
