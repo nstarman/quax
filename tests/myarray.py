@@ -3,7 +3,6 @@
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, Final, TypeGuard
-from typing_extensions import Self
 
 import equinox as eqx
 import jax
@@ -36,11 +35,11 @@ class MyArray(ArrayValue):
         """Return the ShapedArray."""
         return jax.core.get_aval(self.array)
 
-    def astype(self, dtype: Any) -> Self:
+    def astype(self, dtype: Any) -> "MyArray":
         """Cast to type."""
         return replace(self, array=self.array.astype(dtype))
 
-    def __getitem__(self, key: Any) -> Self:
+    def __getitem__(self, key: Any) -> "MyArray":
         """Get item."""
         return MyArray(self.array[key])
 
@@ -69,15 +68,15 @@ class MyArray(ArrayValue):
         """Greater than operator."""
         return self.array > other
 
-    def __rmul__(self, other: Any) -> Self:
+    def __rmul__(self, other: Any) -> "MyArray":
         """Multiplication operator."""
         return replace(self, array=other * self.array)
 
-    def __add__(self, other: Any) -> Self:
+    def __add__(self, other: Any) -> "MyArray":
         """Addition operator."""
         return quaxify(jnp.add)(self, other)
 
-    def sum(self, **kw: Any) -> Self:
+    def sum(self, **kw: Any) -> "MyArray":
         """Sum the array."""
         return MyArray(self.array.sum(**kw))
 

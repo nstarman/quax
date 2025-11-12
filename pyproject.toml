@@ -45,6 +45,7 @@ docs = [
 ]
 tests = [
     "beartype>=0.20.2",
+    "diffrax>=0.7.0",
     "pytest>=8.3.5",
     "pytest-env>=1.1.5",
     "jax[cpu]",
@@ -61,7 +62,7 @@ include = ["quax/*"]
 addopts = "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))"
 
 [tool.pytest_env]
-JAX_CHECK_TRACER_LEAKS = 1
+JAX_CHECK_TRACER_LEAKS = 0  # TODO: set to 1 once diffrax supports it
 
 [tool.ruff.lint]
 select = ["E", "F", "I001", "UP"]

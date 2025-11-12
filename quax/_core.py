@@ -2,10 +2,20 @@ import abc
 import functools as ft
 import itertools as it
 from collections.abc import Callable, Sequence
-from typing import Any, cast, Generic, overload, TypeGuard, TypeVar, Union
+from typing import (
+    Any,
+    cast,
+    Generic,
+    no_type_check,
+    overload,
+    TypeGuard,
+    TypeVar,
+    Union,
+)
 
 import equinox as eqx
 import jax
+import jax._src.ad_util as ad_util
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
@@ -20,6 +30,8 @@ from ._compat import jit_p
 
 T = TypeVar("T")
 CT = TypeVar("CT", bound=Callable)
+
+ZERO_TYPES = (SZ, ad_util.Zero)
 
 #
 # Rules
@@ -148,6 +160,9 @@ class _QuaxTrace(core.Trace[_QuaxTracer]):
     def to_value(self, val):
         if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:  # type: ignore[attr-defined]
             return val.value
+        # Handle Zero objects from custom VJP (they're not arrays)
+        if isinstance(val, ZERO_TYPES):
+            return val
         return _DenseArrayValue(val)
 
     # ===========================================
@@ -183,12 +198,12 @@ class _QuaxTrace(core.Trace[_QuaxTracer]):
         with core.set_current_trace(self.parent_trace):
             rule = _rules.get(primitive)
             if rule is None:
-                out = _default_process(primitive, values, params)
+                out = _default_process(primitive, values, params)  # pyright: ignore
             else:
                 try:
                     method, _ = rule.resolve_method(values)
                 except plum.NotFoundLookupError:
-                    out = _default_process(primitive, values, params)
+                    out = _default_process(primitive, values, params)  # pyright: ignore
                 else:
                     out = method(*values, **params)
 
@@ -208,6 +223,49 @@ class _QuaxTrace(core.Trace[_QuaxTracer]):
             self.parent_trace,
             (fun, jvp, *in_leaves),
             dict(symbolic_zeros=symbolic_zeros),
+        )
+        _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
+        out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+        return [_QuaxTracer(self, x) for x in out_values]
+
+    @no_type_check
+    def process_custom_vjp_call(
+        self,
+        primitive: core.Primitive,
+        fun: lu.WrappedFun,
+        fwd: lu.WrappedFun,
+        bwd: lu.WrappedFun,
+        tracers: Sequence[core.Tracer],
+        out_trees: Callable[[], tuple[PyTree, PyTree]],
+        symbolic_zeros: bool,
+    ) -> list[_QuaxTracer]:
+        """Process custom VJP calls to handle Quax Values through custom derivatives.
+
+        **Arguments:**
+
+        - `primitive`: The custom_vjp_call primitive being processed.
+        - `fun`: The primal function to evaluate (wrapped by JAX's linear_util).
+        - `fwd`: The forward pass function (computes outputs and residuals).
+        - `bwd`: The backward pass function (computes input cotangents).
+        - `tracers`: Input tracers containing Quax Values.
+        - `out_trees`: Thunk returning (primal_tree, residual_tree) structure info.
+        - `symbolic_zeros`: Whether to use symbolic zeros for efficiency.
+
+        **Returns:**
+
+        A list of `_QuaxTracer` instances containing the results as Quax Values.
+        """
+        in_values = [self.to_value(t) for t in tracers]
+        # Each `t.value` will be some `Value`, and thus a PyTree. Here we
+        # flatten the `Value`-ness away.
+        in_leaves, in_treedef = jtu.tree_flatten(in_values)
+        fun, out_treedef1 = _custom_vjp_fun_wrap(fun, self.tag, in_treedef)
+        fwd, out_treedef2 = _custom_vjp_fwd_wrap(fwd, self.tag, in_treedef)
+        bwd = _custom_vjp_bwd_wrap(bwd, self.tag)
+        out_leaves = primitive.bind_with_trace(
+            self.parent_trace,
+            (fun, fwd, bwd, *in_leaves),
+            {"out_trees": out_trees, "symbolic_zeros": symbolic_zeros},
         )
         _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
         out_values = jtu.tree_unflatten(out_treedef, out_leaves)
@@ -264,8 +322,8 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
             assert len(out_primal_values) == len(out_tangent_values)
             for primal, tangent in zip(out_primal_values, out_tangent_values):
                 if primal.__class__ != tangent.__class__:
-                    primal = primal.materialise()
-                    tangent = tangent.materialise()
+                    primal = primal.materialise()  # pyright: ignore
+                    tangent = tangent.materialise()  # pyright: ignore
                 out_primal_values2.append(primal)
                 out_tangent_values2.append(tangent)
             del out_tracers
@@ -277,6 +335,118 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
             "Primals and tangents had the same class, but different flattened results."
         )
     yield out_primals + out_tangents, out_primal_treedef
+
+
+@lu.transformation_with_aux  # pyright: ignore
+def _custom_vjp_fun_wrap(tag, in_treedef, *in_leaves):
+    """Wrapper for the primal function in custom_vjp.
+
+    **Arguments:**
+
+    - `tag`: Trace tag for identifying the Quax trace.
+    - `in_treedef`: Tree definition for reconstructing input Values from leaves.
+    - `*in_leaves`: Flattened array leaves from input Values.
+
+    **Yields:**
+
+    - `out_leaves`: Flattened array leaves from output Values.
+    - `out_treedef`: Tree definition for reconstructing output Values.
+    """
+    in_values = jtu.tree_unflatten(in_treedef, in_leaves)
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        in_tracers = [x if type(x) is SZ else _QuaxTracer(trace, x) for x in in_values]
+        with core.set_current_trace(trace):
+            out_tracers = yield in_tracers, {}
+            out_values = [
+                trace.to_value(
+                    jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore
+                )
+                for t in out_tracers
+            ]
+    out_leaves, out_treedef = jtu.tree_flatten(out_values)
+    yield out_leaves, out_treedef
+
+
+@lu.transformation_with_aux  # pyright: ignore
+def _custom_vjp_fwd_wrap(tag, in_treedef, *in_primals_and_nz):
+    """Wrapper for the forward pass in custom_vjp.
+
+    **Arguments:**
+
+    - `tag`: Trace tag for identifying the Quax trace.
+    - `in_treedef`: Tree definition for reconstructing input Values from primal leaves.
+    - `*in_primals_and_nz`: Interleaved (primal_leaf, nonzero_flag) pairs.
+
+    **Yields:**
+
+    - `out_leaves`: Flattened leaves from output Values (primals + residuals).
+    - `out_treedef`: Tree definition for reconstructing output Values.
+    """
+    # Split interleaved primals and nonzero flags
+    in_primals = in_primals_and_nz[::2]
+    in_nz = in_primals_and_nz[1::2]
+    in_primal_values = jtu.tree_unflatten(in_treedef, in_primals)
+
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        in_tracers = [_QuaxTracer(trace, x) for x in in_primal_values]
+        with core.set_current_trace(trace):
+            out_tracers = yield list(it.chain(*zip(in_tracers, in_nz))), {}
+            out_values = [
+                trace.to_value(
+                    jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore
+                )
+                for t in out_tracers
+            ]
+
+    out_leaves, out_treedef = jtu.tree_flatten(out_values)
+    yield out_leaves, out_treedef
+
+
+@lu.transformation  # pyright: ignore
+def _custom_vjp_bwd_wrap(tag, *args):
+    """Wrapper for the backward pass in custom_vjp.
+
+    **Arguments:**
+
+    - `tag`: Trace tag for identifying the Quax trace.
+    - `*args`: Residuals from forward pass and output cotangents (Values or arrays).
+
+    **Yields:**
+
+    - `out_leaves`: Flattened array leaves representing input cotangents.
+    """
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        # Wrap Values as tracers, pass through arrays and zeros
+        in_tracers = [
+            _QuaxTracer(trace, x)
+            if isinstance(x, Value) and not isinstance(x, SZ)
+            else x
+            for x in args
+        ]
+        with core.set_current_trace(trace):
+            out_tracers = yield in_tracers, {}
+            out_tracers = [
+                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore
+                for t in out_tracers
+            ]
+            out_values = [
+                trace.to_value(t) if not isinstance(t, ZERO_TYPES) else t
+                for t in out_tracers
+            ]
+
+    # Flatten output values for return
+    out_leaves = []
+    for val in out_values:
+        if isinstance(val, Value):
+            leaves, _ = jtu.tree_flatten(val)
+            out_leaves.extend(leaves)
+        else:
+            out_leaves.append(val)
+
+    yield out_leaves
 
 
 #
