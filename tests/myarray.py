@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, TypeGuard
+from typing import Any, Final, TypeGuard
 from typing_extensions import Self
 
 import equinox as eqx
@@ -16,6 +16,7 @@ from quax import ArrayValue, quaxify, register
 
 
 JAX_VERSION = packaging.version.parse(jax.__version__)
+JAX_VERSION_LT_8: Final = JAX_VERSION < packaging.version.Version("0.8.0")
 
 
 class MyArray(ArrayValue):
@@ -1023,8 +1024,14 @@ def reduce_prod_p(x: MyArray, /, **kw) -> MyArray:
 
 
 @register(lax.reduce_sum_p)
-def reduce_sum_p(x: MyArray, *, axes: tuple[int, ...]) -> MyArray:
-    return replace(x, array=lax.reduce_sum_p.bind(x.array, axes=axes))
+def reduce_sum_p(
+    x: MyArray, *, axes: tuple[int, ...], out_sharding: Any = None
+) -> MyArray:
+    if JAX_VERSION_LT_8:
+        array = lax.reduce_sum_p.bind(x.array, axes=axes)
+    else:
+        array = lax.reduce_sum_p.bind(x.array, axes=axes, out_sharding=out_sharding)
+    return replace(x, array=array)
 
 
 # ==============================================================================
