@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Any, Final, TypeGuard
 
 import equinox as eqx
+import equinox.internal as eqxi
 import jax
 import jax.numpy as jnp
 import packaging.version
@@ -336,14 +337,6 @@ def concatenate_p_am(
             operand0, operand1.array, *[unwrap(op) for op in operands], **kw
         )
     )
-
-
-# ==============================================================================
-
-
-@register(lax.cond_p)  # TODO: implement
-def cond_p(index, consts) -> MyArray:
-    raise NotImplementedError
 
 
 # ==============================================================================
@@ -1608,3 +1601,22 @@ def svd_p(arg: MyArray, /, **kw: Any) -> list[MyArray]:
 @register(lax.linalg.tridiagonal_p)
 def tridiagonal_p(arg: MyArray, /, **kw: Any) -> list[MyArray]:
     return [MyArray(x) for x in lax.linalg.tridiagonal_p.bind(arg.array, **kw)]
+
+
+###############################################################################
+# Equinox
+
+
+@register(eqxi.maybe_set_p)
+def maybe_set_p(
+    pred: Array, xs: Array, x: MyArray, *i_dynamic_leaves: Any, **kw: Any
+) -> Array:
+    return eqxi.maybe_set_p.bind(pred, xs, x.array, *i_dynamic_leaves, **kw)
+
+
+# ==============================================================================
+
+
+@register(eqxi.select_if_vmap_p)
+def select_if_vmap_p(pred: Array, x: MyArray, y: MyArray | Array) -> MyArray:
+    return x
