@@ -4,6 +4,7 @@ import diffrax as dfx
 import jax
 import jax.numpy as jnp
 import jax.tree as jtu
+import lineax as lx
 import pytest
 
 import quax
@@ -102,20 +103,18 @@ def test_diffrax_gradient():
 
 
 def test_diffrax_multiple_terms():
-    """Test diffrax with multiple terms (MultiTerm with WeaklyDiagonalControlTerm)."""
+    """Test diffrax with multiple terms (MultiTerm with ControlTerm)."""
 
     def drift(t, y, args):
         return -y
 
     def diffusion(t, y, args):
-        # Return 1D array for WeaklyDiagonalControlTerm
-        return 0.1 * jnp.ones(2)
+        # Return DiagonalLinearOperator for ControlTerm
+        return lx.DiagonalLinearOperator(0.1 * jnp.ones(2))
 
     key = jax.random.PRNGKey(0)
     brownian = dfx.VirtualBrownianTree(t0=0, t1=1, tol=1e-3, shape=(2,), key=key)
-    terms = dfx.MultiTerm(
-        dfx.ODETerm(drift), dfx.WeaklyDiagonalControlTerm(diffusion, brownian)
-    )
+    terms = dfx.MultiTerm(dfx.ODETerm(drift), dfx.ControlTerm(diffusion, brownian))
     solver = dfx.Euler()
     y0 = jnp.array([2.0, 3.0])
 
