@@ -15,6 +15,13 @@ from jaxtyping import Array, ArrayLike, Bool
 from quax import ArrayValue, quaxify, register
 
 
+# Try to import custom_vjp_call_jaxpr_p for JAX < 0.7
+try:
+    from jax._src.custom_derivatives import custom_vjp_call_jaxpr_p
+except ImportError:
+    custom_vjp_call_jaxpr_p = None  # type: ignore[assignment]
+
+
 JAX_VERSION = packaging.version.parse(jax.__version__)
 JAX_VERSION_LT_8: Final = JAX_VERSION < packaging.version.Version("0.8.0")
 
@@ -355,6 +362,29 @@ def conv_general_dilated_p(
     arg0: MyArray, arg1: MyArray | ArrayLike, **kw: Any
 ) -> MyArray:
     return MyArray(lax.conv_general_dilated_p.bind(arg0.array, unwrap(arg1), **kw))
+
+
+# ==============================================================================
+
+
+if custom_vjp_call_jaxpr_p is not None:
+
+    @register(custom_vjp_call_jaxpr_p)
+    def custom_vjp_call_jaxpr_myarray(*args: Any, fun_jaxpr: Any, **params: Any) -> Any:
+        """Handle custom_vjp_call_jaxpr primitive for JAX < 0.7."""
+        # Convert jaxpr to function, quaxify it, then call with args
+        try:
+            # Try new API (JAX >= 0.4.26)
+            fun = jax.extend.core.jaxpr_as_fun(fun_jaxpr)
+        except AttributeError:
+            # Fall back to old API
+            fun = jax.core.jaxpr_as_fun(fun_jaxpr)  # type: ignore[attr-defined]
+        quax_fun = quaxify(fun)
+        result = quax_fun(*args)
+        # Ensure result is a tuple for multiple_results parameter
+        if params.get("multiple_results", False) and not isinstance(result, tuple):
+            result = (result,)
+        return result
 
 
 # ==============================================================================

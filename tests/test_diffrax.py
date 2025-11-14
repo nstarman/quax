@@ -10,6 +10,7 @@ import pytest
 import quax
 
 from .myarray import MyArray
+from .test_custom_derivatives import JAX_VERSION_LT_7
 
 
 @pytest.mark.parametrize(
@@ -79,6 +80,7 @@ def test_diffrax_integration(solver, sign, kwargs):
     assert jtu.all(jtu.map(jnp.allclose, sol_quax.ys, sol_jax.ys))
 
 
+@pytest.mark.skipif(JAX_VERSION_LT_7, reason="Requires JAX >= 0.7.0")
 def test_diffrax_gradient():
     """Test that gradients work through diffrax with quax."""
 
