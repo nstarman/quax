@@ -1,10 +1,12 @@
 import abc
 import functools as ft
+import importlib.metadata
 import itertools as it
 from collections.abc import Callable, Sequence
 from typing import (
     Any,
     cast,
+    Final,
     Generic,
     no_type_check,
     overload,
@@ -32,6 +34,9 @@ T = TypeVar("T")
 CT = TypeVar("CT", bound=Callable)
 
 ZERO_TYPES = (SZ, ad_util.Zero)
+
+JAX_VERSION = tuple(map(int, importlib.metadata.version("jax").split(".")))
+JAX_VERSION_LT_7: Final = JAX_VERSION < (0, 7, 0)
 
 #
 # Rules
@@ -228,48 +233,102 @@ class _QuaxTrace(core.Trace[_QuaxTracer]):
         out_values = jtu.tree_unflatten(out_treedef, out_leaves)
         return [_QuaxTracer(self, x) for x in out_values]
 
-    @no_type_check
-    def process_custom_vjp_call(
-        self,
-        primitive: core.Primitive,
-        fun: lu.WrappedFun,
-        fwd: lu.WrappedFun,
-        bwd: lu.WrappedFun,
-        tracers: Sequence[core.Tracer],
-        out_trees: Callable[[], tuple[PyTree, PyTree]],
-        symbolic_zeros: bool,
-    ) -> list[_QuaxTracer]:
-        """Process custom VJP calls to handle Quax Values through custom derivatives.
+    if JAX_VERSION_LT_7:
 
-        **Arguments:**
+        @no_type_check
+        def process_custom_vjp_call(
+            self,
+            primitive: core.Primitive,
+            fun: lu.WrappedFun,
+            fwd: lu.WrappedFun,
+            bwd: lu.WrappedFun,
+            tracers: Sequence[core.Tracer],
+            **params,
+        ) -> list[_QuaxTracer]:
+            """Process custom VJP calls (JAX < 0.7 calling convention).
 
-        - `primitive`: The custom_vjp_call primitive being processed.
-        - `fun`: The primal function to evaluate (wrapped by JAX's linear_util).
-        - `fwd`: The forward pass function (computes outputs and residuals).
-        - `bwd`: The backward pass function (computes input cotangents).
-        - `tracers`: Input tracers containing Quax Values.
-        - `out_trees`: Thunk returning (primal_tree, residual_tree) structure info.
-        - `symbolic_zeros`: Whether to use symbolic zeros for efficiency.
+            In JAX < 0.7, out_trees and symbolic_zeros are passed as **params.
+            """
+            # Extract params (JAX 0.6 passes these as kwargs)
+            out_trees = params.get("out_trees")
+            symbolic_zeros = params.get("symbolic_zeros", False)
 
-        **Returns:**
+            in_values = [self.to_value(t) for t in tracers]
+            in_leaves, in_treedef = jtu.tree_flatten(in_values)
+            fun, out_treedef1 = _custom_vjp_fun_wrap(fun, self.tag, in_treedef)
+            fwd, out_treedef2 = _custom_vjp_fwd_wrap(fwd, self.tag, in_treedef)
+            bwd = _custom_vjp_bwd_wrap(bwd, self.tag)
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace,
+                (fun, fwd, bwd, *in_leaves),
+                dict(out_trees=out_trees, symbolic_zeros=symbolic_zeros),
+            )
+            # In JAX < 0.7, the Store-based thunks from transformation_with_aux
+            # are only populated when the wrapped functions are actually called
+            # (not during trace construction). When out_treedef1() succeeds, it
+            # gives us the correct Value structure. When it fails (StoreException),
+            # we're in a trace construction phase where we simply wrap the leaves.
+            try:
+                out_treedef = out_treedef1()
+                out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+            except lu.StoreException:
+                # Store not populated - we're in trace construction, not execution.
+                # Wrap each leaf as a Value.
+                if isinstance(out_leaves, list):
+                    out_values = [_wrap_if_array(x) for x in out_leaves]
+                else:
+                    out_values = [_wrap_if_array(out_leaves)]
 
-        A list of `_QuaxTracer` instances containing the results as Quax Values.
-        """
-        in_values = [self.to_value(t) for t in tracers]
-        # Each `t.value` will be some `Value`, and thus a PyTree. Here we
-        # flatten the `Value`-ness away.
-        in_leaves, in_treedef = jtu.tree_flatten(in_values)
-        fun, out_treedef1 = _custom_vjp_fun_wrap(fun, self.tag, in_treedef)
-        fwd, out_treedef2 = _custom_vjp_fwd_wrap(fwd, self.tag, in_treedef)
-        bwd = _custom_vjp_bwd_wrap(bwd, self.tag)
-        out_leaves = primitive.bind_with_trace(
-            self.parent_trace,
-            (fun, fwd, bwd, *in_leaves),
-            {"out_trees": out_trees, "symbolic_zeros": symbolic_zeros},
-        )
-        _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
-        out_values = jtu.tree_unflatten(out_treedef, out_leaves)
-        return [_QuaxTracer(self, x) for x in out_values]
+            # Ensure out_values is always a list for consistency with return type
+            if not isinstance(out_values, list | tuple):
+                out_values = [out_values]
+
+            return [_QuaxTracer(self, x) for x in out_values]
+
+    else:
+
+        @no_type_check
+        def process_custom_vjp_call(
+            self,
+            primitive: core.Primitive,
+            fun: lu.WrappedFun,
+            fwd: lu.WrappedFun,
+            bwd: lu.WrappedFun,
+            tracers: Sequence[core.Tracer],
+            out_trees: Callable[[], tuple[PyTree, PyTree]],
+            symbolic_zeros: bool,
+        ) -> list[_QuaxTracer]:
+            """Process custom VJP calls (JAX 0.7+ calling convention).
+
+            **Arguments:**
+
+            - `primitive`: The custom_vjp_call primitive being processed.
+            - `fun`: The primal function to evaluate (wrapped by JAX's linear_util).
+            - `fwd`: The forward pass function (computes outputs and residuals).
+            - `bwd`: The backward pass function (computes input cotangents).
+            - `tracers`: Input tracers containing Quax Values.
+            - `out_trees`: Thunk returning (primal_tree, residual_tree) info.
+            - `symbolic_zeros`: Whether to use symbolic zeros for efficiency.
+
+            **Returns:**
+
+            A list of `_QuaxTracer` instances containing the results.
+            """
+            in_values = [self.to_value(t) for t in tracers]
+            # Each `t.value` will be some `Value`, and thus a PyTree. Here we
+            # flatten the `Value`-ness away.
+            in_leaves, in_treedef = jtu.tree_flatten(in_values)
+            fun, out_treedef1 = _custom_vjp_fun_wrap(fun, self.tag, in_treedef)
+            fwd, out_treedef2 = _custom_vjp_fwd_wrap(fwd, self.tag, in_treedef)
+            bwd = _custom_vjp_bwd_wrap(bwd, self.tag)
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace,
+                (fun, fwd, bwd, *in_leaves),
+                {"out_trees": out_trees, "symbolic_zeros": symbolic_zeros},
+            )
+            _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
+            out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+            return [_QuaxTracer(self, x) for x in out_values]
 
     # TODO: add other process_* rules
 

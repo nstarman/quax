@@ -1,14 +1,20 @@
 """Tests for custom VJP and JVP support in Quax."""
 
-from typing import cast
+import importlib.metadata
+from typing import cast, Final
 
 import jax
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
+import pytest
 from jaxtyping import Array, Float
 
 import quax
+
+
+JAX_VERSION = tuple(map(int, importlib.metadata.version("jax").split(".")))
+JAX_VERSION_LT_7: Final = JAX_VERSION < (0, 7, 0)
 
 
 class ScalarValue(quax.ArrayValue):
@@ -202,6 +208,7 @@ def test_custom_vjp_value_and_grad():
     assert jnp.allclose(grad, jnp.array([2.0, 4.0, 6.0]))
 
 
+@pytest.mark.skipif(JAX_VERSION_LT_7, reason="Requires JAX >= 0.7.0")
 def test_custom_vjp_with_registered_primitive():
     """Test that custom VJP works when Values have registered primitives."""
 
@@ -244,6 +251,7 @@ def test_custom_vjp_with_registered_primitive():
     assert isinstance(grad_y, MyValue)
 
 
+@pytest.mark.skipif(JAX_VERSION_LT_7, reason="Requires JAX >= 0.7.0")
 def test_custom_vjp_with_residuals():
     """Test custom VJP that stores residuals for backward pass."""
 
