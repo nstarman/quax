@@ -165,7 +165,7 @@ def and_p(x1: MyArray, x2: MyArray | ArrayLike, /) -> MyArray:
 
 
 @register(lax.approx_top_k_p)
-def approx_top_k_p(x: MyArray, **kw: Any) -> list[MyArray]:
+def approx_top_k_p(x: MyArray, /, **kw: Any) -> list[MyArray]:
     return [MyArray(t) for t in lax.approx_top_k_p.bind(x.array, **kw)]
 
 
@@ -1487,8 +1487,8 @@ def tanh_p(x: MyArray, /, **kw: Any) -> MyArray:
 
 
 @register(lax.top_k_p)
-def top_k_p(operand: MyArray, k: int = 0) -> MyArray:
-    return [MyArray(x) for x in lax.top_k(operand.array, k)]
+def top_k_p(operand: MyArray, /, **kw: Any) -> MyArray:
+    return [MyArray(x) for x in lax.top_k(operand.array, **kw)]
 
 
 # ==============================================================================
