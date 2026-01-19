@@ -3,9 +3,9 @@
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, Final, TypeGuard
-from typing_extensions import Self
 
 import equinox as eqx
+import equinox.internal as eqxi
 import jax
 import jax.numpy as jnp
 import packaging.version
@@ -13,6 +13,13 @@ from jax import lax
 from jaxtyping import Array, ArrayLike, Bool
 
 from quax import ArrayValue, quaxify, register
+
+
+# Try to import custom_vjp_call_jaxpr_p for JAX < 0.7
+try:
+    from jax._src.custom_derivatives import custom_vjp_call_jaxpr_p
+except ImportError:
+    custom_vjp_call_jaxpr_p = None  # type: ignore[assignment]
 
 
 JAX_VERSION = packaging.version.parse(jax.__version__)
@@ -36,11 +43,11 @@ class MyArray(ArrayValue):
         """Return the ShapedArray."""
         return jax.core.get_aval(self.array)
 
-    def astype(self, dtype: Any) -> Self:
+    def astype(self, dtype: Any) -> "MyArray":
         """Cast to type."""
         return replace(self, array=self.array.astype(dtype))
 
-    def __getitem__(self, key: Any) -> Self:
+    def __getitem__(self, key: Any) -> "MyArray":
         """Get item."""
         return MyArray(self.array[key])
 
@@ -69,15 +76,15 @@ class MyArray(ArrayValue):
         """Greater than operator."""
         return self.array > other
 
-    def __rmul__(self, other: Any) -> Self:
+    def __rmul__(self, other: Any) -> "MyArray":
         """Multiplication operator."""
         return replace(self, array=other * self.array)
 
-    def __add__(self, other: Any) -> Self:
+    def __add__(self, other: Any) -> "MyArray":
         """Addition operator."""
         return quaxify(jnp.add)(self, other)
 
-    def sum(self, **kw: Any) -> Self:
+    def sum(self, **kw: Any) -> "MyArray":
         """Sum the array."""
         return MyArray(self.array.sum(**kw))
 
@@ -342,14 +349,6 @@ def concatenate_p_am(
 # ==============================================================================
 
 
-@register(lax.cond_p)  # TODO: implement
-def cond_p(index, consts) -> MyArray:
-    raise NotImplementedError
-
-
-# ==============================================================================
-
-
 @register(lax.conj_p)
 def conj_p(x: MyArray, **kw: Any) -> MyArray:
     return replace(x, array=lax.conj_p.bind(x.array, **kw))
@@ -363,6 +362,29 @@ def conv_general_dilated_p(
     arg0: MyArray, arg1: MyArray | ArrayLike, **kw: Any
 ) -> MyArray:
     return MyArray(lax.conv_general_dilated_p.bind(arg0.array, unwrap(arg1), **kw))
+
+
+# ==============================================================================
+
+
+if custom_vjp_call_jaxpr_p is not None:
+
+    @register(custom_vjp_call_jaxpr_p)
+    def custom_vjp_call_jaxpr_myarray(*args: Any, fun_jaxpr: Any, **params: Any) -> Any:
+        """Handle custom_vjp_call_jaxpr primitive for JAX < 0.7."""
+        # Convert jaxpr to function, quaxify it, then call with args
+        try:
+            # Try new API (JAX >= 0.4.26)
+            fun = jax.extend.core.jaxpr_as_fun(fun_jaxpr)
+        except AttributeError:
+            # Fall back to old API
+            fun = jax.core.jaxpr_as_fun(fun_jaxpr)  # type: ignore[attr-defined]
+        quax_fun = quaxify(fun)
+        result = quax_fun(*args)
+        # Ensure result is a tuple for multiple_results parameter
+        if params.get("multiple_results", False) and not isinstance(result, tuple):
+            result = (result,)
+        return result
 
 
 # ==============================================================================
@@ -1609,3 +1631,22 @@ def svd_p(arg: MyArray, /, **kw: Any) -> list[MyArray]:
 @register(lax.linalg.tridiagonal_p)
 def tridiagonal_p(arg: MyArray, /, **kw: Any) -> list[MyArray]:
     return [MyArray(x) for x in lax.linalg.tridiagonal_p.bind(arg.array, **kw)]
+
+
+###############################################################################
+# Equinox
+
+
+@register(eqxi.maybe_set_p)
+def maybe_set_p(
+    pred: Array, xs: Array, x: MyArray, *i_dynamic_leaves: Any, **kw: Any
+) -> Array:
+    return eqxi.maybe_set_p.bind(pred, xs, x.array, *i_dynamic_leaves, **kw)
+
+
+# ==============================================================================
+
+
+@register(eqxi.select_if_vmap_p)
+def select_if_vmap_p(pred: Array, x: MyArray, y: MyArray | Array) -> MyArray:
+    return x
