@@ -204,10 +204,16 @@ class _QuaxTrace(core.Trace):
         in_leaves, in_treedef = jtu.tree_flatten(in_values)
         fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
         jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
+        in_leaves = tuple(in_leaves)
+        avals = tuple(
+            core._typeof_with_argument_info(primitive, i, a)
+            for i, a in enumerate(in_leaves)
+        )
         out_leaves = primitive.bind_with_trace(
             self.parent_trace,
-            (fun, jvp, *in_leaves),
-            dict(symbolic_zeros=symbolic_zeros),
+            in_leaves,
+            avals,
+            dict(subfuns=(fun, jvp), symbolic_zeros=symbolic_zeros),
         )
         _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
         out_values = jtu.tree_unflatten(out_treedef, out_leaves)

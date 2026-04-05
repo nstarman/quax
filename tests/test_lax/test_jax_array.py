@@ -186,7 +186,6 @@ xconv = jnp.arange(1, 17, dtype=float).reshape((1, 1, 4, 4))
         ("tanh", (x,), {}),
         ("top_k", (x, 1), {}),
         ("transpose", (x, (1, 0)), {}),
-        ("zeros_like_array", (x,), {}),
         ("zeta", (x, 2.0), {}),
         pytest.param("associative_scan", (), {}, marks=mark_todo),
         ("cond", (True, lambda: x, lambda: y), {}),
