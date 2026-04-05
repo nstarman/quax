@@ -137,7 +137,7 @@ def _wrap_if_array(x: Union[ArrayLike, "Value"]) -> "Value":
         return cast(Value, x)
 
 
-class _QuaxTrace(core.Trace[_QuaxTracer]):
+class _QuaxTrace(core.Trace):
     __slots__ = ("tag", "parent_trace")
 
     def __init__(self, parent_trace, tag):
