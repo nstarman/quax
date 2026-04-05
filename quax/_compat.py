@@ -11,6 +11,7 @@ __all__ = ("jit_p",)
 
 JAX_VERSION: Final = tuple(int(p) for p in version("jax").split(".")[:3])
 JAX_GE_0_7_0: Final = JAX_VERSION >= (0, 7, 0)
+JAX_GE_0_9_2: Final = JAX_VERSION >= (0, 9, 2)
 
 jit_p: jexc.Primitive
 if JAX_GE_0_7_0:
