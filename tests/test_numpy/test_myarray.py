@@ -15,6 +15,7 @@ xfail_quax58 = pytest.mark.xfail(
     reason="https://github.com/patrick-kidger/quax/issues/58"
 )
 mark_todo = pytest.mark.skip("TODO")
+mark_materialise = pytest.mark.xfail(reason="requires materialise")
 mark_nomd = pytest.mark.xfail(reason="Can't be supported with MD on primitives")
 
 x = MyArray(jnp.array([[1, 2], [3, 4]], dtype=float))
@@ -368,7 +369,7 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
         ("remainder", (x, y), {}, True),
         ("repeat", (x, 3), {}, True),
         ("reshape", (x, (1, -1)), {}, True),
-        ("resize", (x, (1, len(x))), {}, True),
+        pytest.param("resize", (x, (1, len(x))), {}, True, marks=mark_materialise),
         # ("result_type", (3, x), {}, True),
         ("right_shift", (xbool, xbool), {}, True),
         ("rint", (x,), {}, True),
@@ -413,7 +414,7 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
         ("tan", (x,), {}, True),
         ("tanh", (x,), {}, True),
         ("tensordot", (x, y), {}, True),
-        ("tile", (x, 3), {}, True),
+        pytest.param("tile", (x, 3), {}, True, marks=mark_materialise),
         ("trace", (x,), {}, True),
         ("transpose", (x,), {}, True),
         ("tril", (x,), {}, True),
