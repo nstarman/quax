@@ -199,21 +199,50 @@ class _QuaxTrace(
             return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]  # pyright: ignore
         return _QuaxTracer(self, _wrap_if_array(out))  # pyright: ignore
 
-    def process_custom_jvp_call(self, primitive, fun, jvp, tracers, *, symbolic_zeros):
-        in_values = [self.to_value(t) for t in tracers]
-        # Each `t.value` will be some `Value`, and thus a PyTree. Here we flatten the
-        # `Value`-ness away.
-        in_leaves, in_treedef = jtu.tree_flatten(in_values)
-        fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
-        jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
-        out_leaves = primitive.bind_with_trace(
-            self.parent_trace,
-            (fun, jvp, *in_leaves),
-            dict(symbolic_zeros=symbolic_zeros),
-        )
-        _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
-        out_values = jtu.tree_unflatten(out_treedef, out_leaves)
-        return [_QuaxTracer(self, x) for x in out_values]
+    if JAX_GE_0_9_2:
+        # In JAX v0.9.2+ (PR https://github.com/jax-ml/jax/pull/35730) JAX was
+        # changed to have an extra argument -- `avals` -- in bind_with_trace
+        # before params.
+
+        def process_custom_jvp_call(
+            self, primitive, fun, jvp, tracers, *, symbolic_zeros
+        ):
+            tracers_v = [self.to_value(t) for t in tracers]
+            # Each `t.value` will be some `Value`, and thus a PyTree. Here we
+            # flatten the `Value`-ness away.
+            in_leaves, in_treedef = jtu.tree_flatten(tracers_v)
+            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
+            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
+            avals = tuple(typeof(x) for x in in_leaves)
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace,
+                tuple(in_leaves),
+                avals,
+                dict(subfuns=(fun, jvp), symbolic_zeros=symbolic_zeros),
+            )
+            _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
+            out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+            return [_QuaxTracer(self, x) for x in out_values]
+
+    else:
+
+        def process_custom_jvp_call(
+            self, primitive, fun, jvp, tracers, *, symbolic_zeros
+        ):
+            in_values = [self.to_value(t) for t in tracers]
+            # Each `t.value` will be some `Value`, and thus a PyTree. Here we
+            # flatten the `Value`-ness away.
+            in_leaves, in_treedef = jtu.tree_flatten(in_values)
+            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
+            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace,
+                (fun, jvp, *in_leaves),
+                dict(symbolic_zeros=symbolic_zeros),
+            )
+            _, out_treedef = lu.merge_linear_aux(out_treedef1, out_treedef2)
+            out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+            return [_QuaxTracer(self, x) for x in out_values]
 
     # TODO: add other process_* rules
 
