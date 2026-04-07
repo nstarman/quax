@@ -9,6 +9,7 @@ import pytest
 from jaxtyping import Array
 
 import quax
+from quax._compat import typeof
 
 
 def test_jit_inline():
@@ -30,7 +31,7 @@ def test_default_override():
             assert False
 
         def aval(self):
-            return cast(jax.core.ShapedArray, jax.core.get_aval(self.array))
+            return cast(jax.core.ShapedArray, typeof(self.array))
 
         @staticmethod
         def default(primitive, values, params):
@@ -71,7 +72,7 @@ def test_double_override():
                 assert False
 
             def aval(self):
-                return cast(jax.core.ShapedArray, jax.core.get_aval(self.array))
+                return cast(jax.core.ShapedArray, typeof(self.array))
 
             @staticmethod
             def default(primitive, values, params):

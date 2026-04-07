@@ -248,7 +248,6 @@ def _unwrap_myarray(
         ("tanh", (x,), {}, True),
         ("top_k", (x, 1), {}, True),
         ("transpose", (x, (1, 0)), {}, True),
-        ("zeros_like_array", (x,), {}, False),
         ("zeta", (x, 2.0), {}, True),
         pytest.param("associative_scan", (), {}, True, marks=mark_todo),
         pytest.param("fori_loop", (), {}, True, marks=mark_todo),

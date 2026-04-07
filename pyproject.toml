@@ -28,6 +28,7 @@ dependencies = [
     "jaxtyping>=0.3.3",
     "equinox>=0.13.2",
     "plum-dispatch>=2.2.1",
+    "packaging>=20.0",
 ]
 
 [project.optional-dependencies]

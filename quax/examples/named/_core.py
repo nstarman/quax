@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from jaxtyping import ArrayLike
 
 import quax
+from quax._compat import typeof
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -67,7 +68,7 @@ class NamedArray(quax.ArrayValue, Generic[_Array]):
             )
 
     def aval(self) -> jax.core.ShapedArray:
-        return jax.core.get_aval(self.array)  # pyright: ignore
+        return typeof(self.array)  # pyright: ignore
 
     def enable_materialise(self, allow_materialise: bool = True):
         return NamedArray(self.array, self.axes, allow_materialise)
