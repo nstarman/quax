@@ -1483,9 +1483,18 @@ def tanh_p(x: MyArray, /, **kw: Any) -> MyArray:
 # ==============================================================================
 
 
-@register(lax.top_k_p)
-def top_k_p(operand: MyArray, /, **kw: Any) -> MyArray:
-    return [MyArray(x) for x in lax.top_k(operand.array, **kw)]
+@register(lax.tile_p)
+def tile_p(x: MyArray, /, **kw: Any) -> MyArray:
+    return replace(x, array=lax.tile_p.bind(x.array, **kw))
+
+
+# ==============================================================================
+
+if JAX_VERSION >= (0, 9, 0):
+
+    @register(lax.top_k_p)
+    def top_k_p(operand: MyArray, /, **kw: Any) -> MyArray:
+        return [MyArray(x) for x in lax.top_k(operand.array, **kw)]
 
 
 # ==============================================================================
