@@ -55,11 +55,12 @@ tests = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build]
-include = ["quax/*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/quax"]
 
 [tool.pytest.ini_options]
 addopts = "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))"
+pythonpath = ["src"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1
@@ -80,4 +81,4 @@ order-by-type = false
 
 [tool.pyright]
 reportIncompatibleMethodOverride = true
-include = ["quax", "tests"]
+include = ["src/quax", "tests"]
