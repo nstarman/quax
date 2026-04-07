@@ -2,6 +2,8 @@ name: Run tests
 
 on:
   pull_request:
+  schedule:
+    - cron: "0 0 * * 4"  # Every Thursday at midnight UTC
 
 permissions:
   contents: read
