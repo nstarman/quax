@@ -2,21 +2,17 @@
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, Final, TypeGuard
+from typing import Any, TypeGuard
 from typing_extensions import Self
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import packaging.version
 from jax import lax
 from jaxtyping import Array, ArrayLike, Bool
 
 from quax import ArrayValue, quaxify, register
-
-
-JAX_VERSION = packaging.version.parse(jax.__version__)
-JAX_VERSION_LT_8: Final = JAX_VERSION < packaging.version.Version("0.8.0")
+from quax._compat import JAX_VERSION, typeof
 
 
 class MyArray(ArrayValue):
@@ -34,7 +30,7 @@ class MyArray(ArrayValue):
 
     def aval(self) -> jax.core.ShapedArray:
         """Return the ShapedArray."""
-        return jax.core.get_aval(self.array)
+        return typeof(self.array)
 
     def astype(self, dtype: Any) -> Self:
         """Cast to type."""
@@ -945,7 +941,7 @@ def psum_p() -> MyArray:
 
 # ==============================================================================
 
-if packaging.version.Version("0.6.0") > JAX_VERSION:
+if JAX_VERSION <= (0, 6, 0):
 
     @register(lax.random_gamma_grad_p)
     def random_gamma_grad_p(a: float | int, x: MyArray) -> MyArray:
@@ -1027,10 +1023,11 @@ def reduce_prod_p(x: MyArray, /, **kw) -> MyArray:
 def reduce_sum_p(
     x: MyArray, *, axes: tuple[int, ...], out_sharding: Any = None
 ) -> MyArray:
-    if JAX_VERSION_LT_8:
-        array = lax.reduce_sum_p.bind(x.array, axes=axes)
-    else:
+    if JAX_VERSION >= (0, 8, 0):
         array = lax.reduce_sum_p.bind(x.array, axes=axes, out_sharding=out_sharding)
+    else:
+        array = lax.reduce_sum_p.bind(x.array, axes=axes)
+
     return replace(x, array=array)
 
 

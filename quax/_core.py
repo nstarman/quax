@@ -15,7 +15,7 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jaxtyping import ArrayLike, PyTree
 
-from ._compat import JAX_GE_0_9_2, jit_p
+from ._compat import JAX_GE_0_9_2, jit_p, typeof
 
 
 T = TypeVar("T")
@@ -545,7 +545,7 @@ class _DenseArrayValue(ArrayValue):
         return self.array
 
     def aval(self) -> core.ShapedArray:
-        return core.get_aval(self.array)  # pyright: ignore
+        return typeof(self.array)  # pyright: ignore
 
 
 @register(jit_p)
