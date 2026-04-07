@@ -3,6 +3,9 @@ name: Run tests
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   # Many color libraries just need this to be set to any value, but at least
   # one distinguishes color depth, where "3" -> "256-bit color".
