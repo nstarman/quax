@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install '.[docs]'
+          python -m pip install . --dependency-groups docs
 
       - name: Convert notebooks to Markdown
         run: jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install '.[docs]'
+          python -m pip install . --dependency-groups docs
 
       - name: Convert notebooks to Markdown
         run: jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/

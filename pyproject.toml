@@ -31,8 +31,16 @@ readme = "README.md"
 requires-python = ">=3.10"
 urls = { repository = "https://github.com/nstarman/quax" }
 
-[project.optional-dependencies]
-dev = ["pre-commit>=4.1.0"]
+[build-system]
+build-backend = "hatchling.build"
+requires      = ["hatch-vcs", "hatchling"]
+
+[dependency-groups]
+dev = [
+  "pre-commit>=4.1.0",
+  { include-group = "docs" },
+  { include-group = "tests" },
+]
 docs = [
   "hippogriffe==0.2.2",
   "mkdocstrings[python]==1.0.3",
@@ -41,10 +49,6 @@ docs = [
   "zensical",
 ]
 tests = ["beartype>=0.20.2", "pytest>=8.3.5", "pytest-env>=1.1.5", "jax[cpu]"]
-
-[build-system]
-build-backend = "hatchling.build"
-requires      = ["hatch-vcs", "hatchling"]
 
 [tool.hatch]
 build.hooks.vcs.version-file = "src/quax/_version.py"

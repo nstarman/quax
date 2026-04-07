@@ -13,7 +13,7 @@ Then clone and install the library:
 ```bash
 git clone https://github.com/your-username-here/quax.git
 cd quax
-pip install -e '.[dev]'
+pip install -e . --dependency-groups dev
 pre-commit install  # `pre-commit` is installed by `pip` on the previous line
 ```
 
@@ -26,7 +26,7 @@ Now make your changes. Make sure to include additional tests if necessary.
 Next verify the tests all pass:
 
 ```bash
-pip install -e '.[tests]'
+pip install -e . --dependency-groups tests
 pytest  # `pytest` is installed by `pip` on the previous line.
 ```
 
@@ -45,7 +45,7 @@ Finally, open a pull request on GitHub!
 Make your changes. You can then build the documentation by doing
 
 ```bash
-pip install -e '.[docs]'
+pip install --dependency-groups docs
 jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
 zensical serve
 ```
