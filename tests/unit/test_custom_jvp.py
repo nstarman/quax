@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 
 import quax
-from tests.myarray import MyArray
+
+from .myarray import MyArray
 
 
 # A simple function decorated with @jax.custom_jvp for testing

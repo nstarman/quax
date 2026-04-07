@@ -8,7 +8,7 @@ import pytest
 import quax
 import quax.examples.zero as zero
 
-from .helpers import tree_allclose
+from ..helpers import tree_allclose
 
 
 def test_broadcast():
