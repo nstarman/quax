@@ -71,10 +71,9 @@ lora_linear = lora.loraify(linear, rank=2, key=key3)
 
 Right now, the following are not supported:
 
-- `jax.lax.scan_p`
 - `jax.custom_vjp`
 
-It should be fairly straightforward to add support for these; open an issue or pull request. (We've already got `jax.custom_jvp`, `jax.lax.cond_p`, and `jax.lax.while_p`. :) )
+It should be fairly straightforward to add support for these; open an issue or pull request. (We've already got `jax.custom_jvp`, `jax.lax.cond_p`, `jax.lax.while_p`, and `jax.lax.scan_p`. :) )
 
 ## See also: other libraries in the JAX ecosystem
 
