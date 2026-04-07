@@ -15,7 +15,7 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jaxtyping import ArrayLike, PyTree
 
-from ._compat import jit_p
+from ._compat import JAX_GE_0_9_2, jit_p
 
 
 T = TypeVar("T")
@@ -137,7 +137,9 @@ def _wrap_if_array(x: Union[ArrayLike, "Value"]) -> "Value":
         return cast(Value, x)
 
 
-class _QuaxTrace(core.Trace[_QuaxTracer]):
+class _QuaxTrace(
+    core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportGeneralTypeIssues, reportInvalidTypeArguments]
+):
     __slots__ = ("tag", "parent_trace")
 
     def __init__(self, parent_trace, tag):
