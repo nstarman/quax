@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from jaxtyping import Array, ArrayLike, Bool
+from packaging.version import Version
 
 from quax import ArrayValue, quaxify, register
 from quax._compat import JAX_VERSION, typeof
@@ -941,7 +942,7 @@ def psum_p() -> MyArray:
 
 # ==============================================================================
 
-if JAX_VERSION <= (0, 6, 0):
+if JAX_VERSION <= Version("0.6.0"):
 
     @register(lax.random_gamma_grad_p)
     def random_gamma_grad_p(a: float | int, x: MyArray) -> MyArray:
@@ -1018,17 +1019,23 @@ def reduce_prod_p(x: MyArray, /, **kw) -> MyArray:
 
 # ==============================================================================
 
+if JAX_VERSION >= Version("0.8.0"):
 
-@register(lax.reduce_sum_p)
-def reduce_sum_p(
-    x: MyArray, *, axes: tuple[int, ...], out_sharding: Any = None
-) -> MyArray:
-    if JAX_VERSION >= (0, 8, 0):
+    @register(lax.reduce_sum_p)
+    def reduce_sum_p(
+        x: MyArray, *, axes: tuple[int, ...], out_sharding: Any = None
+    ) -> MyArray:
         array = lax.reduce_sum_p.bind(x.array, axes=axes, out_sharding=out_sharding)
-    else:
-        array = lax.reduce_sum_p.bind(x.array, axes=axes)
+        return replace(x, array=array)
 
-    return replace(x, array=array)
+else:
+
+    @register(lax.reduce_sum_p)
+    def reduce_sum_p(
+        x: MyArray, *, axes: tuple[int, ...], out_sharding: Any = None
+    ) -> MyArray:
+        array = lax.reduce_sum_p.bind(x.array, axes=axes)
+        return replace(x, array=array)
 
 
 # ==============================================================================
@@ -1482,19 +1489,19 @@ def tanh_p(x: MyArray, /, **kw: Any) -> MyArray:
 
 # ==============================================================================
 
+if JAX_VERSION >= Version("0.9.0"):
 
-@register(lax.tile_p)
-def tile_p(x: MyArray, /, **kw: Any) -> MyArray:
-    return replace(x, array=lax.tile_p.bind(x.array, **kw))
+    @register(lax.tile_p)
+    def tile_p(x: MyArray, /, **kw: Any) -> MyArray:
+        return replace(x, array=lax.tile_p.bind(x.array, **kw))
 
 
 # ==============================================================================
 
-if JAX_VERSION >= (0, 9, 0):
 
-    @register(lax.top_k_p)
-    def top_k_p(operand: MyArray, /, **kw: Any) -> MyArray:
-        return [MyArray(x) for x in lax.top_k(operand.array, **kw)]
+@register(lax.top_k_p)
+def top_k_p(operand: MyArray, /, **kw: Any) -> list[MyArray]:
+    return [MyArray(x) for x in lax.top_k(operand.array, **kw)]
 
 
 # ==============================================================================
