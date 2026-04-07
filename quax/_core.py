@@ -206,7 +206,7 @@ class _QuaxTrace(
 
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
-        ):
+        ) -> list[_QuaxTracer]:
             tracers_v = [self.to_value(t) for t in tracers]
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
@@ -226,7 +226,7 @@ class _QuaxTrace(
 
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
-        ):
+        ) -> list[_QuaxTracer]:
             in_values = [self.to_value(t) for t in tracers]
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
