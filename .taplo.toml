@@ -1,0 +1,27 @@
+# Taplo TOML formatter configuration
+# https://taplo.tamasfe.dev/configuration/file.html
+
+[formatting]
+# Alphabetically reorder keys that are not separated by blank lines
+reorder_keys = true
+
+# Align entries vertically (entries with table headers, comments, or blank lines between them are not aligned)
+align_entries = true
+
+# Align consecutive comments after entries and items vertically
+align_comments = true
+
+# Additional formatting options
+allowed_blank_lines   = 2
+array_auto_collapse   = true
+array_auto_expand     = true
+array_trailing_comma  = true
+column_width          = 80
+compact_arrays        = true
+compact_entries       = false
+compact_inline_tables = false
+crlf                  = false
+indent_entries        = false
+indent_string         = "  "
+indent_tables         = false
+trailing_newline      = true

@@ -13,3 +13,8 @@ repos:
     - id: pyright
       additional_dependencies: ["equinox", "pytest", "jax", "jaxtyping", "plum-dispatch"]
       exclude: "^tests/.*"
+
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
+    hooks:
+      - id: taplo-format
