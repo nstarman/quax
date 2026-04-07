@@ -40,7 +40,7 @@ docs = [
   "mkdocs-include-exclude-files==0.1.0",
   "mkdocs-ipynb==0.1.1",
   "mkdocs-material==9.7.6",
-  "mkdocstrings[python]==0.28.3",
+  "mkdocstrings[python]==1.0.3",
   "pymdown-extensions==10.14.3",
 ]
 tests = [
