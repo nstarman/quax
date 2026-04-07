@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+from jax.custom_derivatives import SymbolicZero as SZ
 
 import quax
 
@@ -87,6 +88,69 @@ def test_custom_jvp_grad():
         return quax.quaxify(f_custom_jvp)(x).array
 
     got_grad = jax.grad(scalar_fn)(MyArray(x_val))
+
+    assert isinstance(got_grad, MyArray)
+    assert jnp.allclose(got_grad.array, expected_grad)
+
+
+# ---------------------------------------------------------------------------
+# symbolic_zeros=True fixtures
+# ---------------------------------------------------------------------------
+
+
+# A two-argument custom_jvp function whose JVP rule uses symbolic_zeros=True.
+# When JAX differentiates w.r.t. only one argument (e.g. via jax.grad) it
+# will pass a SymbolicZero for the other tangent.
+@jax.custom_jvp
+def h_sym(x: jax.Array, y: jax.Array) -> jax.Array:
+    return x * y
+
+
+def _h_sym_jvp(primals, tangents):
+    x, y = primals
+    x_dot, y_dot = tangents
+    result = x * y
+    term1 = jnp.zeros_like(result) if type(x_dot) is SZ else x_dot * y
+    term2 = jnp.zeros_like(result) if type(y_dot) is SZ else x * y_dot
+    return result, term1 + term2
+
+
+h_sym.defjvp(_h_sym_jvp, symbolic_zeros=True)
+
+
+def test_custom_jvp_symbolic_zeros_jvp():
+    """jax.jvp through quaxified symbolic_zeros custom_jvp with MyArray args."""
+    x_val = jnp.array(2.0)
+    y_val = jnp.array(3.0)
+    xt_val = jnp.array(1.0)
+    yt_val = jnp.array(0.0)
+
+    expected_p, expected_t = jax.jvp(h_sym, (x_val, y_val), (xt_val, yt_val))
+
+    x = MyArray(x_val)
+    y = MyArray(y_val)
+    xt = MyArray(xt_val)
+    yt = MyArray(yt_val)
+
+    primal_out, tangent_out = jax.jvp(quax.quaxify(h_sym), (x, y), (xt, yt))
+
+    assert isinstance(primal_out, MyArray)
+    assert isinstance(tangent_out, MyArray)
+    assert jnp.allclose(primal_out.array, expected_p)
+    assert jnp.allclose(tangent_out.array, expected_t)
+
+
+def test_custom_jvp_symbolic_zeros_grad():
+    """jax.grad through quaxified symbolic_zeros custom_jvp (SZ for y tangent)."""
+    x_val = jnp.array(2.0)
+    y_val = jnp.array(3.0)
+
+    expected_grad = jax.grad(lambda x: h_sym(x, y_val))(x_val)
+
+    def fn(x: MyArray) -> jax.Array:
+        return quax.quaxify(h_sym)(x, MyArray(y_val)).array
+
+    got_grad = jax.grad(fn)(MyArray(x_val))
 
     assert isinstance(got_grad, MyArray)
     assert jnp.allclose(got_grad.array, expected_grad)
