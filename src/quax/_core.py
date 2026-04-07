@@ -213,7 +213,7 @@ class _QuaxTrace(
             in_leaves, in_treedef = jtu.tree_flatten(tracers_v)
             fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
             jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
-            avals = tuple(typeof(x) for x in in_leaves)
+            avals = tuple(x.aval if type(x) is SZ else typeof(x) for x in in_leaves)
             params = dict(subfuns=(fun, jvp), symbolic_zeros=symbolic_zeros)
             out_leaves = primitive.bind_with_trace(
                 self.parent_trace, tuple(in_leaves), avals, params
@@ -270,13 +270,25 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
     in_primals = in_primals_and_tangents[: len(in_primals_and_tangents) // 2]
     in_tangents = in_primals_and_tangents[len(in_primals_and_tangents) // 2 :]
     in_primal_values = jtu.tree_unflatten(in_treedef, in_primals)
-    in_tangent_values = jtu.tree_unflatten(in_treedef, in_tangents)
+    in_tangent_values_raw = jtu.tree_unflatten(in_treedef, in_tangents)
+    # When symbolic_zeros=True, JAX may pass SymbolicZero tangent leaves. After
+    # unflattening, SZs can be embedded inside a Value (e.g. MyArray(SZ)),
+    # breaking .aval() calls. Promote only fully-symbolic tangents back to a
+    # value-level SZ so the JVP rule can check `type(t) is SZ` directly, while
+    # leaving mixed tangents untouched.
+    in_tangent_values = [
+        SZ(p.aval())
+        if (leaves := jtu.tree_leaves(t)) and all(type(l) is SZ for l in leaves)
+        else t
+        for p, t in zip(in_primal_values, in_tangent_values_raw)
+    ]
     # Calling `_QuaxTracer` directly here, not using `trace.{pure,lift}` as each `x` is
     # a `Value`, not an array (=> pure) or tracer (=> lift).
     with core.take_current_trace() as parent_trace:
         trace = _QuaxTrace(parent_trace, tag)
         in_tracers = [
-            _QuaxTracer(trace, x) for x in it.chain(in_primal_values, in_tangent_values)
+            x if type(x) is SZ else _QuaxTracer(trace, x)
+            for x in it.chain(in_primal_values, in_tangent_values)
         ]
         with core.set_current_trace(trace):
             out_tracers = yield in_tracers, {}
