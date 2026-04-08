@@ -1,25 +1,53 @@
-name: Release
+name: CD
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_COLOR: 3
 
 jobs:
   build:
+    name: Build & inspect package
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+      id-token: write
+      attestations: write
+
     steps:
-      - name: Release
-        uses: patrick-kidger/action_update_python_project@v8
+      - uses: actions/checkout@v4
         with:
-            python-version: "3.11"
-            test-script: |
-                cp -r ${{ github.workspace }}/tests ./tests
-                cp ${{ github.workspace }}/pyproject.toml ./pyproject.toml
-                uv sync --group tests --no-install-project --inexact
-                uv run --no-sync pytest
-            pypi-token: ${{ secrets.pypi_token }}
-            github-user: patrick-kidger
-            github-token: ${{ github.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: hynek/build-and-inspect-python-package@v2
+        with:
+          attest-build-provenance-github: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/quax
+    permissions:
+      id-token: write
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download built artifact to dist/
+        uses: actions/download-artifact@v4
+        with:
+          name: Packages
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
