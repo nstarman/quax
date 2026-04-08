@@ -37,8 +37,8 @@ requires      = ["hatch-vcs", "hatchling"]
 
 [dependency-groups]
 dev = [
-  "pre-commit>=4.1.0",
   { include-group = "docs" },
+  { include-group = "lint" },
   { include-group = "tests" },
 ]
 docs = [
@@ -48,6 +48,7 @@ docs = [
   "pymdown-extensions==10.21.2",
   "zensical",
 ]
+lint = ["pre-commit>=4.1.0", "ruff>=0.15.9"]
 tests = ["beartype>=0.20.2", "pytest>=8.3.5", "pytest-env>=1.1.5", "jax[cpu]"]
 
 [tool.hatch]
