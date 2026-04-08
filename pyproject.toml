@@ -91,6 +91,7 @@ ignore  = ["E402", "E721", "E731", "E741", "F722"]
 select  = ["E", "F", "I001", "UP"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
+"equinox"    = "eqx"
 "jax.extend" = "jex"
 
 [tool.ruff.lint.isort]
