@@ -4,20 +4,20 @@
 
 ### JIT
 
-When using `jax.jit` together with `quax.quaxify`, apply `jax.jit` at the **outermost** level:
+When using `jax.jit` together with `quax.quaxify`, the recommended pattern is to apply `jax.jit` at the **outermost** level:
 
 ```python
 import jax
 import quax
 
-# Do this:
+# Preferred: jit wraps the entire quaxified computation.
 jit_fn = jax.jit(quax.quaxify(fn))
 
-# Not this:
+# Also works, but less optimal: quaxify wraps an already-jitted function.
 jit_fn = quax.quaxify(jax.jit(fn))
 ```
 
-This is the same best practice that applies to other JAX transforms: placing `jit` at the top level allows JAX to compile the entire computation, including the dispatch logic introduced by `quaxify`, as a single unit.
+Placing `jit` at the outermost level follows the same best practice that applies to other JAX transforms: it allows JAX to compile the entire computation, including the dispatch logic introduced by `quaxify`, as a single unit. The reversed ordering (`quax.quaxify(jax.jit(fn))`) does work correctly, but may compile less efficiently because each inner jitted call is compiled in isolation before `quaxify` sees it.
 
 ### vmap
 
