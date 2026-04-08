@@ -45,7 +45,8 @@ jobs:
 
       - name: Check that documentation can be built.
         run: |
-          mkdocs build
+          jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+          zensical build --clean
 
   oldest-supported:
     runs-on: ubuntu-latest

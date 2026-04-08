@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python =">=3.10"
 license = {file = "LICENSE"}
 authors = [
-  {name = "Patrick Kidger", email = "contact@kidger.site"},
+  {name = "Nathaniel Starkman", email = "nstarman@users.noreply.github.com"},
 ]
 keywords = ["jax", "multiple-dispatch", "equinox"]
 classifiers = [
@@ -22,7 +22,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
-urls = {repository = "https://github.com/patrick-kidger/quax" }
+urls = {repository = "https://github.com/nstarman/quax" }
 dependencies = [
     "jax>=0.5.3,!=0.7.0,!=0.7.1",
     "jaxtyping>=0.3.3",
@@ -37,12 +37,10 @@ dev = [
 ]
 docs = [
   "hippogriffe==0.2.2",
-  "mkdocs==1.6.1",
-  "mkdocs-include-exclude-files==0.1.0",
-  "mkdocs-ipynb==0.1.1",
-  "mkdocs-material==9.7.6",
   "mkdocstrings[python]==1.0.3",
+  "nbconvert>=7",
   "pymdown-extensions==10.21.2",
+  "zensical",
 ]
 tests = [
     "beartype>=0.20.2",

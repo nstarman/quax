@@ -26,7 +26,7 @@ pip install quax
 
 ## Documentation
 
-Available at https://docs.kidger.site/quax.
+Available at <https://nstarman.github.io/quax>.
 
 ## Example: LoRA
 
