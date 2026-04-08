@@ -68,7 +68,7 @@ class NamedArray(quax.ArrayValue, Generic[_Array]):
             )
 
     def aval(self) -> jax.core.ShapedArray:
-        return typeof(self.array)  # pyright: ignore
+        return typeof(self.array)
 
     def enable_materialise(self, allow_materialise: bool = True):
         return NamedArray(self.array, self.axes, allow_materialise)

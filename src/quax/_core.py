@@ -62,7 +62,7 @@ def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT]
 
     def _register(rule: CT) -> CT:
         try:
-            existing_rule = _rules[primitive]  # pyright: ignore
+            existing_rule = _rules[primitive]
         except KeyError:
 
             def new_rule():
@@ -127,7 +127,7 @@ def _default_process(
             f"Multiple array-ish types {types} are specifying default process rules."
         )
 
-    return default(primitive, values, params)  # pyright: ignore
+    return default(primitive, values, params)
 
 
 def _wrap_if_array(x: Union[ArrayLike, "Value"]) -> "Value":
@@ -196,8 +196,8 @@ class _QuaxTrace(
 
         # Post-process the output
         if primitive.multiple_results:
-            return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]  # pyright: ignore
-        return _QuaxTracer(self, _wrap_if_array(out))  # pyright: ignore
+            return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
+        return _QuaxTracer(self, _wrap_if_array(out))  # pyright: ignore[reportArgumentType]
 
     if JAX_GE_0_9_2:
         # In JAX v0.9.2+ (PR https://github.com/jax-ml/jax/pull/35730) JAX was
@@ -211,8 +211,8 @@ class _QuaxTrace(
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
             in_leaves, in_treedef = jtu.tree_flatten(tracers_v)
-            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
-            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
+            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)
+            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)
             avals = tuple(x.aval if type(x) is SZ else typeof(x) for x in in_leaves)
             params = dict(subfuns=(fun, jvp), symbolic_zeros=symbolic_zeros)
             out_leaves = primitive.bind_with_trace(
@@ -231,8 +231,8 @@ class _QuaxTrace(
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
             in_leaves, in_treedef = jtu.tree_flatten(in_values)
-            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)  # pyright: ignore
-            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)  # pyright: ignore
+            fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)
+            jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)
             out_leaves = primitive.bind_with_trace(
                 self.parent_trace,
                 (fun, jvp, *in_leaves),
@@ -245,7 +245,7 @@ class _QuaxTrace(
     # TODO: add other process_* rules
 
 
-@lu.transformation_with_aux  # pyright: ignore
+@lu.transformation_with_aux
 def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
     in_values = jtu.tree_unflatten(in_treedef, in_leaves)
     with core.take_current_trace() as parent_trace:
@@ -255,7 +255,7 @@ def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
             out_tracers = yield in_tracers, {}
             # The symbolic zero branch here will actually create a `quax.zero.Zero`!
             out_tracers = [
-                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore
+                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
                 for t in out_tracers
             ]
             out_values = [trace.to_value(t) for t in out_tracers]
@@ -265,7 +265,7 @@ def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
     yield out_leaves, out_treedef
 
 
-@lu.transformation_with_aux  # pyright: ignore
+@lu.transformation_with_aux
 def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
     in_primals = in_primals_and_tangents[: len(in_primals_and_tangents) // 2]
     in_tangents = in_primals_and_tangents[len(in_primals_and_tangents) // 2 :]
@@ -294,7 +294,7 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
             out_tracers = yield in_tracers, {}
             # The symbolic zero branch here will actually create a `quax.zero.Zero`!
             out_tracers = [
-                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore
+                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
                 for t in out_tracers
             ]
             out_values = [trace.to_value(t) for t in out_tracers]
@@ -584,7 +584,7 @@ class _DenseArrayValue(ArrayValue):
         return self.array
 
     def aval(self) -> core.ShapedArray:
-        return typeof(self.array)  # pyright: ignore
+        return typeof(self.array)
 
 
 @register(jit_p)
