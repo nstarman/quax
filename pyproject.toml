@@ -3,7 +3,7 @@ authors = [
   { name = "Nathaniel Starkman", email = "nstarman@users.noreply.github.com" },
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: Financial and Insurance Industry",
   "Intended Audience :: Information Technology",
