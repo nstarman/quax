@@ -13,7 +13,19 @@ Then clone and install the library:
 ```bash
 git clone https://github.com/your-username-here/quax.git
 cd quax
-pip install -e '.[dev]'
+```
+
+**Using uv:**
+
+```bash
+uv sync --group dev
+pre-commit install  # `pre-commit` is installed by `uv` on the previous line
+```
+
+**Using pip:**
+
+```bash
+pip install -e . --dependency-groups dev
 pre-commit install  # `pre-commit` is installed by `pip` on the previous line
 ```
 
@@ -25,9 +37,17 @@ Now make your changes. Make sure to include additional tests if necessary.
 
 Next verify the tests all pass:
 
+**Using uv:**
+
 ```bash
-pip install -e '.[tests]'
-pytest  # `pytest` is installed by `pip` on the previous line.
+uv run pytest
+```
+
+**Using pip:**
+
+```bash
+pip install -e . --dependency-groups tests
+pytest
 ```
 
 Then push your changes back to your fork of the repository:
@@ -44,8 +64,16 @@ Finally, open a pull request on GitHub!
 
 Make your changes. You can then build the documentation by doing
 
+**Using uv:**
+
 ```bash
-pip install -e '.[docs]'
+uv run mkdocs serve
+```
+
+**Using pip:**
+
+```bash
+pip install -e . --dependency-groups docs
 jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
 zensical serve
 ```
