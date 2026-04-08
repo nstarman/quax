@@ -35,8 +35,6 @@ repo_url: https://github.com/nstarman/quax
 repo_name: nstarman/quax
 edit_uri: ""  # No edit button, as some of our pages are in /docs and some in /examples via symlink, so it's impossible for them all to be accurate
 
-strict: true  # Don't allow warnings during the build process
-
 extra_javascript: 
     # The below two make MathJax work, see https://squidfunk.github.io/mkdocs-material/reference/mathjax/
     - _static/mathjax.js
@@ -63,13 +61,6 @@ plugins:
         # and https://github.com/patrick-kidger/equinox/issues/984
         # In particular this allows for searching e.g. 'filter_grad' and to match 'equinox.filter_grad'.
         separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
-    - include_exclude_files:
-        include:
-            - ".htaccess"
-        exclude:
-            - "_overrides"
-            - "examples/.ipynb_checkpoints"
-    - ipynb
     - hippogriffe:
         extra_public_objects:
             - jax.core.AbstractValue
@@ -97,7 +88,7 @@ nav:
         - 'api/quax.md'
         - 'api/lora.md'
     - Tutorials for custom Quax types:
-        - 'Custom rules (introductory)': 'examples/custom_rules.ipynb'
-        - 'Default rules (intermediate)': 'examples/default_rules.ipynb'
-        - 'Redispatching (advanced)': 'examples/redispatch.ipynb'
+        - 'Custom rules (introductory)': 'examples/custom_rules.md'
+        - 'Default rules (intermediate)': 'examples/default_rules.md'
+        - 'Redispatching (advanced)': 'examples/redispatch.md'
         - 'examples/other.md'

@@ -1,5 +1,9 @@
 **/__pycache__
 **/.ipynb_checkpoints
+# Generated from notebooks at build time
+docs/examples/custom_rules.md
+docs/examples/default_rules.md
+docs/examples/redispatch.md
 *.egg-info/
 build/
 dist/

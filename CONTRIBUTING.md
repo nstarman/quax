@@ -46,7 +46,10 @@ Make your changes. You can then build the documentation by doing
 
 ```bash
 pip install -e '.[docs]'
-mkdocs serve
+jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+zensical serve
 ```
 
 You can then see your local copy of the documentation by navigating to `localhost:8000` in a web browser.
+
+Note: the `jupyter nbconvert` step converts the tutorial notebooks to Markdown before serving. Re-run it whenever you edit a notebook.
