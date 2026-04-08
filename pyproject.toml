@@ -100,6 +100,9 @@ extra-standard-library = ["typing_extensions"]
 lines-after-imports    = 2
 order-by-type          = false
 
+[tool.ruff.format]
+docstring-code-format = true
+
 [tool.pyright]
 include                          = ["src/quax", "tests"]
 reportIncompatibleMethodOverride = true

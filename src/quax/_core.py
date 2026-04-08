@@ -484,8 +484,9 @@ class Value(eqx.Module):
             ```python
             @staticmethod
             def default(primitive, values, params):
-                arrays = [x if equinox.is_array_like(x) else x.materialise()
-                          for x in values]
+                arrays = [
+                    x if equinox.is_array_like(x) else x.materialise() for x in values
+                ]
                 return primitive.bind(*arrays, **params)
             ```
             (Using the [Equinox](https://github.com/patrick-kidger/equinox) library that
