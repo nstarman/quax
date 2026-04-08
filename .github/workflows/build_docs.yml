@@ -1,36 +1,43 @@
 name: Build docs
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
+
+env:
+  FORCE_COLOR: 3
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install . --dependency-groups docs
+        run: uv sync --no-default-groups --group docs --locked
 
       - name: Convert notebooks to Markdown
-        run: jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+        run: uv run --frozen jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
 
       - name: Build docs
-        run: zensical build --clean
+        run: uv run --frozen zensical build --clean
 
   upload:
     needs: build
@@ -40,24 +47,23 @@ jobs:
       contents: read
       actions: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install . --dependency-groups docs
+        run: uv sync --no-default-groups --group docs --locked
 
       - name: Convert notebooks to Markdown
-        run: jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+        run: uv run --frozen jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
 
       - name: Build docs
-        run: zensical build --clean
+        run: uv run --frozen zensical build --clean
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3

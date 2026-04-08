@@ -7,7 +7,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 0 * * 4" # Every Thursday at midnight UTC
+    - cron: "0 0 * * 4"  # Every Thursday at midnight UTC
 
 permissions:
   contents: read
