@@ -73,8 +73,14 @@ describe_command = [
 packages = ["src/quax"]
 
 [tool.pytest.ini_options]
-addopts    = "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))"
+addopts = [
+  "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))",
+  "-ra",
+]
+log_level = "INFO"
+minversion = "8.3"
 pythonpath = ["src"]
+testpaths = ["README", "docs", "src/", "tests"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1
