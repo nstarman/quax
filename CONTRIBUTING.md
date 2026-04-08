@@ -15,19 +15,19 @@ git clone https://github.com/your-username-here/quax.git
 cd quax
 ```
 
-=== "uv"
+**Using uv:**
 
-    ```bash
-    uv sync --group dev
-    pre-commit install  # `pre-commit` is installed by `uv` on the previous line
-    ```
+```bash
+uv sync --group dev
+pre-commit install  # `pre-commit` is installed by `uv` on the previous line
+```
 
-=== "pip"
+**Using pip:**
 
-    ```bash
-    pip install -e . --dependency-groups dev
-    pre-commit install  # `pre-commit` is installed by `pip` on the previous line
-    ```
+```bash
+pip install -e . --dependency-groups dev
+pre-commit install  # `pre-commit` is installed by `pip` on the previous line
+```
 
 ---
 
@@ -37,18 +37,18 @@ Now make your changes. Make sure to include additional tests if necessary.
 
 Next verify the tests all pass:
 
-=== "uv"
+**Using uv:**
 
-    ```bash
-    uv run pytest
-    ```
+```bash
+uv run pytest
+```
 
-=== "pip"
+**Using pip:**
 
-    ```bash
-    pip install -e . --dependency-groups tests
-    pytest
-    ```
+```bash
+pip install -e . --dependency-groups tests
+pytest
+```
 
 Then push your changes back to your fork of the repository:
 
@@ -64,19 +64,19 @@ Finally, open a pull request on GitHub!
 
 Make your changes. You can then build the documentation by doing
 
-=== "uv"
+**Using uv:**
 
-    ```bash
-    uv run mkdocs serve
-    ```
+```bash
+uv run mkdocs serve
+```
 
-=== "pip"
+**Using pip:**
 
-    ```bash
-    pip install -e . --dependency-groups docs
-    jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
-    zensical serve
-    ```
+```bash
+pip install -e . --dependency-groups docs
+jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+zensical serve
+```
 
 You can then see your local copy of the documentation by navigating to `localhost:8000` in a web browser.
 
