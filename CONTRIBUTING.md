@@ -73,7 +73,7 @@ Make your changes. You can then build the documentation by doing
 === "pip"
 
     ```bash
-    pip install --dependency-groups docs
+    pip install -e . --dependency-groups docs
     jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
     zensical serve
     ```
