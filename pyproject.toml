@@ -3,7 +3,7 @@ authors = [
   { name = "Nathaniel Starkman", email = "nstarman@users.noreply.github.com" },
 ]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: Financial and Insurance Industry",
   "Intended Audience :: Information Technology",
@@ -23,13 +23,13 @@ dependencies = [
   "packaging>=20.0",
 ]
 description = "Multiple dispatch in JAX via custom interpreters."
+dynamic = ["version"]
 keywords = ["jax", "multiple-dispatch", "equinox"]
 license = { file = "LICENSE" }
 name = "quax"
 readme = "README.md"
 requires-python = ">=3.10"
 urls = { repository = "https://github.com/nstarman/quax" }
-version = "0.2.1"
 
 [project.optional-dependencies]
 dev = ["pre-commit>=4.1.0"]
@@ -44,14 +44,43 @@ tests = ["beartype>=0.20.2", "pytest>=8.3.5", "pytest-env>=1.1.5", "jax[cpu]"]
 
 [build-system]
 build-backend = "hatchling.build"
-requires      = ["hatchling"]
+requires      = ["hatch-vcs", "hatchling"]
+
+[tool.hatch]
+build.hooks.vcs.version-file = "src/quax/_version.py"
+build.hooks.vcs.version-file-template = """\
+version: str = {version!r}
+version_tuple: tuple[int, int, int] | tuple[int, int, int, str, str]
+version_tuple = {version_tuple!r}
+"""
+version.source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.version.raw-options.scm.git]
+describe_command = [
+  "git",
+  "describe",
+  "--dirty",
+  "--tags",
+  "--long",
+  "--match",
+  "v*",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quax"]
 
 [tool.pytest.ini_options]
-addopts    = "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))"
+addopts = [
+  "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))",
+  "-ra",
+]
+log_level = "INFO"
+minversion = "8.3"
 pythonpath = ["src"]
+testpaths = ["README", "docs", "src/", "tests"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1
@@ -62,6 +91,7 @@ ignore  = ["E402", "E721", "E731", "E741", "F722"]
 select  = ["E", "F", "I001", "UP"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
+"equinox"    = "eqx"
 "jax.extend" = "jex"
 
 [tool.ruff.lint.isort]
@@ -69,6 +99,9 @@ combine-as-imports     = true
 extra-standard-library = ["typing_extensions"]
 lines-after-imports    = 2
 order-by-type          = false
+
+[tool.ruff.format]
+docstring-code-format = true
 
 [tool.pyright]
 include                          = ["src/quax", "tests"]

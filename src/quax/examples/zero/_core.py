@@ -167,7 +167,7 @@ def _(lhs: Zero, rhs: Zero, **kwargs) -> Zero:
 def _integer_pow(x: Zero, *, y: int) -> Array | Zero:
     # Zero is a special case, because 0^0 = 1.
     if y == 0:
-        return jnp.ones(x.shape, x.dtype)  # pyright: ignore
+        return jnp.ones(x.shape, x.dtype)  # pyright: ignore[reportArgumentType]
 
     # Otherwise, we can just return a zero.
     # Inf and NaN are not integers, so we don't need to worry about them.

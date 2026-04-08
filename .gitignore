@@ -14,3 +14,4 @@ examples/data
 .idea
 examples/MNIST
 examples/multipart_serialised.eqx
+/src/quax/_version.py

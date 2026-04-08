@@ -14,7 +14,7 @@ class BCOO(quax.ArrayValue):
 
     data: Shaped[Array, "*batch nse"]
     indices: Integer[Array, "*batch nse n_sparse"]
-    _shape: tuple[int, ...] = eqx.field(static=True)  # pyright: ignore
+    _shape: tuple[int, ...] = eqx.field(static=True)
     allow_materialise: bool = eqx.field(static=True)
 
     def __init__(
@@ -106,7 +106,7 @@ def _(x: BCOO, *, dimensions):
     data = lax.squeeze_p.bind(x.data, dimensions=dimensions)
     indices = lax.squeeze_p.bind(x.indices, dimensions=dimensions)
     shape = tuple(x.shape[i] for i in range(x.ndim) if i not in dimensions)
-    return BCOO(data, indices, shape, allow_materialise=x.allow_materialise)  # pyright: ignore
+    return BCOO(data, indices, shape, allow_materialise=x.allow_materialise)
 
 
 @quax.register(lax.add_p)

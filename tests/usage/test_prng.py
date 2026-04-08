@@ -20,7 +20,7 @@ def test_normal():
 def test_cannot_add():
     key = prng.ThreeFry(0)
     with pytest.raises(TypeError):
-        key + 1  # pyright: ignore
+        key + 1
 
     @jax.jit
     def run(key):
