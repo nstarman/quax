@@ -1,5 +1,7 @@
 """Test with JAX inputs."""
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jtu
@@ -16,6 +18,7 @@ xfail_quax58 = pytest.mark.xfail(
 )
 mark_todo = pytest.mark.skip("TODO")
 mark_nomd = pytest.mark.xfail(reason="Can't be supported with MD on primitives")
+mark_tracerleak = pytest.mark.xfail(reason="Tracers are leaking")
 
 x = MyArray(jnp.array([[1, 2], [3, 4]], dtype=float))
 y = MyArray(jnp.array([[5, 6], [7, 8]], dtype=float))
@@ -481,8 +484,9 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
 )
 def test_numpy_functions(func_name, args, kw, expect_myarray):
     """Test lax vs qlax functions."""
-    # Jax
     func = getattr(jnp, func_name)
+
+    # Jax
     jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
     exp = func(*jax_args, **jax_kw)
     exp = exp if isinstance(exp, tuple | list) else (exp,)
@@ -493,6 +497,18 @@ def test_numpy_functions(func_name, args, kw, expect_myarray):
     got = _unwrap_myarray(got, expect_myarray)
 
     assert jtu.all(jtu.map(jnp.allclose, got, exp))
+
+    # Check that where JIT'ed JAX is supported, Quaxed + JIT is too.
+    try:
+        _ = eqx.filter_jit(func)(*args, **kw)
+    except (jax.errors.ConcretizationTypeError, ValueError, TypeError):
+        pass
+    else:
+        # Quaxed + JIT
+        got_jit = eqx.filter_jit(quax.quaxify(func))(*args, **kw)
+        got_jit = got_jit if isinstance(got_jit, tuple | list) else (got_jit,)
+
+        assert jtu.all(jtu.map(jnp.allclose, got_jit, exp))
 
 
 # ###############################################################################

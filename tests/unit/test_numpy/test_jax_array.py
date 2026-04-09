@@ -1,5 +1,7 @@
 """Test with JAX inputs."""
 
+import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.tree as jtu
 import numpy as np
@@ -422,8 +424,9 @@ xbool = jnp.array([True, False, True], dtype=bool)
     ],
 )
 def test_numpy_functions(func_name, args, kw):
-    """Test lax vs qlax functions."""
+    """Test numpy vs qnumpy functions."""
     func = getattr(jnp, func_name)
+
     # Jax
     exp = func(*args, **kw)
     exp = exp if isinstance(exp, tuple | list) else (exp,)
@@ -433,6 +436,18 @@ def test_numpy_functions(func_name, args, kw):
     got = got if isinstance(got, tuple | list) else (got,)
 
     assert jtu.all(jtu.map(jnp.allclose, got, exp))
+
+    # Check that where JIT'ed JAX is supported, Quaxed + JIT is too.
+    try:
+        _ = eqx.filter_jit(func)(*args, **kw)
+    except (jax.errors.ConcretizationTypeError, ValueError, TypeError):
+        pass
+    else:
+        # Quaxed + JIT
+        got_jit = eqx.filter_jit(quaxify(func))(*args, **kw)
+        got_jit = got_jit if isinstance(got_jit, tuple | list) else (got_jit,)
+
+        assert jtu.all(jtu.map(jnp.allclose, got_jit, exp))
 
 
 ###############################################################################
