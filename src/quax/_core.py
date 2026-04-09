@@ -102,7 +102,7 @@ class _QuaxTracer(core.Tracer):
         else:
             return self
 
-    def to_concrete_value(self):
+    def to_concrete_value(self) -> ArrayLike | None:  # pyright: ignore[reportIncompatibleMethodOverride]
         if isinstance(self.value, _DenseArrayValue):
             return core.to_concrete_value(self.value.array)
         return None
