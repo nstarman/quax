@@ -102,6 +102,11 @@ class _QuaxTracer(core.Tracer):
         else:
             return self
 
+    def to_concrete_value(self):
+        if isinstance(self.value, _DenseArrayValue):
+            return core.to_concrete_value(self.value.array)
+        return None
+
 
 def _default_process(
     primitive: jexc.Primitive, values: Sequence[Union[ArrayLike, "Value"]], params

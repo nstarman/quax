@@ -117,3 +117,16 @@ def test_default_path():
     got = quax.quaxify(lax.betainc)(jnp.array(1.0), x, y)
 
     assert jnp.array_equal(got, exp)
+
+
+# See https://github.com/patrick-kidger/quax/issues/58
+def test_concrete_bool_conversion():
+    """Test that quaxify doesn't break functions needing concrete boolean values."""
+    xbool = jnp.array([True, False, True], dtype=bool)
+    x1 = jnp.array([1.0, 2.0, 3.0], dtype=float)
+
+    compress = quax.quaxify(jnp.compress)
+    got = compress(xbool, x1)
+    exp = jnp.compress(xbool, x1)
+
+    assert jnp.array_equal(got, exp)

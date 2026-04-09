@@ -111,7 +111,7 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
         ("broadcast_to", (x, (2, 2)), {}, True),
         ("cbrt", (x,), {}, True),
         ("ceil", (x,), {}, True),
-        pytest.param("choose", (0, [x, x]), {}, True, marks=xfail_quax58),
+        ("choose", (0, [x, x]), {}, True),
         ("clip", (x, 1, 2), {}, True),
         ("column_stack", ([x, x],), {}, True),
         pytest.param("complex128", (x,), {}, True, marks=pytest.mark.xfail),
