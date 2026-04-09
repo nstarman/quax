@@ -86,6 +86,7 @@ plugins:
 
 nav:
     - 'index.md'
+    - 'faq.md'
     - API:
         - 'api/quax.md'
         - 'api/lora.md'
