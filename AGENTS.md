@@ -52,7 +52,7 @@ class MyType(quax.ArrayValue):
 @quax.register(jax.lax.add_p)
 def _(x: MyType, y: MyType) -> MyType:
     array = x.array + y.array
-    return MyType(array, _shape=tuple(array.shape))  # for shape-changing ops, set this per op semantics
+    return MyType(array, _shape=x._shape)
 ```
 
 Use `@quax.register(prim, precedence=1)` to resolve plum ambiguity between overlapping rules.
