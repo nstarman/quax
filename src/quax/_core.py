@@ -89,6 +89,7 @@ class _QuaxTracer(core.Tracer):
     __slots__ = ("value",)
 
     def __init__(self, trace: "_QuaxTrace", value: "Value") -> None:
+        assert _is_value(value)
         self._trace = trace
         self.value = value
 
@@ -649,7 +650,7 @@ _sentinel = object()
 def cond_quax(
     index: ArrayLike,
     *args: ArrayValue | ArrayLike,
-    branches: tuple[PyTree, ...],
+    branches: tuple[core.ClosedJaxpr, ...],
     linear: tuple[bool, ...] | object = _sentinel,
     branches_platforms: tuple[str, ...] | object = _sentinel,
 ) -> Any:
