@@ -742,12 +742,6 @@ def while_quax(
 _sentinel = object()
 
 
-# Cache for cond_quax: (branch_ids, in_tree)
-#   -> (branch_refs, quax_branches_tuple, out_tree)
-# branch_ids = tuple(id(b) for b in branches); strong refs prevent id reuse.
-_cond_quax_cache: dict[tuple, tuple] = {}
-
-
 @register(jax.lax.cond_p)
 def cond_quax(
     index: ArrayLike,
@@ -758,46 +752,30 @@ def cond_quax(
 ) -> Any:
     flat_args, in_tree = jtu.tree_flatten(args)
 
-    key = (tuple(id(b) for b in branches), in_tree)
-    entry = _cond_quax_cache.get(key)
-    if entry is None:
+    out_trees: list[Any] = []
 
-        def _make_quax_branch(
-            jaxpr: core.ClosedJaxpr, /
-        ) -> tuple[core.ClosedJaxpr, Any]:
-            out_tree_capture: list[Any] = []
+    def _make_quax_branch(jaxpr: core.ClosedJaxpr, /) -> core.ClosedJaxpr:
+        def flat_quax_call(flat_args: list[Any]) -> list[Any]:
+            _args = jtu.tree_unflatten(in_tree, flat_args)
+            flat_out, out_tree = jtu.tree_flatten(
+                quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
+            )
+            out_trees.append(out_tree)
+            return flat_out
 
-            def flat_quax_call(flat_args: list[Any]) -> list[Any]:
-                _args = jtu.tree_unflatten(in_tree, flat_args)
-                flat_out, out_tree = jtu.tree_flatten(
-                    quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
-                )
-                out_tree_capture.append(out_tree)
-                return flat_out
+        return jax.make_jaxpr(flat_quax_call)(flat_args)
 
-            return jax.make_jaxpr(flat_quax_call)(flat_args), out_tree_capture[0]
+    quax_branches = tuple(_make_quax_branch(j) for j in branches)
 
-        quax_branches_tuple, out_trees = zip(*(_make_quax_branch(j) for j in branches))
+    if any(t != out_trees[0] for t in out_trees[1:]):
+        raise TypeError("all branches output must have the same pytree.")
 
-        if any(t != out_trees[0] for t in out_trees[1:]):
-            raise TypeError("all branches output must have the same pytree.")
-
-        # Strong refs to original branches prevent id reuse after GC.
-        entry = (tuple(branches), quax_branches_tuple, out_trees[0])
-        _cond_quax_cache[key] = entry
-
-    _, quax_branches_tuple, out_tree = entry
-
-    # Build kwargs dict
     kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:
         kwargs["branches_platforms"] = branches_platforms
 
-    out_val = jax.lax.cond_p.bind(
-        index, *flat_args, branches=quax_branches_tuple, **kwargs
-    )
-    result = jtu.tree_unflatten(out_tree, out_val)
-    return result
+    out_val = jax.lax.cond_p.bind(index, *flat_args, branches=quax_branches, **kwargs)
+    return jtu.tree_unflatten(out_trees[0], out_val)
 
 
 # Cache for scan_quax: (id(jaxpr), consts_struct, carry_struct, xs_struct)
