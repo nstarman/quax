@@ -51,6 +51,7 @@ class MyType(quax.ArrayValue):
 
 @quax.register(jax.lax.add_p)
 def _(x: MyType, y: MyType) -> MyType:
+    assert x._shape == y._shape
     array = x.array + y.array
     return MyType(array, _shape=x._shape)
 ```
