@@ -611,9 +611,9 @@ def jit_quax(
 def while_quax(
     *args: ArrayValue | ArrayLike,
     cond_nconsts: int,
-    cond_jaxpr: Any,  # TODO: more specific type
+    cond_jaxpr: core.ClosedJaxpr,
     body_nconsts: int,
-    body_jaxpr: Any,  # TODO: more specific type
+    body_jaxpr: core.ClosedJaxpr,
 ) -> tuple[ArrayValue | ArrayLike, ...]:
     body_end = cond_nconsts + body_nconsts
     cond_consts = args[:cond_nconsts]
@@ -687,8 +687,8 @@ def cond_quax(
 
 @register(jax.lax.scan_p)
 def scan_quax(
-    *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs
-):
+    *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs: Any
+) -> Any:
     consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
     carry_flat, carry_struct = jtu.tree_flatten(
         args[num_consts : num_consts + num_carry]
