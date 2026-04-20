@@ -164,10 +164,7 @@ class _QuaxTrace(
     # Override methods from jax.core.Trace
 
     def process_primitive(
-        self,
-        primitive: jexc.Primitive,
-        tracers: Sequence[_QuaxTracer],
-        params: dict[str, Any],
+        self, primitive: jexc.Primitive, tracers: Sequence[Any], params: dict[str, Any]
     ) -> _QuaxTracer | list[_QuaxTracer]:
         """Processes a primitive with the given tracers and parameters.
 
@@ -317,8 +314,6 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
             out_split = len(out_values) // 2
             out_primal_values = out_values[:out_split]
             out_tangent_values = out_values[out_split:]
-            # Use list comprehension instead of append loop
-            assert len(out_primal_values) == len(out_tangent_values)
             out_primal_values2 = []
             out_tangent_values2 = []
             for primal, tangent in zip(
@@ -615,9 +610,9 @@ def jit_quax(
 def while_quax(
     *args: ArrayValue | ArrayLike,
     cond_nconsts: int,
-    cond_jaxpr: core.Jaxpr,
+    cond_jaxpr: Any,  # TODO: more specific type
     body_nconsts: int,
-    body_jaxpr: core.Jaxpr,
+    body_jaxpr: Any,  # TODO: more specific type
 ) -> tuple[ArrayValue | ArrayLike, ...]:
     body_end = cond_nconsts + body_nconsts
     cond_consts = args[:cond_nconsts]
@@ -654,7 +649,7 @@ _sentinel = object()
 def cond_quax(
     index: ArrayLike,
     *args: ArrayValue | ArrayLike,
-    branches: tuple[core.Jaxpr, ...],
+    branches: tuple[PyTree, ...],
     linear: tuple[bool, ...] | object = _sentinel,
     branches_platforms: tuple[str, ...] | object = _sentinel,
 ) -> Any:
@@ -690,12 +685,8 @@ def cond_quax(
 
 
 @register(jax.lax.scan_p)
-def _(
-    *args: ArrayValue | ArrayLike,
-    num_consts: int,
-    num_carry: int,
-    jaxpr,
-    **kwargs,
+def scan_quax(
+    *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs
 ):
     consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
     carry_flat, carry_struct = jtu.tree_flatten(
