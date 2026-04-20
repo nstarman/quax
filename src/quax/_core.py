@@ -2,7 +2,17 @@ import abc
 import functools as ft
 import itertools as it
 from collections.abc import Callable, Sequence
-from typing import Any, cast, Generic, overload, TypeAlias, TypeGuard, TypeVar, Union
+from typing import (
+    Any,
+    cast,
+    Generic,
+    no_type_check,
+    overload,
+    TypeAlias,
+    TypeGuard,
+    TypeVar,
+    Union,
+)
 
 import equinox as eqx
 import jax
@@ -778,8 +788,10 @@ def cond_quax(
     return jtu.tree_unflatten(out_trees[0], out_val)
 
 
-# Cache for scan_quax: (id(jaxpr), consts_struct, carry_struct, xs_struct)
-#   -> (jaxpr_ref, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat)
+# Cache for scan_quax: (id(jaxpr), consts_treedef, carry_treedef, xs_treedef)
+#   -> (jaxpr_ref, quax_jaxpr, out_treedef, nc, nv)
+# nc/nv = number of flat consts/carry leaves.
+# A strong ref to jaxpr is stored so its id() cannot be reused after GC.
 _scan_quax_cache: dict[tuple, tuple] = {}
 
 
@@ -787,48 +799,52 @@ _scan_quax_cache: dict[tuple, tuple] = {}
 def scan_quax(
     *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs: Any
 ) -> Any:
-    consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
-    carry_flat, carry_struct = jtu.tree_flatten(
-        args[num_consts : num_consts + num_carry]
-    )
-    xs_flat, xs_struct = jtu.tree_flatten(args[num_consts + num_carry :])
+    """Quax handler for ``lax.scan_p``.
 
-    n_consts_flat = len(consts_flat)
-    n_carry_flat = len(carry_flat)
+    Splits the flat ``args`` sequence into the three groups that ``lax.scan``
+    uses — constants, initial carry, and stacked ``xs`` — then builds a
+    quaxified jaxpr for the scan body and re-binds the primitive with it.
 
-    key = (id(jaxpr), consts_struct, carry_struct, xs_struct)
+    The quaxified body jaxpr is cached by ``(id(jaxpr), consts_treedef,
+    carry_treedef, xs_treedef)`` so that repeated calls with the same scan
+    body and pytree structure skip the ``jax.make_jaxpr`` tracing step.
+    """
+    consts_flat, c_tree = jtu.tree_flatten(args[:num_consts])
+    carry_flat, v_tree = jtu.tree_flatten(args[num_consts : num_consts + num_carry])
+    xs_flat, x_tree = jtu.tree_flatten(args[num_consts + num_carry :])
+
+    nc = len(consts_flat)
+    nv = len(carry_flat)
+
+    key = (id(jaxpr), c_tree, v_tree, x_tree)
     entry = _scan_quax_cache.get(key)
     if entry is None:
         trace_in = (*consts_flat, *carry_flat, *[x[0, ...] for x in xs_flat])
+        fn = core.jaxpr_as_fun(jaxpr)
 
-        jax_fn = core.jaxpr_as_fun(jaxpr)
+        @no_type_check  # for beartype
+        def quax_fn(*flat: ArrayValue | ArrayLike) -> Any:
+            consts = jtu.tree_unflatten(c_tree, flat[:nc])
+            carry = jtu.tree_unflatten(v_tree, flat[nc : nc + nv])
+            xs = jtu.tree_unflatten(x_tree, flat[nc + nv :])
+            return quaxify(fn)(*consts, *carry, *xs)
 
-        def quax_fn(*args_flat):
-            consts = jtu.tree_unflatten(consts_struct, args_flat[:n_consts_flat])
-            carry = jtu.tree_unflatten(
-                carry_struct, args_flat[n_consts_flat : n_consts_flat + n_carry_flat]
-            )
-            xs = jtu.tree_unflatten(
-                xs_struct, args_flat[n_consts_flat + n_carry_flat :]
-            )
-            return quaxify(jax_fn)(*consts, *carry, *xs)
-
-        quax_jaxpr, out_tree = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
-        out_struct = jtu.tree_structure(out_tree)
-        # Strong ref to jaxpr prevents id reuse after GC.
-        entry = (jaxpr, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat)
+        quax_jaxpr, out_shape = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
+        out_tree = jtu.tree_structure(out_shape)
+        # Strong ref to jaxpr prevents its id() being reused after GC.
+        entry = (jaxpr, quax_jaxpr, out_tree, nc, nv)
         _scan_quax_cache[key] = entry
     else:
-        _, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat = entry
+        _, quax_jaxpr, out_tree, nc, nv = entry
 
     out_flat = jax.lax.scan_p.bind(
         *consts_flat,
         *carry_flat,
         *xs_flat,
         jaxpr=quax_jaxpr,
-        num_consts=n_consts_flat,
-        num_carry=n_carry_flat,
+        num_consts=nc,
+        num_carry=nv,
         **kwargs,
     )
 
-    return jtu.tree_unflatten(out_struct, out_flat)
+    return jtu.tree_unflatten(out_tree, out_flat)
