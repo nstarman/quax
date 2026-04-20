@@ -1,4 +1,4 @@
-from typing import get_args
+from typing import Any, get_args
 
 import equinox as eqx
 import jax.core
@@ -143,7 +143,7 @@ def _(x: ArrayLike, y: BCOO) -> ArrayLike:
 
 
 @quax.register(lax.mul_p)
-def _(x: BCOO, y: BCOO):
+def _(x: BCOO, y: BCOO, /, **kw: Any) -> BCOO:
     # This is actually surprisingly hard.
     raise NotImplementedError(
         "elementwise multiplication between two sparse matrices is not implemented"
@@ -151,7 +151,7 @@ def _(x: BCOO, y: BCOO):
 
 
 @quax.register(lax.mul_p)
-def _mul_bcoo_dense(x: BCOO, y: ArrayLike) -> BCOO:
+def _mul_bcoo_dense(x: BCOO, y: ArrayLike, /, **kw: Any) -> BCOO:
     x, y = quax.quaxify(jnp.broadcast_arrays)(x, y)  # pyright: ignore[reportArgumentType,reportAssignmentType]
     assert isinstance(x, BCOO)
     assert isinstance(y, get_args(ArrayLike))
@@ -163,10 +163,10 @@ def _mul_bcoo_dense(x: BCOO, y: ArrayLike) -> BCOO:
         getindex = jax.vmap(getindex)
     # ~
     y_data = getindex(y, indices)
-    data = x.data * y_data
+    data = lax.mul_p.bind(x.data, y_data, **kw)
     return BCOO(data, x.indices, x.shape, x.allow_materialise)
 
 
 @quax.register(lax.mul_p)
-def _(x: ArrayLike, y: BCOO) -> BCOO:
-    return _mul_bcoo_dense(y, x)
+def _(x: ArrayLike, y: BCOO, /, **kw: Any) -> BCOO:
+    return _mul_bcoo_dense(y, x, **kw)

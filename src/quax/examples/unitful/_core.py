@@ -1,3 +1,5 @@
+from typing import Any
+
 import equinox as eqx  # https://github.com/patrick-kidger/equinox
 import jax
 import jax.core as core
@@ -49,24 +51,24 @@ def _(x: Unitful, y: Unitful):  # function name doesn't matter
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: Unitful, y: Unitful):
+def _(x: Unitful, y: Unitful, /, **kw: Any) -> Unitful:
     units = x.units.copy()
     for k, v in y.units.items():
         if k in units:
             units[k] += v
         else:
             units[k] = v
-    return Unitful(x.array * y.array, units)
+    return Unitful(jax.lax.mul_p.bind(x.array, y.array, **kw), units)
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: ArrayLike, y: Unitful):
-    return Unitful(x * y.array, y.units)
+def _(x: ArrayLike, y: Unitful, /, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.mul_p.bind(x, y.array, **kw), y.units)
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: Unitful, y: ArrayLike):
-    return Unitful(x.array * y, x.units)
+def _(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.mul_p.bind(x.array, y, **kw), x.units)
 
 
 @quax.register(jax.lax.integer_pow_p)
