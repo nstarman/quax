@@ -2,7 +2,7 @@ import abc
 import functools as ft
 import itertools as it
 from collections.abc import Callable, Sequence
-from typing import Any, cast, Generic, overload, TypeGuard, TypeVar, Union
+from typing import Any, cast, Generic, overload, TypeAlias, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax
@@ -20,6 +20,7 @@ from ._compat import JAX_GE_0_9_2, jit_p, typeof
 
 T = TypeVar("T")
 CT = TypeVar("CT", bound=Callable)
+ValueLike: TypeAlias = Union[ArrayLike, "Value"]
 
 #
 # Rules
@@ -97,44 +98,52 @@ class _QuaxTracer(core.Tracer):
         return self.value.aval()
 
     def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
-        if isinstance(self.value, _DenseArrayValue):
-            return core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
-        else:
-            return self
+        return (
+            core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
+            if isinstance(self.value, _DenseArrayValue)
+            else self
+        )
+
+
+DefaultCallable: TypeAlias = Callable[
+    [jexc.Primitive, Sequence[ValueLike], dict[str, Any]],
+    ValueLike | Sequence[ValueLike],
+]
 
 
 def _default_process(
-    primitive: jexc.Primitive, values: Sequence[Union[ArrayLike, "Value"]], params
-):
-    defaults = set()
+    primitive: jexc.Primitive, values: Sequence[ValueLike], params: dict[str, Any]
+) -> ValueLike | Sequence[ValueLike]:
+    # Fast path: find first non-default, then check if all match
+    default: DefaultCallable | None = None
+    value_default = Value.default  # Cache attribute lookup
     for x in values:
         if isinstance(x, Value):
             x_default = type(x).default
-            if x_default is not Value.default:
-                defaults.add(x_default)
-        elif eqx.is_array_like(x):
-            # Ignore any unwrapped _DenseArrayValues
-            pass
-        else:
+            if x_default is value_default:
+                continue
+            if default is None:
+                default = x_default
+            elif default is not x_default:
+                # Multiple different defaults - slow path
+                types = {type(v) for v in values if isinstance(v, Value)}
+                raise TypeError(
+                    f"Multiple array-ish types {types} are specifying default "
+                    f"process rules."
+                )
+        elif not eqx.is_array_like(x):
             assert False
-    if len(defaults) == 0:
-        default = Value.default
-    elif len(defaults) == 1:
-        [default] = defaults
-    else:
-        types = {type(x) for x in values}
-        raise TypeError(
-            f"Multiple array-ish types {types} are specifying default process rules."
-        )
+
+    if default is None:
+        default = value_default
 
     return default(primitive, values, params)
 
 
 def _wrap_if_array(x: Union[ArrayLike, "Value"]) -> "Value":
-    if eqx.is_array_like(x):
-        return _DenseArrayValue(cast(ArrayLike, x))
-    else:
-        return cast(Value, x)
+    return (
+        _DenseArrayValue(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
+    )
 
 
 class _QuaxTrace(
@@ -142,12 +151,12 @@ class _QuaxTrace(
 ):
     __slots__ = ("tag", "parent_trace")
 
-    def __init__(self, parent_trace, tag):
+    def __init__(self, parent_trace: core.Trace | None, tag: core.TraceTag) -> None:
         self.tag = tag
         self.parent_trace = parent_trace
         super().__init__()
 
-    def to_value(self, val):
+    def to_value(self, val: Any) -> Any:
         if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:  # type: ignore[attr-defined]
             return val.value
         return _DenseArrayValue(val)
@@ -155,7 +164,9 @@ class _QuaxTrace(
     # ===========================================
     # Override methods from jax.core.Trace
 
-    def process_primitive(self, primitive, tracers, params):
+    def process_primitive(
+        self, primitive: jexc.Primitive, tracers: Sequence[Any], params: dict[str, Any]
+    ) -> _QuaxTracer | list[_QuaxTracer]:
         """Processes a primitive with the given tracers and parameters.
 
         This is the main entry point for processing primitives in JAX. It is
@@ -174,11 +185,10 @@ class _QuaxTrace(
 
         """
         # Parse the tracers into values, unpacking any _DenseArrayValues.
+        # Use generator directly to avoid list allocation
         values = tuple(
-            [
-                (x.array if isinstance(x := self.to_value(t), _DenseArrayValue) else x)
-                for t in tracers
-            ]
+            (x.array if isinstance(x := self.to_value(t), _DenseArrayValue) else x)
+            for t in tracers
         )
 
         # Call the dispatch rule for this primitive
@@ -207,10 +217,11 @@ class _QuaxTrace(
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
         ) -> list[_QuaxTracer]:
-            tracers_v = [self.to_value(t) for t in tracers]
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
-            in_leaves, in_treedef = jtu.tree_flatten(tracers_v)
+            in_leaves, in_treedef = jtu.tree_flatten(
+                [self.to_value(t) for t in tracers]
+            )
             fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)
             jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)
             avals = tuple(x.aval if type(x) is SZ else typeof(x) for x in in_leaves)
@@ -227,10 +238,11 @@ class _QuaxTrace(
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
         ) -> list[_QuaxTracer]:
-            in_values = [self.to_value(t) for t in tracers]
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
-            in_leaves, in_treedef = jtu.tree_flatten(in_values)
+            in_leaves, in_treedef = jtu.tree_flatten(
+                [self.to_value(t) for t in tracers]
+            )
             fun, out_treedef1 = _custom_jvp_fun_wrap(fun, self.tag, in_treedef)
             jvp, out_treedef2 = _custom_jvp_jvp_wrap(jvp, self.tag, in_treedef)
             out_leaves = primitive.bind_with_trace(
@@ -267,10 +279,11 @@ def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
 
 @lu.transformation_with_aux
 def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
-    in_primals = in_primals_and_tangents[: len(in_primals_and_tangents) // 2]
-    in_tangents = in_primals_and_tangents[len(in_primals_and_tangents) // 2 :]
-    in_primal_values = jtu.tree_unflatten(in_treedef, in_primals)
-    in_tangent_values_raw = jtu.tree_unflatten(in_treedef, in_tangents)
+    split = len(in_primals_and_tangents) // 2
+    in_primal_values = jtu.tree_unflatten(in_treedef, in_primals_and_tangents[:split])
+    in_tangent_values_raw = jtu.tree_unflatten(
+        in_treedef, in_primals_and_tangents[split:]
+    )
     # When symbolic_zeros=True, JAX may pass SymbolicZero tangent leaves. After
     # unflattening, SZs can be embedded inside a Value (e.g. MyArray(SZ)),
     # breaking .aval() calls. Promote only fully-symbolic tangents back to a
@@ -298,12 +311,15 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
                 for t in out_tracers
             ]
             out_values = [trace.to_value(t) for t in out_tracers]
-            out_primal_values = out_values[: len(out_values) // 2]
-            out_tangent_values = out_values[len(out_values) // 2 :]
+            # Pre-calculate split point
+            out_split = len(out_values) // 2
+            out_primal_values = out_values[:out_split]
+            out_tangent_values = out_values[out_split:]
             out_primal_values2 = []
             out_tangent_values2 = []
-            assert len(out_primal_values) == len(out_tangent_values)
-            for primal, tangent in zip(out_primal_values, out_tangent_values):
+            for primal, tangent in zip(
+                out_primal_values, out_tangent_values, strict=True
+            ):
                 if primal.__class__ != tangent.__class__:
                     primal = primal.materialise()
                     tangent = tangent.materialise()
@@ -325,7 +341,7 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
 #
 
 
-# Any -> Any so overloads carry the public types. mypy can’t prove the else
+# Any -> Any so overloads carry the public types. mypy can't prove the else
 # branch is T (since T may be Value). To type the body, use Union[Value, T]
 # + cast(T, x), or constrain T to exclude Value.
 @overload
@@ -336,16 +352,12 @@ def _wrap_tracer(trace: _QuaxTrace, x: Any) -> Any:
     return _QuaxTracer(trace, x) if _is_value(x) else x
 
 
-def _unwrap_tracer(trace, x):
+def _unwrap_tracer(trace: "_QuaxTrace", x: Any) -> Any:
     if eqx.is_array_like(x):
         x = trace.full_raise(x)
     if isinstance(x, _QuaxTracer):
-        if isinstance(x.value, _DenseArrayValue):
-            return x.value.array
-        else:
-            return x.value
-    else:
-        return x
+        return x.value.array if isinstance(x.value, _DenseArrayValue) else x.value
+    return x
 
 
 class _Quaxify(eqx.Module, Generic[CT]):
@@ -357,17 +369,16 @@ class _Quaxify(eqx.Module, Generic[CT]):
     def __wrapped__(self) -> CT:
         return self.fn
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         dynamic, static = eqx.partition(
             (self.fn, args, kwargs), self.filter_spec, is_leaf=_is_value
         )
         tag = core.TraceTag()
         with core.take_current_trace() as parent_trace:
             trace = _QuaxTrace(parent_trace, tag)
+            # Cache partial functions to avoid repeated closure creation
             dynamic = jtu.tree_map(
-                ft.partial(_wrap_tracer, trace),
-                dynamic,
-                is_leaf=_is_value,
+                ft.partial(_wrap_tracer, trace), dynamic, is_leaf=_is_value
             )
             fn, args, kwargs = eqx.combine(dynamic, static)
             with core.set_current_trace(trace):
@@ -443,10 +454,8 @@ class Value(eqx.Module):
 
     @staticmethod
     def default(
-        primitive: jexc.Primitive,
-        values: Sequence[Union[ArrayLike, "Value"]],
-        params,
-    ) -> Union[ArrayLike, "Value", Sequence[Union[ArrayLike, "Value"]]]:
+        primitive: jexc.Primitive, values: Sequence[ValueLike], params: dict[str, Any]
+    ) -> ValueLike | Sequence[ValueLike]:
         """This is the default rule for when no rule has been [`quax.register`][]'d for
         a primitive.
 
@@ -492,14 +501,10 @@ class Value(eqx.Module):
             (Using the [Equinox](https://github.com/patrick-kidger/equinox) library that
             underlies much of the JAX ecosystem.)
         """
-        arrays: list[ArrayLike] = []
-        for x in values:
-            if _is_value(x):
-                arrays.append(x.materialise())
-            elif eqx.is_array_like(x):
-                arrays.append(cast(ArrayLike, x))
-            else:
-                assert False
+        # Use list comprehension for better performance
+        arrays = [
+            x.materialise() if _is_value(x) else cast(ArrayLike, x) for x in values
+        ]
         return primitive.bind(*arrays, **params)
 
     @abc.abstractmethod
@@ -556,19 +561,19 @@ class ArrayValue(Value):
         pass
 
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, ...]:
         return self.aval().shape
 
     @property
-    def dtype(self):
+    def dtype(self) -> Any:  # jax.numpy.dtype or ExtendedDType
         return self.aval().dtype
 
     @property
-    def ndim(self):
+    def ndim(self) -> int:
         return self.aval().ndim
 
     @property
-    def size(self):
+    def size(self) -> int:
         return self.aval().size
 
 
@@ -606,13 +611,14 @@ def jit_quax(
 def while_quax(
     *args: ArrayValue | ArrayLike,
     cond_nconsts: int,
-    cond_jaxpr,
+    cond_jaxpr: core.ClosedJaxpr,
     body_nconsts: int,
-    body_jaxpr,
-):
+    body_jaxpr: core.ClosedJaxpr,
+) -> tuple[ArrayValue | ArrayLike, ...]:
+    body_end = cond_nconsts + body_nconsts
     cond_consts = args[:cond_nconsts]
-    body_consts = args[cond_nconsts : cond_nconsts + body_nconsts]
-    init_vals = args[cond_nconsts + body_nconsts :]
+    body_consts = args[cond_nconsts:body_end]
+    init_vals = args[body_end:]
 
     # compute jaxpr of quaxified body and condition function
     quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
@@ -644,17 +650,17 @@ _sentinel = object()
 def cond_quax(
     index: ArrayLike,
     *args: ArrayValue | ArrayLike,
-    branches: tuple,
-    linear=_sentinel,
-    branches_platforms=_sentinel,
-):
+    branches: tuple[core.ClosedJaxpr, ...],
+    linear: tuple[bool, ...] | object = _sentinel,
+    branches_platforms: tuple[str, ...] | object = _sentinel,
+) -> Any:
     flat_args, in_tree = jtu.tree_flatten(args)
 
-    out_trees = []
-    quax_branches = []
+    out_trees: list[Any] = []  # list[jtu.PyTreeDef]
+    quax_branches: list[core.ClosedJaxpr] = []
     for jaxpr in branches:
 
-        def flat_quax_call(flat_args):
+        def flat_quax_call(flat_args: list[Any]) -> list[Any]:
             args = jtu.tree_unflatten(in_tree, flat_args)
             out = quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
             flat_out, out_tree = jtu.tree_flatten(out)
@@ -667,9 +673,8 @@ def cond_quax(
     if any(tree_outs_i != out_trees[0] for tree_outs_i in out_trees[1:]):
         raise TypeError("all branches output must have the same pytree.")
 
-    kwargs = {}
-    if linear is not _sentinel:
-        kwargs["linear"] = linear
+    # Build kwargs dict more efficiently
+    kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:
         kwargs["branches_platforms"] = branches_platforms
 
@@ -681,13 +686,9 @@ def cond_quax(
 
 
 @register(jax.lax.scan_p)
-def _(
-    *args: ArrayValue | ArrayLike,
-    num_consts: int,
-    num_carry: int,
-    jaxpr,
-    **kwargs,
-):
+def scan_quax(
+    *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs: Any
+) -> Any:
     consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
     carry_flat, carry_struct = jtu.tree_flatten(
         args[num_consts : num_consts + num_carry]
