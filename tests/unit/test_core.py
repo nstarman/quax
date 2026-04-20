@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 import equinox as eqx
 import jax
@@ -44,8 +44,8 @@ def test_default_override():
                 return Record(out)
 
     @quax.register(lax.mul_p)
-    def _(a: Record, b: Record):
-        return Record(a.array * b.array)
+    def _(a: Record, b: Record, /, **kw: Any):
+        return Record(lax.mul_p.bind(a.array, b.array, **kw))
 
     x = Record(jnp.array(1.0))
     y = Record(jnp.array(2.0))

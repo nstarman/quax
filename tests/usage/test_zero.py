@@ -1,14 +1,21 @@
+from typing import Final
+
 import equinox as eqx
 import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from packaging.version import Version
 
 import quax
 import quax.examples.zero as zero
+from quax._compat import JAX_VERSION
 
 from ..helpers import tree_allclose
+
+
+JAX_GE_0_10_0: Final = JAX_VERSION >= Version("0.10.0")
 
 
 def test_broadcast():
@@ -81,6 +88,34 @@ def test_mul():
         assert eqx.tree_equal(mul(tensor_zero, jnp.array(1)), tensor_zero)
         assert tree_allclose(mul(1, tensor_zero), tensor_zero)
         assert eqx.tree_equal(mul(jnp.array(1), tensor_zero), tensor_zero)
+
+
+@pytest.mark.skipif(not JAX_GE_0_10_0, reason="out_dtype kwarg requires JAX >= 0.10.0")
+def test_mul_out_dtype():
+    """Test that mul_p respects out_dtype kwarg (added in JAX v0.10.0)."""
+    scalar_zero = zero.Zero((), jnp.float32)
+    vector_zero = zero.Zero((2,), jnp.float32)
+    out_dtype = jnp.float16
+
+    mul_bind = quax.quaxify(lax.mul_p.bind)
+
+    # Zero * ArrayLike with out_dtype
+    result = mul_bind(scalar_zero, jnp.array(2.0, jnp.float32), out_dtype=out_dtype)
+    assert isinstance(result, zero.Zero)
+    assert result.dtype == out_dtype
+    assert result.shape == ()
+
+    # ArrayLike * Zero with out_dtype
+    result = mul_bind(jnp.array(2.0, jnp.float32), scalar_zero, out_dtype=out_dtype)
+    assert isinstance(result, zero.Zero)
+    assert result.dtype == out_dtype
+    assert result.shape == ()
+
+    # Zero * Zero with out_dtype
+    result = mul_bind(vector_zero, vector_zero, out_dtype=out_dtype)
+    assert isinstance(result, zero.Zero)
+    assert result.dtype == out_dtype
+    assert result.shape == (2,)
 
 
 def test_matmul(getkey):
