@@ -51,7 +51,8 @@ class MyType(quax.ArrayValue):
 
 @quax.register(jax.lax.add_p)
 def _(x: MyType, y: MyType) -> MyType:
-    return MyType(x.array + y.array)
+    array = x.array + y.array
+    return MyType(array, _shape=tuple(array.shape))
 ```
 
 Use `@quax.register(prim, precedence=1)` to resolve plum ambiguity between overlapping rules.
@@ -77,7 +78,7 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_core.py` has dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
-- **Pyright runs only on `src/`** — `tests/` is excluded from type checking.
+- **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
 - **Doctests run** from `README.md`, `docs/`, and `src/` — keep examples in those files valid.
 
 ## Dependencies

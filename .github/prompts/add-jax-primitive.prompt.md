@@ -8,7 +8,7 @@ Register a new JAX primitive handler for the `$input` operation.
 
 ## Steps
 
-1. **Identify the primitive** — Find the `jax.lax.*_p` primitive that corresponds to the operation. When unsure, check what primitive JAX uses by running `jax.make_jaxpr(jnp.op)(array)` or searching [src/quax/\_core.py](../src/quax/_core.py) and the JAX source.
+1. **Identify the primitive** — Find the `jax.lax.*_p` primitive that corresponds to the operation. When unsure, check what primitive JAX uses by running `jax.make_jaxpr(jnp.op)(array)` or searching [src/quax/\_core.py](../../src/quax/_core.py) and the JAX source.
 
 2. **Determine the type signatures needed** — Consider all combinations of the target `ArrayValue` type with `ArrayLike | quax.ArrayValue` (for mixed-type operations). Common patterns from the codebase:
    - Unary: `(x: MyType) -> MyType`
@@ -40,7 +40,7 @@ Register a new JAX primitive handler for the `$input` operation.
    - For `jnp` functions: `tests/unit/test_numpy/test_myarray.py`
    - For a specific `quax.examples` type: `tests/usage/test_<name>.py`
 
-   Test entries use the `(func_name, args, kw, expect_myarray)` tuple format. See [tests/unit/myarray.py](../tests/unit/myarray.py) for the `MyArray` fixture.
+   Test entries use the `(func_name, args, kw, expect_myarray)` tuple format. See [tests/unit/myarray.py](../../tests/unit/myarray.py) for the `MyArray` fixture.
 
 6. **Verify** — Run:
    ```bash
@@ -50,6 +50,6 @@ Register a new JAX primitive handler for the `$input` operation.
 
 ## Reference examples
 
-- Simple unary/binary rules: [src/quax/examples/zero/\_core.py](../src/quax/examples/zero/_core.py)
-- Advanced rules with kwargs and precedence: [src/quax/examples/lora/\_core.py](../src/quax/examples/lora/_core.py)
+- Simple unary/binary rules: [src/quax/examples/zero/\_core.py](../../src/quax/examples/zero/_core.py)
+- Advanced rules with kwargs and precedence: [src/quax/examples/lora/\_core.py](../../src/quax/examples/lora/_core.py)
 - Mixed-type rules: search for `ArrayLike | quax.ArrayValue` in `src/quax/examples/`
