@@ -4,8 +4,10 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jtu
 import pytest
+from packaging.version import Version
 
 import quax
+from quax._compat import JAX_VERSION
 
 from ..myarray import is_myarray, MyArray, unwrap
 from ..test_lax.test_myarray import _unwrap_myarray
@@ -16,6 +18,19 @@ xfail_quax58 = pytest.mark.xfail(
 )
 mark_todo = pytest.mark.skip("TODO")
 mark_nomd = pytest.mark.xfail(reason="Can't be supported with MD on primitives")
+skip_removed_jax_0_10_0 = pytest.mark.skipif(
+    JAX_VERSION >= Version("0.10"),
+    reason="removed in JAX v0.10.0",
+)
+xfail_deprecated_jax_0_9_0 = (
+    pytest.mark.xfail(
+        Version("0.9") <= JAX_VERSION < Version("0.10"),
+        raises=DeprecationWarning,
+        reason="deprecated in JAX v0.9.0",
+        strict=True,
+    ),
+    pytest.mark.filterwarnings("error::DeprecationWarning"),
+)
 
 x = MyArray(jnp.array([[1, 2], [3, 4]], dtype=float))
 y = MyArray(jnp.array([[5, 6], [7, 8]], dtype=float))
@@ -163,7 +178,13 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
         pytest.param("extract", (jnp.array([True]), x), {}, True, marks=xfail_quax58),
         ("fabs", (x,), {}, True),
         ("fill_diagonal", (x, 2), {"inplace": False}, True),
-        ("fix", (x,), {}, True),
+        pytest.param(
+            "fix",
+            (x,),
+            {},
+            True,
+            marks=[*xfail_deprecated_jax_0_9_0, skip_removed_jax_0_10_0],
+        ),
         *(
             pytest.param("flatnonzero", (x,), {}, True, marks=xfail_quax58),
             ("flatnonzero", (x,), {"size": x.size}, True),

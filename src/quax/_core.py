@@ -93,7 +93,7 @@ class _QuaxTracer(core.Tracer):
         self.value = value
 
     @property
-    def aval(self) -> core.AbstractValue:
+    def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
         return self.value.aval()
 
     def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
