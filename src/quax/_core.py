@@ -29,6 +29,11 @@ ValueLike: TypeAlias = Union[ArrayLike, "Value"]
 
 _rules: dict[jexc.Primitive, plum.Function] = {}
 
+# Cache resolved dispatch methods keyed by (primitive, arg-types).
+# Sentinel for "no matching rule; fall through to _default_process".
+_DISPATCH_MISS = object()
+_dispatch_cache: dict[tuple, Any] = {}
+
 
 def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT], CT]:
     """Registers a multiple dispatch implementation for this JAX primitive.
@@ -75,6 +80,11 @@ def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT]
 
             _rules[primitive] = existing_rule
         existing_rule.dispatch(rule, precedence=precedence)
+        # Invalidate any cached dispatch decisions for this primitive so that
+        # newly registered rules are picked up on the next call.
+        keys_to_drop = [k for k in _dispatch_cache if k[0] is primitive]
+        for k in keys_to_drop:
+            del _dispatch_cache[k]
         return rule
 
     return _register
@@ -95,7 +105,13 @@ class _QuaxTracer(core.Tracer):
 
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
-        return self.value.aval()
+        v = self.value
+        # Fast path for _DenseArrayValue: bypass eqx's __getattribute__ which
+        # wraps every method access in a new BoundMethod (another eqx.Module).
+        # JAX calls .aval on every tracer throughout tracing, so this is hot.
+        if type(v) is _DenseArrayValue:
+            return typeof(object.__getattribute__(v, "array"))
+        return v.aval()
 
     def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
         return (
@@ -184,24 +200,62 @@ class _QuaxTrace(
         processing the primitive.
 
         """
+        # ── O1: fast path for all-dense inputs with no registered rule ──────
+        # When every input is one of *our* _QuaxTracer wrappers around a plain
+        # JAX array (_DenseArrayValue) and there is no registered quax rule for
+        # this primitive, skip the entire dispatch stack and delegate directly
+        # to the parent trace.  This avoids per-call allocations of
+        # _DenseArrayValue objects, the plum lookup, _default_process, and the
+        # materialise loop — the common case when quaxify wraps pure-JAX code.
+        if primitive not in _rules:
+            tag = self.tag
+            arrays: list[Any] = []
+            for t in tracers:
+                if not (isinstance(t, _QuaxTracer) and t._trace.tag is tag):  # type: ignore[attr-defined]
+                    break
+                v = t.value
+                if not isinstance(v, _DenseArrayValue):
+                    break
+                arrays.append(v.array)
+            else:
+                # All inputs were our dense tracers
+                with core.set_current_trace(self.parent_trace):
+                    out = primitive.bind(*arrays, **params)
+                if primitive.multiple_results:
+                    return [_QuaxTracer(self, _DenseArrayValue(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
+                return _QuaxTracer(self, _DenseArrayValue(out))  # pyright: ignore[reportArgumentType]
+
+        # ── full dispatch path ───────────────────────────────────────────────
         # Parse the tracers into values, unpacking any _DenseArrayValues.
-        # Use generator directly to avoid list allocation
         values = tuple(
             (x.array if isinstance(x := self.to_value(t), _DenseArrayValue) else x)
             for t in tracers
         )
 
-        # Call the dispatch rule for this primitive
+        # ── O2: cache resolved dispatch method per (primitive, arg-types) ───
+        # plum's resolve_method performs MRO inspection on every call; cache
+        # the result so repeated invocations with the same type signature pay
+        # the lookup cost only once.
+        cache_key = (primitive, tuple(type(v) for v in values))
+        cached = _dispatch_cache.get(cache_key)
+
         with core.set_current_trace(self.parent_trace):
-            rule = _rules.get(primitive)
-            if rule is None:
+            if cached is _DISPATCH_MISS:
+                out = _default_process(primitive, values, params)
+            elif cached is not None:
+                out = cached(*values, **params)
+            elif (rule := _rules.get(primitive)) is None:
+                # First time seeing this (primitive, types) combination.
+                _dispatch_cache[cache_key] = _DISPATCH_MISS
                 out = _default_process(primitive, values, params)
             else:
                 try:
                     method, _ = rule.resolve_method(values)
                 except plum.NotFoundLookupError:
+                    _dispatch_cache[cache_key] = _DISPATCH_MISS
                     out = _default_process(primitive, values, params)
                 else:
+                    _dispatch_cache[cache_key] = method
                     out = method(*values, **params)
 
         # Post-process the output
@@ -593,18 +647,53 @@ class _DenseArrayValue(ArrayValue):
         return typeof(self.array)
 
 
+# Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_ref, jitted_fn).
+# We store a strong reference to jaxpr as the first element so that the
+# object cannot be GC'd and have its id reused while the entry lives here.
+_jit_quax_cache: dict[tuple, tuple[Any, Any]] = {}
+
+
 @register(jit_p)
 def jit_quax(
     *args: ArrayLike | ArrayValue, jaxpr: Any, inline: bool, **kwargs: Any
 ) -> Any:
     del kwargs
-    fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
-    if inline:
-        return fun(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
-    flat_fun = lambda x: fun(*jtu.tree_unflatten(treedef, x))
-    return jax.jit(flat_fun)(leaves)  # now we can call without Quax.
+
+    # Without caching, every call constructs a fresh quaxify wrapper +
+    # lambda and calls jax.jit() on it.  jax.jit identifies functions by
+    # object identity, so a new lambda == a new compilation on every
+    # invocation — the dominant cost for functions like jnp.histogram2d
+    # that contain many internal @jit-decorated helpers.
+    #
+    # The jaxpr is stable across repeated calls with the same argument
+    # avals, so id(jaxpr) is a reliable key.  We also key by (inline,
+    # treedef) to handle the inline branch and structural arg differences.
+    key = (id(jaxpr), inline, treedef)
+    entry = _jit_quax_cache.get(key)
+    if entry is None:
+        fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
+        if inline:  # For inline, store a plain callable; no jax.jit wrapper.
+            entry = (jaxpr, fun)
+        else:
+            # Calling _Quaxify.__call__ directly (unbound) bypasses
+            # eqx.Module.__call__'s dir() + BoundMethod overhead.
+            _fun = cast(_Quaxify, fun)
+            qfun = lambda x: _Quaxify.__call__(_fun, *jtu.tree_unflatten(treedef, x))
+            jitted = jax.jit(qfun)
+            entry = (jaxpr, jitted)  # strong ref to jaxpr prevents id reuse
+        _jit_quax_cache[key] = entry
+
+    if inline:
+        return entry[1](*args)
+    return entry[1](leaves)  # now we can call without Quax.
+
+
+# Cache for while_quax: (id(cond_jaxpr), id(body_jaxpr), val_treedef)
+#   -> (cond_ref, body_ref, quax_cond_jaxpr, quax_body_jaxpr, val_treedef)
+# Strong refs to cond_jaxpr/body_jaxpr prevent id reuse after GC.
+_while_quax_cache: dict[tuple, tuple] = {}
 
 
 @register(jax.lax.while_p)
@@ -620,15 +709,22 @@ def while_quax(
     body_consts = args[cond_nconsts:body_end]
     init_vals = args[body_end:]
 
-    # compute jaxpr of quaxified body and condition function
-    quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
-    quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *init_vals)
-    quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
-    quax_body_jaxpr = jax.make_jaxpr(quax_body_fn)(*body_consts, *init_vals)
-
     cond_leaves, _ = jtu.tree_flatten(cond_consts)
     body_leaves, _ = jtu.tree_flatten(body_consts)
     init_val_leaves, val_treedef = jtu.tree_flatten(init_vals)
+
+    key = (id(cond_jaxpr), id(body_jaxpr), val_treedef)
+    entry = _while_quax_cache.get(key)
+    if entry is None:
+        quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
+        quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *init_vals)
+        quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
+        quax_body_jaxpr = jax.make_jaxpr(quax_body_fn)(*body_consts, *init_vals)
+        # Strong refs prevent GC of the original jaxprs, keeping ids stable.
+        entry = (cond_jaxpr, body_jaxpr, quax_cond_jaxpr, quax_body_jaxpr, val_treedef)
+        _while_quax_cache[key] = entry
+    else:
+        _, _, quax_cond_jaxpr, quax_body_jaxpr, val_treedef = entry
 
     out_val = jax.lax.while_p.bind(
         *cond_leaves,
@@ -646,6 +742,12 @@ def while_quax(
 _sentinel = object()
 
 
+# Cache for cond_quax: (branch_ids, in_tree)
+#   -> (branch_refs, quax_branches_tuple, out_tree)
+# branch_ids = tuple(id(b) for b in branches); strong refs prevent id reuse.
+_cond_quax_cache: dict[tuple, tuple] = {}
+
+
 @register(jax.lax.cond_p)
 def cond_quax(
     index: ArrayLike,
@@ -656,33 +758,51 @@ def cond_quax(
 ) -> Any:
     flat_args, in_tree = jtu.tree_flatten(args)
 
-    out_trees: list[Any] = []  # list[jtu.PyTreeDef]
-    quax_branches: list[core.ClosedJaxpr] = []
-    for jaxpr in branches:
+    key = (tuple(id(b) for b in branches), in_tree)
+    entry = _cond_quax_cache.get(key)
+    if entry is None:
 
-        def flat_quax_call(flat_args: list[Any]) -> list[Any]:
-            args = jtu.tree_unflatten(in_tree, flat_args)
-            out = quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
-            flat_out, out_tree = jtu.tree_flatten(out)
-            out_trees.append(out_tree)
-            return flat_out
+        def _make_quax_branch(
+            jaxpr: core.ClosedJaxpr, /
+        ) -> tuple[core.ClosedJaxpr, Any]:
+            out_tree_capture: list[Any] = []
 
-        quax_jaxpr = jax.make_jaxpr(flat_quax_call)(flat_args)
-        quax_branches.append(quax_jaxpr)
+            def flat_quax_call(flat_args: list[Any]) -> list[Any]:
+                _args = jtu.tree_unflatten(in_tree, flat_args)
+                flat_out, out_tree = jtu.tree_flatten(
+                    quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
+                )
+                out_tree_capture.append(out_tree)
+                return flat_out
 
-    if any(tree_outs_i != out_trees[0] for tree_outs_i in out_trees[1:]):
-        raise TypeError("all branches output must have the same pytree.")
+            return jax.make_jaxpr(flat_quax_call)(flat_args), out_tree_capture[0]
 
-    # Build kwargs dict more efficiently
+        quax_branches_tuple, out_trees = zip(*(_make_quax_branch(j) for j in branches))
+
+        if any(t != out_trees[0] for t in out_trees[1:]):
+            raise TypeError("all branches output must have the same pytree.")
+
+        # Strong refs to original branches prevent id reuse after GC.
+        entry = (tuple(branches), quax_branches_tuple, out_trees[0])
+        _cond_quax_cache[key] = entry
+
+    _, quax_branches_tuple, out_tree = entry
+
+    # Build kwargs dict
     kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:
         kwargs["branches_platforms"] = branches_platforms
 
     out_val = jax.lax.cond_p.bind(
-        index, *flat_args, branches=tuple(quax_branches), **kwargs
+        index, *flat_args, branches=quax_branches_tuple, **kwargs
     )
-    result = jtu.tree_unflatten(out_trees[0], out_val)
+    result = jtu.tree_unflatten(out_tree, out_val)
     return result
+
+
+# Cache for scan_quax: (id(jaxpr), consts_struct, carry_struct, xs_struct)
+#   -> (jaxpr_ref, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat)
+_scan_quax_cache: dict[tuple, tuple] = {}
 
 
 @register(jax.lax.scan_p)
@@ -695,37 +815,41 @@ def scan_quax(
     )
     xs_flat, xs_struct = jtu.tree_flatten(args[num_consts + num_carry :])
 
-    trace_in = (
-        *consts_flat,
-        *carry_flat,
-        *[x[0, ...] for x in xs_flat],
-    )
+    n_consts_flat = len(consts_flat)
+    n_carry_flat = len(carry_flat)
 
-    num_consts_flat = len(consts_flat)
-    num_carry_flat = len(carry_flat)
+    key = (id(jaxpr), consts_struct, carry_struct, xs_struct)
+    entry = _scan_quax_cache.get(key)
+    if entry is None:
+        trace_in = (*consts_flat, *carry_flat, *[x[0, ...] for x in xs_flat])
 
-    jax_fn = core.jaxpr_as_fun(jaxpr)
+        jax_fn = core.jaxpr_as_fun(jaxpr)
 
-    def quax_fn(*args_flat):
-        consts = jtu.tree_unflatten(consts_struct, args_flat[:num_consts_flat])
-        carry = jtu.tree_unflatten(
-            carry_struct, args_flat[num_consts_flat : num_consts_flat + num_carry_flat]
-        )
-        xs = jtu.tree_unflatten(
-            xs_struct, args_flat[num_consts_flat + num_carry_flat :]
-        )
-        return quaxify(jax_fn)(*consts, *carry, *xs)
+        def quax_fn(*args_flat):
+            consts = jtu.tree_unflatten(consts_struct, args_flat[:n_consts_flat])
+            carry = jtu.tree_unflatten(
+                carry_struct, args_flat[n_consts_flat : n_consts_flat + n_carry_flat]
+            )
+            xs = jtu.tree_unflatten(
+                xs_struct, args_flat[n_consts_flat + n_carry_flat :]
+            )
+            return quaxify(jax_fn)(*consts, *carry, *xs)
 
-    quax_jaxpr, out_tree = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
-    out_struct = jtu.tree_structure(out_tree)
+        quax_jaxpr, out_tree = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
+        out_struct = jtu.tree_structure(out_tree)
+        # Strong ref to jaxpr prevents id reuse after GC.
+        entry = (jaxpr, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat)
+        _scan_quax_cache[key] = entry
+    else:
+        _, quax_jaxpr, out_struct, n_consts_flat, n_carry_flat = entry
 
     out_flat = jax.lax.scan_p.bind(
         *consts_flat,
         *carry_flat,
         *xs_flat,
         jaxpr=quax_jaxpr,
-        num_consts=num_consts_flat,
-        num_carry=num_carry_flat,
+        num_consts=n_consts_flat,
+        num_carry=n_carry_flat,
         **kwargs,
     )
 

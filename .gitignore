@@ -15,3 +15,5 @@ examples/data
 examples/MNIST
 examples/multipart_serialised.eqx
 /src/quax/_version.py
+test_timings.txt
+test_timings_full.log
