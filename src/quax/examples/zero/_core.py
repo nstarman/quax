@@ -80,11 +80,11 @@ def _to_struct(x):
 
 
 @quax.quaxify
-def _shape_dtype(x, y, value: T) -> T:
+def _shape_dtype(x, y, /, value: T, out_dtype=None) -> T:
     x = _to_struct(x)
     y = _to_struct(y)
     shape = jnp.broadcast_shapes(x.shape, y.shape)
-    dtype = jnp.result_type(x.dtype, y.dtype)
+    dtype = out_dtype if out_dtype is not None else jnp.result_type(x.dtype, y.dtype)
     return cast(T, jnp.broadcast_to(cast(ArrayLike, value), shape).astype(dtype))
 
 
@@ -104,18 +104,18 @@ def _(x: Zero, y: Zero) -> Zero:
 
 
 @quax.register(lax.mul_p)
-def _(x: ArrayLike | quax.ArrayValue, y: Zero) -> Zero:
-    return _shape_dtype(x, y, value=y)
+def _(x: ArrayLike | quax.ArrayValue, y: Zero, /, **kw: Any) -> Zero:
+    return _shape_dtype(x, y, value=y, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.mul_p)
-def _(x: Zero, y: ArrayLike | quax.ArrayValue) -> Zero:
-    return _shape_dtype(x, y, value=x)
+def _(x: Zero, y: ArrayLike | quax.ArrayValue, /, **kw: Any) -> Zero:
+    return _shape_dtype(x, y, value=x, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.mul_p)
-def _(x: Zero, y: Zero) -> Zero:
-    return _shape_dtype(x, y, value=x)
+def _(x: Zero, y: Zero, /, **kw: Any) -> Zero:
+    return _shape_dtype(x, y, value=x, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.dynamic_update_slice_p)

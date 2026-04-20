@@ -4,14 +4,31 @@ import jax.numpy as jnp
 import jax.tree as jtu
 import numpy as np
 import pytest
+from packaging.version import Version
 
 from quax import quaxify
+from quax._compat import JAX_VERSION
 
 
 xfail_quax58 = pytest.mark.xfail(
     reason="https://github.com/patrick-kidger/quax/issues/58"
 )
 mark_todo = pytest.mark.skip("TODO")
+skip_removed_jax_0_10_0 = pytest.mark.skipif(
+    JAX_VERSION >= Version("0.10"),
+    reason="removed in JAX v0.10.0",
+)
+xfail_deprecated_jax_0_9_0 = (
+    pytest.mark.xfail(
+        Version("0.9") <= JAX_VERSION < Version("0.10"),
+        raises=DeprecationWarning,
+        reason="deprecated in JAX v0.9.0",
+        strict=True,
+    ),
+    # Promote DeprecationWarning to an error so the xfail `raises` check works;
+    # warnings.warn() alone won't trigger raises= without this.
+    pytest.mark.filterwarnings("error::DeprecationWarning"),
+)
 
 x = jnp.array([[1, 2], [3, 4]], dtype=float)
 y = jnp.array([[5, 6], [7, 8]], dtype=float)
@@ -148,7 +165,12 @@ xbool = jnp.array([True, False, True], dtype=bool)
         ("eye", (2,), {}),
         ("fabs", (x,), {}),
         ("fill_diagonal", (jnp.eye(3), 2), {"inplace": False}),
-        ("fix", (x,), {}),
+        pytest.param(
+            "fix",
+            (x,),
+            {},
+            marks=[*xfail_deprecated_jax_0_9_0, skip_removed_jax_0_10_0],
+        ),
         *(
             pytest.param("flatnonzero", (x,), {}, marks=xfail_quax58),
             ("flatnonzero", (x,), {"size": x.size}),

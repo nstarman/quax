@@ -817,13 +817,13 @@ def min_p_am(x: ArrayLike, y: MyArray) -> MyArray:
 
 
 @register(lax.mul_p)
-def mul_p_m(x: MyArray, y: MyArray | ArrayLike) -> MyArray:
-    return MyArray(lax.mul_p.bind(x.array, unwrap(y)))
+def mul_p_m(x: MyArray, y: MyArray | ArrayLike, /, **kw: Any) -> MyArray:
+    return MyArray(lax.mul_p.bind(x.array, unwrap(y), **kw))
 
 
 @register(lax.mul_p)
-def mul_p_am(x: ArrayLike, y: MyArray) -> MyArray:
-    return MyArray(lax.mul_p.bind(x, y.array))
+def mul_p_am(x: ArrayLike, y: MyArray, /, **kw: Any) -> MyArray:
+    return MyArray(lax.mul_p.bind(x, y.array, **kw))
 
 
 # ==============================================================================
