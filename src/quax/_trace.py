@@ -37,16 +37,7 @@ class _QuaxTracer(core.Tracer):
         # the resulting shape/dtype must itself be static/immutable; all
         # JAX/equinox transforms return new objects). aval() may still be
         # derived from dynamic jax.Array fields.
-        # For _DenseArrayValue, bypass eqx.__getattribute__ (which allocates a
-        # BoundMethod eqx.Module for every method access) and fetch the array
-        # field directly; tracer construction is on the hot path so this still
-        # saves measurable overhead even though aval() is only called once.
-        if type(value) is _DenseArrayValue:
-            self._cached_aval: core.AbstractValue = typeof(
-                object.__getattribute__(value, "array")
-            )
-        else:
-            self._cached_aval = value.aval()
+        self._cached_aval: core.AbstractValue = value.aval()
 
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]

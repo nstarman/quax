@@ -178,11 +178,33 @@ class _DenseArrayValue(ArrayValue):
 
     array: ArrayLike
 
+    def __init__(self, array: ArrayLike, /) -> None:
+        # Bypass equinox's Module.__setattr__, which on every field assignment
+        # checks whether the module is frozen and performs pytree-leaf
+        # bookkeeping via dataclasses.fields(). _DenseArrayValue is constructed
+        # on every primitive output in the O1 fast path and for every input
+        # passed to to_value(), so this is on the hottest call site in the
+        # trace. The bypass is safe: this class is internal-only, has exactly
+        # one field that is set once at construction and never mutated, and
+        # is never exposed to user code or equinox transforms.
+        object.__setattr__(self, "array", array)
+
     def materialise(self) -> ArrayLike:
         return self.array
 
     def aval(self) -> core.ShapedArray:
         return typeof(self.array)
+
+    def __getattribute__(self, name: str, /) -> Any:
+        # Bypass equinox's Module.__getattribute__, which on every non-magic
+        # attribute access wraps the result in a BoundMethod(func, self) — a
+        # fresh eqx.Module allocation — so that bound methods are themselves
+        # valid pytrees (needed for jax.jit(module.method)). That allocation
+        # is pure overhead here: _DenseArrayValue methods are called directly
+        # by _QuaxTracer and _QuaxTrace internals, never passed to jax.jit.
+        # Benchmarks show .aval() drops from ~38 µs to ~1.6 µs and
+        # .materialise() from ~35 µs to ~0.3 µs with this override.
+        return object.__getattribute__(self, name)
 
 
 def _make_cache_finalizer(cache: dict, key: tuple) -> Callable[[Any], None]:
