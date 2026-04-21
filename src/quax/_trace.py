@@ -32,9 +32,11 @@ class _QuaxTracer(core.Tracer):
         self.value = value
 
         # Cache aval() once at construction rather than recomputing on every
-        # access.  aval() is pure by contract (Value is an eqx.Module — fields
-        # are frozen after __init__; shape/dtype fields must be static=True per
-        # JAX's own requirement; all JAX/equinox transforms return new objects).
+        # access. aval() is pure by contract (Value is an eqx.Module — fields
+        # are frozen after __init__; any Python/static metadata that determines
+        # the resulting shape/dtype must itself be static/immutable; all
+        # JAX/equinox transforms return new objects). aval() may still be
+        # derived from dynamic jax.Array fields.
         # For _DenseArrayValue, bypass eqx.__getattribute__ (which allocates a
         # BoundMethod eqx.Module for every method access) and fetch the array
         # field directly; tracer construction is on the hot path so this still

@@ -42,7 +42,7 @@ vmap_fn = jax.vmap(quax.quaxify(fn))
 
 `aval()` must be a **pure method**: called on the same instance it must always return the same `jax.core.AbstractValue`. Quax caches the result at tracer-construction time for performance — if `aval()` could return different values over time, the cached result would become stale.
 
-In practice this is guaranteed automatically when every field that affects the shape or dtype is declared with `eqx.field(static=True)`:
+In practice, any **Python/static metadata** that `aval()` uses to determine shape or dtype (for example cached shapes, symbolic dimensions, or units) should be declared with `eqx.field(static=True)`. Array payload fields do not need `static=True` just because `aval()` reads their shape or dtype:
 
 ```python
 import equinox as eqx

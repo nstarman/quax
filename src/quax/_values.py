@@ -29,11 +29,11 @@ class Value(eqx.Module):
         value seen by JAX.
 
         **This method must be pure**: it must return the same `AbstractValue` every
-        time it is called on the same instance. In practice this is guaranteed
-        automatically when all fields that affect the shape or dtype are declared
-        with `eqx.field(static=True)` (as required by JAX's tracing model).
-        Quax caches the result of `aval()` at tracer-construction time and will
-        not observe later changes.
+        time it is called on the same instance. In practice this means that any
+        Python metadata that influences the abstract value should be static (for
+        example via `eqx.field(static=True)`), whilst shape or dtype may also be
+        derived from dynamic array fields. Quax caches the result of `aval()` at
+        tracer-construction time and will not observe later changes.
 
         **Arguments:**
 
