@@ -13,7 +13,7 @@ import jax.core
 import jax.numpy as jnp
 
 import quax
-from quax._core import _jit_quax_cache, _scan_quax_cache, _while_quax_cache
+from quax._primitives import _jit_quax_cache, _scan_quax_cache, _while_quax_cache
 
 
 # Minimal ArrayValue with a working materialise — forces scan_quax dispatch
