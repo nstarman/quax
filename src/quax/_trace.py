@@ -24,22 +24,33 @@ from ._values import _DenseArrayValue, _is_value, T, Value
 
 
 class _QuaxTracer(core.Tracer):
-    __slots__ = ("value",)
+    __slots__ = ("value", "_cached_aval")
 
     def __init__(self, trace: "_QuaxTrace", value: Value) -> None:
         assert _is_value(value)
         self._trace = trace
         self.value = value
 
+        # Cache aval() once at construction rather than recomputing on every
+        # access. aval() is pure by contract (Value is an eqx.Module — fields
+        # are frozen after __init__; any Python/static metadata that determines
+        # the resulting shape/dtype must itself be static/immutable; all
+        # JAX/equinox transforms return new objects). aval() may still be
+        # derived from dynamic jax.Array fields.
+        # For _DenseArrayValue, bypass eqx.__getattribute__ (which allocates a
+        # BoundMethod eqx.Module for every method access) and fetch the array
+        # field directly; tracer construction is on the hot path so this still
+        # saves measurable overhead even though aval() is only called once.
+        if type(value) is _DenseArrayValue:
+            self._cached_aval: core.AbstractValue = typeof(
+                object.__getattribute__(value, "array")
+            )
+        else:
+            self._cached_aval = value.aval()
+
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
-        v = self.value
-        # Fast path for _DenseArrayValue: bypass eqx's __getattribute__ which
-        # wraps every method access in a new BoundMethod (another eqx.Module).
-        # JAX calls .aval on every tracer throughout tracing, so this is hot.
-        if type(v) is _DenseArrayValue:
-            return typeof(object.__getattribute__(v, "array"))
-        return v.aval()
+        return self._cached_aval
 
     def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
         return (
