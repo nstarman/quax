@@ -7,7 +7,8 @@ The comment at _core.py lines 680-682 states:
     # treedef) to handle the inline branch and structural arg differences.
 
 These tests verify both claims directly, plus the GC-safety invariant that
-cache entries hold strong references to prevent id() reuse after collection.
+cache entries store weakrefs and rely on finalizers for eviction, while a
+live entry's referent continues to match key[0] by id().
 """
 
 import gc
@@ -130,26 +131,24 @@ def test_jit_quax_cache_hit_same_avals():
     )
 
 
-def test_jit_quax_cache_miss_different_treedef():
-    """Functions with structurally different argument trees produce separate
-    cache entries — treedef is part of the cache key."""
-    _jit_quax_cache.clear()
+def test_jit_quax_cache_key_includes_treedef():
+    """Cache keys include the argument treedef as the third tuple element."""
 
     @jax.jit
-    def inner_one(x):
-        return x + 1.0
-
-    @jax.jit
-    def inner_two(x, y):
+    def inner(x, y):
         return x + y
 
     x = jnp.array(1.0)
-    quax.quaxify(inner_one)(x)
-    quax.quaxify(inner_two)(x, x)
+    _jit_quax_cache.clear()
+    quax.quaxify(inner)(x, x)
 
-    assert len(_jit_quax_cache) >= 2, (
-        "Expected >=2 cache entries for functions with different treedefs, "
-        f"got {len(_jit_quax_cache)}."
+    expected_treedef = jax.tree_util.tree_structure((x, x))
+    assert _jit_quax_cache, "Expected _jit_quax_cache to be populated."
+    assert any(
+        len(key) == 3 and key[2] == expected_treedef for key in _jit_quax_cache
+    ), (
+        "Expected cache key shape (id(jaxpr), inline, treedef) with the treedef "
+        "matching the primitive argument structure."
     )
 
 
@@ -158,7 +157,7 @@ def test_jit_quax_cache_miss_different_treedef():
 # ---------------------------------------------------------------------------
 
 
-def test_jit_quax_cache_entry_strong_ref_matches_key():
+def test_jit_quax_cache_entry_weakref_matches_key():
     """Each cache entry stores a weakref.ref to the ClosedJaxpr as entry[0].
     While the jaxpr is alive, the weakref target's id must equal key[0] —
     confirming the weakref points to the exact jaxpr used as the cache key."""
@@ -186,10 +185,8 @@ def test_jit_quax_cache_entry_strong_ref_matches_key():
         )
 
 
-def test_jit_quax_cache_evicts_on_gc():
-    """Cache entries are evicted when the referenced jaxpr is GC'd — the
-    weakref finalizer removes them, preventing unbounded cache growth.
-    Subsequent calls correctly re-populate the cache."""
+def test_jit_quax_cache_retains_entries_while_jaxpr_reachable():
+    """GC does not evict cache entries while the jaxpr is still reachable."""
     _jit_quax_cache.clear()
 
     @jax.jit

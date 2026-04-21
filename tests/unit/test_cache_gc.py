@@ -36,6 +36,8 @@ def test_jit_cache_uses_weakref():
     new_keys = set(_jit_quax_cache.keys()) - before
     assert new_keys, "Expected _jit_quax_cache to be populated"
 
+    # This would have failed before the weakref fix, when the cache stored
+    # a strong jaxpr reference instead of weakref.ref(jaxpr, finalizer).
     entry = _jit_quax_cache[next(iter(new_keys))]
     assert isinstance(entry[0], weakref.ref), (
         "entry[0] should be a weakref.ref to the jaxpr, not a strong reference; "
