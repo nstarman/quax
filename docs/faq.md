@@ -4,7 +4,7 @@
 
 ### JIT
 
-!!! Warning "Pair `quaxify` with `jax.jit`"
+!!! Warning "Pair quaxify with jax.jit"
 
     Calling `quax.quaxify(fn)(*args)` **without** an outer `jax.jit` is **50–100×
     slower** than the JIT path for small operations. Every call pays for Python-level

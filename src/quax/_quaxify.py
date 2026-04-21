@@ -64,7 +64,7 @@ def quaxify(
 
     A copy of `fn`, that understands all Quax types.
 
-    !!! Warning "Performance: pair with `jax.jit`"
+    !!! Warning "Performance: pair with jax.jit"
 
         Calling `quaxify(fn)(*args)` **without** an outer `jax.jit` is 50–100× slower
         than the JIT path for small operations. Every call pays for Python-level trace
@@ -73,7 +73,7 @@ def quaxify(
         Generally prefer:
 
         ```python
-        jit_fn = jax.jit(quaxify(fn))
+        jit_fn = jax.jit(quax.quaxify(fn))
         jit_fn(*args)  # fast warm-call path
         ```
 
