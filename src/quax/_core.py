@@ -1,6 +1,7 @@
 import abc
 import functools as ft
 import itertools as it
+import weakref
 from collections.abc import Callable, Sequence
 from typing import (
     Any,
@@ -657,9 +658,19 @@ class _DenseArrayValue(ArrayValue):
         return typeof(self.array)
 
 
-# Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_ref, jitted_fn).
-# We store a strong reference to jaxpr as the first element so that the
-# object cannot be GC'd and have its id reused while the entry lives here.
+def _make_cache_finalizer(cache: dict, key: tuple) -> Callable[[Any], None]:
+    """Return a weakref finalizer that removes *key* from *cache* when called."""
+
+    def _fin(_ref: Any) -> None:
+        cache.pop(key, None)
+
+    return _fin
+
+
+# Cache for jit_quax: maps (id(jaxpr), inline, treedef) -> (jaxpr_wref,
+# jitted_fn). entry[0] is a weakref to the jaxpr; the finalizer evicts the
+# entry when the jaxpr is GC'd. This prevents unbounded growth in programs that
+# generate many distinct jaxprs (e.g. dynamic code-gen).
 _jit_quax_cache: dict[tuple, tuple[Any, Any]] = {}
 
 
@@ -684,15 +695,16 @@ def jit_quax(
     entry = _jit_quax_cache.get(key)
     if entry is None:
         fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
+        wref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
         if inline:  # For inline, store a plain callable; no jax.jit wrapper.
-            entry = (jaxpr, fun)
+            entry = (wref, fun)
         else:
             # Calling _Quaxify.__call__ directly (unbound) bypasses
             # eqx.Module.__call__'s dir() + BoundMethod overhead.
             _fun = cast(_Quaxify, fun)
             qfun = lambda x: _Quaxify.__call__(_fun, *jtu.tree_unflatten(treedef, x))
             jitted = jax.jit(qfun)
-            entry = (jaxpr, jitted)  # strong ref to jaxpr prevents id reuse
+            entry = (wref, jitted)
         _jit_quax_cache[key] = entry
 
     if inline:
@@ -701,8 +713,9 @@ def jit_quax(
 
 
 # Cache for while_quax: (id(cond_jaxpr), id(body_jaxpr), val_treedef)
-#   -> (cond_ref, body_ref, quax_cond_jaxpr, quax_body_jaxpr, val_treedef)
-# Strong refs to cond_jaxpr/body_jaxpr prevent id reuse after GC.
+#   -> (cond_wref, body_wref, quax_cond_jaxpr, quax_body_jaxpr, val_treedef)
+# entry[0]/entry[1] are weakrefs; their finalizers evict the entry when either
+# original jaxpr is collected, preventing unbounded growth.
 _while_quax_cache: dict[tuple, tuple] = {}
 
 
@@ -730,8 +743,14 @@ def while_quax(
         quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *init_vals)
         quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
         quax_body_jaxpr = jax.make_jaxpr(quax_body_fn)(*body_consts, *init_vals)
-        # Strong refs prevent GC of the original jaxprs, keeping ids stable.
-        entry = (cond_jaxpr, body_jaxpr, quax_cond_jaxpr, quax_body_jaxpr, val_treedef)
+        fin = _make_cache_finalizer(_while_quax_cache, key)
+        entry = (
+            weakref.ref(cond_jaxpr, fin),
+            weakref.ref(body_jaxpr, fin),
+            quax_cond_jaxpr,
+            quax_body_jaxpr,
+            val_treedef,
+        )
         _while_quax_cache[key] = entry
     else:
         _, _, quax_cond_jaxpr, quax_body_jaxpr, val_treedef = entry
@@ -789,9 +808,10 @@ def cond_quax(
 
 
 # Cache for scan_quax: (id(jaxpr), consts_treedef, carry_treedef, xs_treedef)
-#   -> (jaxpr_ref, quax_jaxpr, out_treedef, nc, nv)
+#   -> (jaxpr_wref, quax_jaxpr, out_treedef, nc, nv)
 # nc/nv = number of flat consts/carry leaves.
-# A strong ref to jaxpr is stored so its id() cannot be reused after GC.
+# entry[0] is a weakref; the finalizer evicts the entry when the jaxpr is
+# collected, preventing unbounded growth.
 _scan_quax_cache: dict[tuple, tuple] = {}
 
 
@@ -831,8 +851,13 @@ def scan_quax(
 
         quax_jaxpr, out_shape = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
         out_tree = jtu.tree_structure(out_shape)
-        # Strong ref to jaxpr prevents its id() being reused after GC.
-        entry = (jaxpr, quax_jaxpr, out_tree, nc, nv)
+        entry = (
+            weakref.ref(jaxpr, _make_cache_finalizer(_scan_quax_cache, key)),
+            quax_jaxpr,
+            out_tree,
+            nc,
+            nv,
+        )
         _scan_quax_cache[key] = entry
     else:
         _, quax_jaxpr, out_tree, nc, nv = entry
