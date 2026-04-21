@@ -1,4 +1,9 @@
-"""Tests for GC-friendly weakref caching in jaxpr caches."""
+"""Tests for GC-friendly weakref caching in jaxpr caches.
+
+Two groups:
+- "uses_weakref" tests: verify that cache entries store weakrefs, not strong refs.
+- "evicts_on_gc" tests: verify the finalizer evicts entries when the jaxpr is GC'd.
+"""
 
 import gc
 import weakref
@@ -11,7 +16,7 @@ import quax
 from quax._core import _jit_quax_cache, _scan_quax_cache, _while_quax_cache
 
 
-# Minimal ArrayValue whose materialise works — used to force scan_quax dispatch
+# Minimal ArrayValue with a working materialise — forces scan_quax dispatch
 # (plain JAX arrays fall through to _default_process via plum's variadic dispatch).
 class _ScanValue(quax.ArrayValue):
     array: jax.Array
@@ -23,36 +28,35 @@ class _ScanValue(quax.ArrayValue):
         return self.array
 
 
+class _FakeJaxpr:
+    """Lightweight stand-in for a real jaxpr; supports weakref."""
+
+
 def test_jit_cache_uses_weakref():
-    """jit_quax should cache a weakref to the jaxpr, not a strong reference."""
+    """_jit_quax_cache entry[0] must be a weakref, not a strong reference."""
 
     @jax.jit
     def inner(x):
         return x + 1.0
 
-    x = jnp.array(1.0)
     before = set(_jit_quax_cache.keys())
-    quax.quaxify(inner)(x)
+    quax.quaxify(inner)(jnp.array(1.0))
     new_keys = set(_jit_quax_cache.keys()) - before
     assert new_keys, "Expected _jit_quax_cache to be populated"
 
     # This would have failed before the weakref fix, when the cache stored
     # a strong jaxpr reference instead of weakref.ref(jaxpr, finalizer).
     entry = _jit_quax_cache[next(iter(new_keys))]
-    assert isinstance(entry[0], weakref.ref), (
-        "entry[0] should be a weakref.ref to the jaxpr, not a strong reference; "
-        "strong refs prevent GC and cause unbounded cache growth"
-    )
+    assert isinstance(entry[0], weakref.ref)
 
 
 def test_while_cache_uses_weakrefs():
-    """while_quax should cache weakrefs to cond_jaxpr and body_jaxpr.
+    """_while_quax_cache entry[0] and entry[1] must be weakrefs to cond/body jaxprs.
 
-    The function must be @jax.jit so JAX's own compilation cache keeps the
-    outer jaxpr (and its while_p params: cond_jaxpr, body_jaxpr) alive while
-    we inspect the cache.  In eager mode the jaxprs are freed immediately
-    after while_quax returns and the finalizer evicts the entry before we
-    can check it — which is correct weakref behaviour, not a bug.
+    The function must be @jax.jit so JAX's compilation cache keeps the outer
+    jaxpr (and its while_p params) alive while we inspect the quax cache.  In
+    eager mode the jaxprs are freed immediately and the finalizer evicts the
+    entry before we can check it — correct behaviour, not a bug.
     """
 
     @jax.jit
@@ -66,20 +70,15 @@ def test_while_cache_uses_weakrefs():
     assert new_keys, "Expected _while_quax_cache to be populated"
 
     entry = _while_quax_cache[next(iter(new_keys))]
-    assert isinstance(entry[0], weakref.ref), (
-        "entry[0] should be a weakref.ref to cond_jaxpr, not a strong reference"
-    )
-    assert isinstance(entry[1], weakref.ref), (
-        "entry[1] should be a weakref.ref to body_jaxpr, not a strong reference"
-    )
+    assert isinstance(entry[0], weakref.ref)
+    assert isinstance(entry[1], weakref.ref)
 
 
 def test_scan_cache_uses_weakref():
-    """scan_quax should cache a weakref to the jaxpr, not a strong reference.
+    """_scan_quax_cache entry[0] must be a weakref, not a strong reference.
 
-    Note: lax.scan runs eagerly outside of jax.jit (Python for-loop), so
-    scan_p only reaches process_primitive — and scan_quax — when the scan is
-    inside a jitted function.
+    scan_p only reaches scan_quax inside a jitted function; outside jit,
+    lax.scan runs as a Python for-loop and never calls process_primitive.
     """
 
     def f(const, carry, xs):
@@ -97,23 +96,11 @@ def test_scan_cache_uses_weakref():
     assert new_keys, "Expected _scan_quax_cache to be populated"
 
     entry = _scan_quax_cache[next(iter(new_keys))]
-    assert isinstance(entry[0], weakref.ref), (
-        "entry[0] should be a weakref.ref to the jaxpr, not a strong reference"
-    )
-
-
-# ── GREEN regression tests: verify weakref + finalizer eviction mechanism ─────
-# These directly insert entries using the fixed format (weakref + finalizer)
-# and verify that GC fires the finalizer and removes the entry.
-# They serve as regression tests for the eviction mechanism itself.
+    assert isinstance(entry[0], weakref.ref)
 
 
 def test_jit_cache_evicts_on_gc():
     """Entry is removed from _jit_quax_cache when the weakreffed jaxpr is collected."""
-
-    class _FakeJaxpr:
-        pass
-
     jaxpr = _FakeJaxpr()
     key = (id(jaxpr), False, "dummy_treedef")
 
@@ -125,20 +112,11 @@ def test_jit_cache_evicts_on_gc():
 
     del jaxpr
     gc.collect()
-    assert key not in _jit_quax_cache, (
-        "Cache entry should have been evicted after jaxpr was GC'd"
-    )
+    assert key not in _jit_quax_cache
 
 
 def test_while_cache_evicts_on_gc():
-    """Entry is removed from _while_quax_cache when weakreffed jaxpr is collected.
-
-    Either jaxpr being GC'd triggers the finalizer that evicts the cache entry.
-    """
-
-    class _FakeJaxpr:
-        pass
-
+    """Entry is removed from _while_quax_cache when weakreffed jaxpr is collected."""
     cond_j = _FakeJaxpr()
     body_j = _FakeJaxpr()
     key = (id(cond_j), id(body_j), "dummy_treedef")
@@ -157,17 +135,11 @@ def test_while_cache_evicts_on_gc():
 
     del cond_j, body_j
     gc.collect()
-    assert key not in _while_quax_cache, (
-        "Cache entry should have been evicted after jaxprs were GC'd"
-    )
+    assert key not in _while_quax_cache
 
 
 def test_scan_cache_evicts_on_gc():
     """Entry is removed from _scan_quax_cache when the weakreffed jaxpr is collected."""
-
-    class _FakeJaxpr:
-        pass
-
     jaxpr = _FakeJaxpr()
     key = (id(jaxpr), "c_tree", "v_tree", "x_tree")
 
@@ -185,6 +157,4 @@ def test_scan_cache_evicts_on_gc():
 
     del jaxpr
     gc.collect()
-    assert key not in _scan_quax_cache, (
-        "Cache entry should have been evicted after jaxpr was GC'd"
-    )
+    assert key not in _scan_quax_cache

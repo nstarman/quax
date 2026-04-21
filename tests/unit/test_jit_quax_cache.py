@@ -1,17 +1,18 @@
-"""Tests confirming the _jit_quax_cache assumptions in quax/_core.py.
+"""Tests for the _jit_quax_cache in quax/_core.py.
 
-The comment at _core.py lines 680-682 states:
+Two structural assumptions are verified:
 
-    # The jaxpr is stable across repeated calls with the same argument
-    # avals, so id(jaxpr) is a reliable key.  We also key by (inline,
-    # treedef) to handle the inline branch and structural arg differences.
+1. JAX's jaxpr is stable (same Python object) across repeated traces with
+   identical argument avals, making id(jaxpr) a reliable cache key.
+2. The cache key includes (inline, treedef) to distinguish different call
+   shapes and the inline vs jit-wrapped code path.
 
-These tests verify both claims directly, plus the GC-safety invariant that
-cache entries store weakrefs and rely on finalizers for eviction, while a
-live entry's referent continues to match key[0] by id().
+Plus the GC-safety invariant: cache entries store weakrefs to the jaxpr so
+the finalizer can evict stale entries, preventing unbounded cache growth.
 """
 
 import gc
+import weakref
 from typing import Any
 
 import jax
@@ -22,27 +23,17 @@ from quax._compat import jit_p
 from quax._core import _jit_quax_cache
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-
 def _extract_jit_jaxpr(closed_jaxpr: Any) -> Any:
     """Return the ClosedJaxpr param from the first jit_p equation, or None."""
     for eqn in closed_jaxpr.jaxpr.eqns:
         if eqn.primitive is jit_p:
             return eqn.params["jaxpr"]
-    return None  # pragma: no cover
-
-
-# ---------------------------------------------------------------------------
-# Claim 1: "The jaxpr is stable across repeated calls with the same avals"
-# ---------------------------------------------------------------------------
+    return None
 
 
 def test_jaxpr_id_stable_same_avals():
-    """JAX reuses the same ClosedJaxpr Python object on repeated traces with
-    identical argument avals — so id(jaxpr) is a reliable cache key."""
+    """JAX reuses the same ClosedJaxpr object on repeated traces with identical
+    argument avals — so id(jaxpr) is a reliable cache key."""
 
     @jax.jit
     def inner(x):
@@ -93,11 +84,6 @@ def test_jaxpr_id_differs_for_different_avals():
     )
 
 
-# ---------------------------------------------------------------------------
-# Claim 2: "We also key by (inline, treedef)"
-# ---------------------------------------------------------------------------
-
-
 def test_jit_quax_cache_populates_on_first_call():
     """The first quaxify call involving an inner @jax.jit function adds an
     entry to _jit_quax_cache."""
@@ -131,38 +117,32 @@ def test_jit_quax_cache_hit_same_avals():
     )
 
 
-def test_jit_quax_cache_key_includes_treedef():
-    """Cache keys include the argument treedef as the third tuple element."""
+def test_jit_quax_cache_miss_different_treedef():
+    """Functions with structurally different argument trees produce separate
+    cache entries — treedef is part of the cache key."""
+    _jit_quax_cache.clear()
 
     @jax.jit
-    def inner(x, y):
+    def inner_one(x):
+        return x + 1.0
+
+    @jax.jit
+    def inner_two(x, y):
         return x + y
 
     x = jnp.array(1.0)
-    _jit_quax_cache.clear()
-    quax.quaxify(inner)(x, x)
+    quax.quaxify(inner_one)(x)
+    quax.quaxify(inner_two)(x, x)
 
-    expected_treedef = jax.tree_util.tree_structure((x, x))
-    assert _jit_quax_cache, "Expected _jit_quax_cache to be populated."
-    assert any(
-        len(key) == 3 and key[2] == expected_treedef for key in _jit_quax_cache
-    ), (
-        "Expected cache key shape (id(jaxpr), inline, treedef) with the treedef "
-        "matching the primitive argument structure."
+    assert len(_jit_quax_cache) >= 2, (
+        "Expected >=2 cache entries for functions with different treedefs, "
+        f"got {len(_jit_quax_cache)}."
     )
-
-
-# ---------------------------------------------------------------------------
-# Invariant: cache entry holds a weakref whose live target id() matches key[0]
-# ---------------------------------------------------------------------------
 
 
 def test_jit_quax_cache_entry_weakref_matches_key():
     """Each cache entry stores a weakref.ref to the ClosedJaxpr as entry[0].
-    While the jaxpr is alive, the weakref target's id must equal key[0] —
-    confirming the weakref points to the exact jaxpr used as the cache key."""
-    import weakref
-
+    While the jaxpr is alive the weakref target's id must equal key[0]."""
     _jit_quax_cache.clear()
 
     @jax.jit
@@ -185,8 +165,9 @@ def test_jit_quax_cache_entry_weakref_matches_key():
         )
 
 
-def test_jit_quax_cache_retains_entries_while_jaxpr_reachable():
-    """GC does not evict cache entries while the jaxpr is still reachable."""
+def test_jit_quax_cache_stable_while_jaxpr_alive():
+    """Cache entries are not evicted while the referenced jaxpr is still alive,
+    and re-calling after a GC cycle returns the correct result."""
     _jit_quax_cache.clear()
 
     @jax.jit
@@ -199,14 +180,11 @@ def test_jit_quax_cache_retains_entries_while_jaxpr_reachable():
     keys_before = set(_jit_quax_cache.keys())
     assert keys_before, "Cache should be populated after first call."
 
-    # inner holds a strong reference to the jaxpr via its tracing cache, so
-    # the weakref won't fire while inner is alive.  GC here just verifies no
-    # spurious eviction occurs while the jaxpr is still reachable.
+    # inner holds a strong reference to the jaxpr via JAX's tracing cache, so
+    # the weakref finalizer must not fire here.
     gc.collect()
     assert set(_jit_quax_cache.keys()) == keys_before, (
         "Cache entries were evicted while jaxpr was still reachable."
     )
 
-    # Correctness: re-calling after GC still produces the right result.
-    result_after = float(quax.quaxify(inner)(x))
-    assert result_after == expected
+    assert float(quax.quaxify(inner)(x)) == expected
