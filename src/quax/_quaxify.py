@@ -64,7 +64,20 @@ def quaxify(
 
     A copy of `fn`, that understands all Quax types.
 
-    !!! Tip "Only quaxifying some argments"
+    !!! Warning "Performance: pair with `jax.jit`"
+
+        Calling `quaxify(fn)(*args)` **without** an outer `jax.jit` is 50–100× slower
+        than the JIT path for small operations. Every call pays for Python-level trace
+        setup, jaxpr interpretation, and equinox module overhead.
+
+        Generally prefer:
+
+        ```python
+        jit_fn = jax.jit(quaxify(fn))
+        jit_fn(*args)  # fast warm-call path
+        ```
+
+    !!! Tip "Only quaxifying some arguments"
 
         Calling `quax.quaxify(fn, filter_spec)(*args, **kwargs)` will under-the-hood run
         `dynamic, static = eqx.partition((fn, args, kwargs), filter_spec)`, and then
