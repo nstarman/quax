@@ -1,14 +1,5 @@
 """Compatibility utilities."""
 
-from collections.abc import Callable
-from importlib.metadata import version
-from typing import Any, Final
-
-import jax
-import jax.extend.core as jexc
-from packaging.version import Version
-
-
 __all__ = (
     "JAX_VERSION",
     # Flags
@@ -17,6 +8,15 @@ __all__ = (
     "jit_p",
     "typeof",
 )
+
+from collections.abc import Callable
+from importlib.metadata import version
+from typing import Any, Final
+
+import jax
+import jax.extend.core as jexc
+from packaging.version import Version
+
 
 JAX_VERSION: Final = Version(version("jax"))
 JAX_GE_0_7_0: Final = JAX_VERSION >= Version("0.7.0")

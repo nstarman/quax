@@ -20,7 +20,7 @@ import jax.numpy as jnp
 
 import quax
 from quax._compat import jit_p
-from quax._core import _jit_quax_cache
+from quax._primitives import _jit_quax_cache
 
 
 def _extract_jit_jaxpr(closed_jaxpr: Any) -> Any:
