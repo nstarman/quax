@@ -28,6 +28,13 @@ class Value(eqx.Module):
         """All concrete subclasses must implement this method, specifying the abstract
         value seen by JAX.
 
+        **This method must be pure**: it must return the same `AbstractValue` every
+        time it is called on the same instance. In practice this is guaranteed
+        automatically when all fields that affect the shape or dtype are declared
+        with `eqx.field(static=True)` (as required by JAX's tracing model).
+        Quax caches the result of `aval()` at tracer-construction time and will
+        not observe later changes.
+
         **Arguments:**
 
         Nothing.

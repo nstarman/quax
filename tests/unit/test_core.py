@@ -117,3 +117,40 @@ def test_default_path():
     got = quax.quaxify(lax.betainc)(jnp.array(1.0), x, y)
 
     assert jnp.array_equal(got, exp)
+
+
+def test_quax_tracer_aval_cached():
+    """_QuaxTracer caches aval() at construction; repeated .aval access is free."""
+    import jax._src.core as jcore
+
+    from quax._trace import _QuaxTrace, _QuaxTracer
+
+    call_count = 0
+
+    class CountedValue(quax.ArrayValue):
+        array: Array
+
+        def materialise(self):
+            return self.array
+
+        def aval(self):
+            nonlocal call_count
+            call_count += 1
+            return typeof(self.array)
+
+    val = CountedValue(jnp.array(1.0))
+    tag = jcore.TraceTag()
+    with jcore.take_current_trace() as parent:
+        trace = _QuaxTrace(parent, tag)
+        tracer = _QuaxTracer(trace, val)
+
+    assert call_count == 1, (
+        f"aval() should be called once at construction, got {call_count}"
+    )
+
+    # Repeated .aval access must not re-invoke aval()
+    for _ in range(3):
+        tracer.aval
+    assert call_count == 1, (
+        f"aval() should not be called again after construction, got {call_count}"
+    )

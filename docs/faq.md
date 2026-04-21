@@ -35,3 +35,45 @@ vmap_fn = quax.quaxify(jax.vmap(fn))
 # Or equivalently:
 vmap_fn = jax.vmap(quax.quaxify(fn))
 ```
+
+---
+
+## Implementing `aval()` correctly
+
+`aval()` must be a **pure method**: called on the same instance it must always return the same `jax.core.AbstractValue`. Quax caches the result at tracer-construction time for performance — if `aval()` could return different values over time, the cached result would become stale.
+
+In practice this is guaranteed automatically when every field that affects the shape or dtype is declared with `eqx.field(static=True)`:
+
+```python
+import equinox as eqx
+import jax
+import jax.numpy as jnp
+import quax
+
+class MyArray(quax.ArrayValue):
+    array: jax.Array
+    # shape and dtype are derived from `array`, which is static in the sense
+    # that JAX arrays are immutable — no eqx.field annotation needed here.
+
+    def aval(self):
+        return jax.core.ShapedArray(self.array.shape, self.array.dtype)
+
+    def materialise(self):
+        return self.array
+```
+
+If you store the shape separately (e.g. to support lazy or symbolic shapes), mark it static:
+
+```python
+class MyArray(quax.ArrayValue):
+    data: jax.Array
+    _shape: tuple[int, ...] = eqx.field(static=True)   # REQUIRED
+
+    def aval(self):
+        return jax.core.ShapedArray(self._shape, self.data.dtype)
+
+    def materialise(self):
+        return self.data
+```
+
+Forgetting `static=True` on a shape field causes JAX to attempt tracing through the integer — which raises an error long before any caching issue arises.
