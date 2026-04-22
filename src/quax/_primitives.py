@@ -42,10 +42,11 @@ def jit_quax(
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
-    # JIT-inside-JIT path: cache the jax.jit-wrapped quaxify callable so the
+    # inline=False path: cache the jax.jit-wrapped quaxify callable so the
     # compiled XLA kernel is reused on subsequent calls with the same jaxpr.
-    # The jaxpr is stable (same Python object) under an outer jax.jit, so
-    # id(jaxpr) is a reliable key here.  inline is always False at this point.
+    # This applies both for eager calls to a @jax.jit function and for nested
+    # JIT tracing. id(jaxpr) is a reliable key here because the jaxpr is stable
+    # for a given cached JAX lowering, and inline is always False at this point.
     key = (id(jaxpr), treedef)
     entry = _jit_quax_cache.get(key)
     if entry is None:
