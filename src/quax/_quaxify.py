@@ -11,6 +11,35 @@ from ._trace import _QuaxTrace, _unwrap_tracer, _wrap_tracer
 from ._values import _is_value, CT
 
 
+def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
+    """Wrap the dynamic leaves of ``tree`` in ``_QuaxTracer`` for the given trace.
+
+    Called once per ``_Quaxify.__call__`` invocation to prepare ``(fn, args,
+    kwargs)`` for dispatch.  ``filter_spec`` mirrors the ``eqx.partition``
+    contract:
+
+    - ``True``  — all leaves are dynamic (the default for :func:`quaxify`).
+    - ``False`` — no leaves are dynamic; ``tree`` passes through unchanged.
+    - A callable or nested bool pytree — only leaves selected by the spec are
+      wrapped; the rest are left as plain Python/JAX objects so they pass through
+      any nested :func:`quaxify` call unchanged (see the redispatch tutorial).
+
+    The return value has the same pytree structure as ``tree`` with selected leaves
+    replaced by ``_QuaxTracer`` instances.
+    """
+    if filter_spec is True:
+        # Fast path: every leaf is dynamic, so partition+combine is the identity
+        # transformation. Skip both calls and apply _wrap_tracer in a single
+        # tree_map pass.
+        return jtu.tree_map(ft.partial(_wrap_tracer, trace), tree, is_leaf=_is_value)
+
+    # General path: split tree into dynamic (to be traced) and static (passed
+    # through unchanged), wrap only the dynamic half, then recombine.
+    dynamic, static = eqx.partition(tree, filter_spec, is_leaf=_is_value)
+    dynamic = jtu.tree_map(ft.partial(_wrap_tracer, trace), dynamic, is_leaf=_is_value)
+    return eqx.combine(dynamic, static, is_leaf=_is_value)
+
+
 class _Quaxify(eqx.Module, Generic[CT]):
     fn: CT
     filter_spec: PyTree[bool | Callable[[Any], bool]]
@@ -21,17 +50,12 @@ class _Quaxify(eqx.Module, Generic[CT]):
         return self.fn
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        dynamic, static = eqx.partition(
-            (self.fn, args, kwargs), self.filter_spec, is_leaf=_is_value
-        )
         tag = core.TraceTag()
         with core.take_current_trace() as parent_trace:
             trace = _QuaxTrace(parent_trace, tag)
-            # Cache partial functions to avoid repeated closure creation
-            dynamic = jtu.tree_map(
-                ft.partial(_wrap_tracer, trace), dynamic, is_leaf=_is_value
+            fn, args, kwargs = _partition_and_wrap(
+                (self.fn, args, kwargs), self.filter_spec, trace
             )
-            fn, args, kwargs = eqx.combine(dynamic, static)
             with core.set_current_trace(trace):
                 out = fn(*args, **kwargs)
             out = jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
