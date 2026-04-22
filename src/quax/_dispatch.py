@@ -68,11 +68,11 @@ def register(
 
             _rules[primitive] = existing_rule
         existing_rule.dispatch(rule, precedence=precedence)
-        # Invalidate any cached dispatch decisions for this primitive so that
-        # newly registered rules are picked up on the next call.
-        keys_to_drop = [k for k in _dispatch_cache if k[0] is primitive]
-        for k in keys_to_drop:
-            del _dispatch_cache[k]
+        # Invalidate all cached dispatch decisions so newly registered rules
+        # are picked up on the next call.  Registration is rare (import-time)
+        # so clearing the whole cache is cheaper than scanning for matching
+        # keys and keeps the hot-path lookup at a single dict.get.
+        _dispatch_cache.clear()
         return rule
 
     return _register
