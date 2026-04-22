@@ -102,7 +102,7 @@ def test_scan_cache_uses_weakref():
 def test_jit_cache_evicts_on_gc():
     """Entry is removed from _jit_quax_cache when the weakreffed jaxpr is collected."""
     jaxpr = _FakeJaxpr()
-    key = (id(jaxpr), False, "dummy_treedef")
+    key = (id(jaxpr), "dummy_treedef")
 
     def _fin(_ref):
         _jit_quax_cache.pop(key, None)

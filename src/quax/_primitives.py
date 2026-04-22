@@ -17,10 +17,15 @@ from ._quaxify import _Quaxify, quaxify
 from ._values import _make_cache_finalizer, ArrayValue
 
 
-# Cache for jit_quax: maps (id(jaxpr), inline, treedef) -> (jaxpr_wref,
-# jitted_fn). entry[0] is a weakref to the jaxpr; the finalizer evicts the
-# entry when the jaxpr is GC'd. This prevents unbounded growth in programs that
-# generate many distinct jaxprs (e.g. dynamic code-gen).
+# Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_wref, jitted_fn).
+# Populated on any call where inline=False — both from eager mode and from the
+# JIT-inside-JIT path.  In both cases the jaxpr is stable (JAX's pjit layer
+# caches it keyed by function + abstract args), so id(jaxpr) is a reliable key.
+#
+# entry[0] is a weakref to the jaxpr; the finalizer evicts the entry when the
+# jaxpr is GC'd, preventing unbounded growth in programs that generate many
+# distinct jaxprs.  In practice the jaxpr is kept alive by JAX's own pjit cache
+# for the lifetime of the decorated function, so eviction is rare.
 _jit_quax_cache: dict[tuple, tuple[Any, Any]] = {}
 
 
@@ -30,36 +35,32 @@ def jit_quax(
 ) -> Any:
     del kwargs
 
+    # inline=True: JAX has already decided to inline the body — just re-quaxify
+    # and interpret it directly without the jax.jit wrapper overhead.
+    if inline:
+        return quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
+
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
-    # Without caching, every call constructs a fresh quaxify wrapper +
-    # lambda and calls jax.jit() on it.  jax.jit identifies functions by
-    # object identity, so a new lambda == a new compilation on every
-    # invocation — the dominant cost for functions like jnp.histogram2d
-    # that contain many internal @jit-decorated helpers.
-    #
-    # The jaxpr is stable across repeated calls with the same argument
-    # avals, so id(jaxpr) is a reliable key.  We also key by (inline,
-    # treedef) to handle the inline branch and structural arg differences.
-    key = (id(jaxpr), inline, treedef)
+    # inline=False path: cache the jax.jit-wrapped quaxify callable so the
+    # compiled XLA kernel is reused on subsequent calls with the same jaxpr.
+    # This applies both for eager calls to a @jax.jit function and for nested
+    # JIT tracing. id(jaxpr) is a reliable key here because the jaxpr is stable
+    # for a given cached JAX lowering, and inline is always False at this point.
+    key = (id(jaxpr), treedef)
     entry = _jit_quax_cache.get(key)
     if entry is None:
         fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
         wref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
-        if inline:  # For inline, store a plain callable; no jax.jit wrapper.
-            entry = (wref, fun)
-        else:
-            # Calling _Quaxify.__call__ directly (unbound) bypasses
-            # eqx.Module.__call__'s dir() + BoundMethod overhead.
-            _fun = cast(_Quaxify, fun)
-            qfun = lambda x: _Quaxify.__call__(_fun, *jtu.tree_unflatten(treedef, x))
-            jitted = jax.jit(qfun)
-            entry = (wref, jitted)
+        # Calling _Quaxify.__call__ directly (unbound) bypasses
+        # eqx.Module.__call__'s dir() + BoundMethod overhead.
+        _fun = cast(_Quaxify, fun)
+        qfun = lambda x: _Quaxify.__call__(_fun, *jtu.tree_unflatten(treedef, x))
+        jitted = jax.jit(qfun)
+        entry = (wref, jitted)
         _jit_quax_cache[key] = entry
 
-    if inline:
-        return entry[1](*args)
-    return entry[1](leaves)  # now we can call without Quax.
+    return entry[1](leaves)  # call without Quax; jax.jit reuses compiled kernel
 
 
 # Cache for while_quax: (id(cond_jaxpr), id(body_jaxpr), val_treedef)
