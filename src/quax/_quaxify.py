@@ -49,6 +49,7 @@ class _Quaxify(eqx.Module, Generic[CT]):
 
 def quaxify(
     fn: CT,
+    /,
     filter_spec: PyTree[bool | Callable[[Any], bool]] = True,
 ) -> CT:
     """'Quaxifies' a function, so that it understands custom array-ish objects like
