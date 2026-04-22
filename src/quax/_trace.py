@@ -290,7 +290,7 @@ def _wrap_tracer(trace: _QuaxTrace, x: Any) -> Any:
     return _QuaxTracer(trace, x) if _is_value(x) else x
 
 
-def _unwrap_tracer(trace: _QuaxTrace, x: Any) -> Any:
+def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
     if eqx.is_array_like(x):
         x = trace.full_raise(x)
     if isinstance(x, _QuaxTracer):

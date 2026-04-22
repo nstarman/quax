@@ -21,7 +21,9 @@ _DISPATCH_MISS = object()
 _dispatch_cache: dict[tuple, Any] = {}
 
 
-def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT], CT]:
+def register(
+    primitive: jexc.Primitive, /, *, precedence: int = 0
+) -> Callable[[CT], CT]:
     """Registers a multiple dispatch implementation for this JAX primitive.
 
     !!! Example
@@ -52,7 +54,7 @@ def register(primitive: jexc.Primitive, *, precedence: int = 0) -> Callable[[CT]
     A decorator for registering a multiple dispatch rule with the specified primitive.
     """
 
-    def _register(rule: CT) -> CT:
+    def _register(rule: CT, /) -> CT:
         try:
             existing_rule = _rules[primitive]
         except KeyError:
@@ -111,7 +113,7 @@ def _default_process(
     return default(primitive, values, params)
 
 
-def _wrap_if_array(x: ArrayLike | Value) -> Value:
+def _wrap_if_array(x: ArrayLike | Value, /) -> Value:
     return (
         _DenseArrayValue(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
     )
