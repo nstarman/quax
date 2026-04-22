@@ -4,11 +4,15 @@ Two structural assumptions are verified:
 
 1. JAX's jaxpr is stable (same Python object) across repeated traces with
    identical argument avals, making id(jaxpr) a reliable cache key.
-2. The cache key includes (inline, treedef) to distinguish different call
-   shapes and the inline vs jit-wrapped code path.
+2. The cache key is (id(jaxpr), treedef) — inline is NOT part of the key;
+   inline=True calls bypass the cache entirely (early return).
 
 Plus the GC-safety invariant: cache entries store weakrefs to the jaxpr so
 the finalizer can evict stale entries, preventing unbounded cache growth.
+
+Both eager mode and JIT-inside-JIT mode populate the cache (inline=False only).
+The jaxpr is kept alive by JAX's own pjit layer, so the weakref finalizer is
+rarely if ever triggered in normal usage.
 """
 
 import gc
@@ -20,7 +24,7 @@ import jax.numpy as jnp
 
 import quax
 from quax._compat import jit_p
-from quax._primitives import _jit_quax_cache
+from quax._primitives import _jit_quax_cache, jit_quax
 
 
 def _extract_jit_jaxpr(closed_jaxpr: Any) -> Any:
@@ -152,7 +156,7 @@ def test_jit_quax_cache_entry_weakref_matches_key():
     quax.quaxify(inner)(jnp.array(1.0))
 
     for key, entry in _jit_quax_cache.items():
-        stored_id, _inline, _treedef = key
+        stored_id, _treedef = key  # key is now (id(jaxpr), treedef) — no inline
         wref = entry[0]
         assert isinstance(wref, weakref.ref), (
             "entry[0] should be a weakref.ref to the jaxpr."
@@ -175,16 +179,88 @@ def test_jit_quax_cache_stable_while_jaxpr_alive():
         return x * 3.0
 
     x = jnp.array(1.0)
-    expected = float(quax.quaxify(inner)(x))
+    quax_fn = quax.quaxify(inner)
+    expected = float(quax_fn(x))
 
     keys_before = set(_jit_quax_cache.keys())
     assert keys_before, "Cache should be populated after first call."
 
-    # inner holds a strong reference to the jaxpr via JAX's tracing cache, so
+    # inner holds a strong reference to the jaxpr via JAX's pjit cache, so
     # the weakref finalizer must not fire here.
     gc.collect()
     assert set(_jit_quax_cache.keys()) == keys_before, (
         "Cache entries were evicted while jaxpr was still reachable."
     )
 
-    assert float(quax.quaxify(inner)(x)) == expected
+    assert float(quax_fn(x)) == expected
+
+
+# ---------------------------------------------------------------------------
+# JIT-inside-JIT cache behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_jit_inside_jit_populates_cache():
+    """A quaxified outer @jax.jit that calls an inner @jax.jit produces at
+    least two _jit_quax_cache entries — one for the outer jit_p equation and
+    one for the inner jit_p equation encountered while tracing the outer body.
+    This exercises the JIT-inside-JIT population path described in the module
+    docstring, which is distinct from the single-level cache-hit tests above."""
+    _jit_quax_cache.clear()
+
+    @jax.jit
+    def inner(x):
+        return x + 1.0
+
+    @jax.jit
+    def outer(x):
+        return inner(x)
+
+    result = quax.quaxify(outer)(jnp.array(0.0))
+    assert float(result) == 1.0  # correct answer
+
+    assert len(_jit_quax_cache) >= 2, (
+        "Expected >=2 cache entries for a JIT-inside-JIT call "
+        f"(outer + inner), got {len(_jit_quax_cache)}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# inline=True early-return path
+# ---------------------------------------------------------------------------
+
+
+def test_inline_true_bypasses_cache():
+    """jit_p with inline=True takes the early-return path in jit_quax and
+    must not read from or write to _jit_quax_cache.  We call jit_quax
+    directly with inline=True to avoid any JAX-version sensitivity around
+    when jax.jit(inline=True) produces a jit_p equation vs. inlines at
+    trace time."""
+    _jit_quax_cache.clear()
+
+    @jax.jit
+    def inner(x):
+        return x + 1.0
+
+    def outer(x):
+        return inner(x)
+
+    # Extract the ClosedJaxpr that jit_p carries for inner — same object
+    # _QuaxTrace would pass to jit_quax via process_primitive.
+    closed_outer = jax.make_jaxpr(outer)(jnp.array(0.0))
+    inner_jaxpr = _extract_jit_jaxpr(closed_outer)
+    assert inner_jaxpr is not None, "No jit_p equation found in outer jaxpr"
+
+    keys_before = set(_jit_quax_cache.keys())
+
+    # Directly invoke the handler with inline=True — same path _QuaxTrace
+    # takes when jit_p params carry inline=True.
+    result = jit_quax(jnp.array(0.0), jaxpr=inner_jaxpr, inline=True)
+
+    # jaxpr_as_fun returns outputs as a list; unpack the single element.
+    out = result[0] if isinstance(result, list) else result
+    assert float(out) == 1.0  # correct answer
+    assert set(_jit_quax_cache.keys()) == keys_before, (
+        "inline=True must bypass _jit_quax_cache entirely — no entries "
+        "should be added or removed."
+    )
