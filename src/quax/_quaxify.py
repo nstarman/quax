@@ -19,6 +19,7 @@ def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
     contract:
 
     - ``True``  — all leaves are dynamic (the default for :func:`quaxify`).
+    - ``False`` — no leaves are dynamic; ``tree`` passes through unchanged.
     - A callable or nested bool pytree — only leaves selected by the spec are
       wrapped; the rest are left as plain Python/JAX objects so they pass through
       any nested :func:`quaxify` call unchanged (see the redispatch tutorial).
