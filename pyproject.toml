@@ -43,7 +43,7 @@ dev = [
 ]
 docs = [
   "hippogriffe==0.2.2",
-  "mkdocstrings[python]==1.0.3",
+  "mkdocstrings[python]==1.0.4",
   "nbconvert>=7",
   "pymdown-extensions==10.21.2",
   "zensical",
