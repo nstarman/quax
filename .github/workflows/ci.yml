@@ -18,8 +18,25 @@ concurrency:
 
 env:
   FORCE_COLOR: 3
+  PYTHON_VERSIONS: '["3.10", "3.11", "3.13", "3.14"]'
 
 jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      python-versions: ${{ env.PYTHON_VERSIONS }}
+      oldest-python: ${{ steps.versions.outputs.oldest }}
+      newest-python: ${{ steps.versions.outputs.newest }}
+    steps:
+      - id: versions
+        run: |
+          versions='${{ env.PYTHON_VERSIONS }}'
+          oldest=$(echo "$versions" | jq -r '.[0]')
+          newest=$(echo "$versions" | jq -r '.[-1]')
+          echo "oldest=$oldest" >> $GITHUB_OUTPUT
+          echo "newest=$newest" >> $GITHUB_OUTPUT
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -38,11 +55,11 @@ jobs:
   tests:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    needs: [lint]
+    needs: [lint, setup]
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.13"]
+        python-version: ${{ fromJson(needs.setup.outputs.python-versions) }}
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
@@ -63,7 +80,7 @@ jobs:
   oldest-supported:
     name: Oldest supported deps
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [lint, setup]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -72,7 +89,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.10"
+          python-version: ${{ needs.setup.outputs.oldest-python }}
 
       - name: Install the project
         run: uv sync --no-default-groups --group tests --resolution lowest-direct
@@ -83,7 +100,7 @@ jobs:
   newest-supported:
     name: Newest supported deps
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [lint, setup]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,7 +109,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.13"
+          python-version: ${{ needs.setup.outputs.newest-python }}
 
       - name: Install the project
         run: uv sync --no-default-groups --group tests --upgrade
@@ -103,7 +120,7 @@ jobs:
   ci-pass:
     name: CI Pass
     runs-on: ubuntu-latest
-    needs: [lint, tests, oldest-supported, newest-supported]
+    needs: [lint, setup, tests, oldest-supported, newest-supported]
     if: always()
     steps:
       - name: All required jobs passed

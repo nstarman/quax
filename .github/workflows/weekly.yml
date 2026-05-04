@@ -14,15 +14,28 @@ permissions:
 
 env:
   FORCE_COLOR: 3
+  PYTHON_VERSIONS: '["3.10", "3.11", "3.13", "3.14"]'
 
 jobs:
+  setup:
+    name: Setup
+    runs-on: ubuntu-latest
+    outputs:
+      python-versions: ${{ env.PYTHON_VERSIONS }}
+    steps:
+      - id: versions
+        run: |
+          versions='${{ env.PYTHON_VERSIONS }}'
+          echo "versions=$versions" >> $GITHUB_OUTPUT
+
   newest-supported:
     name: Newest deps (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [setup]
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ${{ fromJson(needs.setup.outputs.python-versions) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -42,10 +55,11 @@ jobs:
   pre-release:
     name: Pre-release deps (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: [setup]
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ${{ fromJson(needs.setup.outputs.python-versions) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -66,7 +80,7 @@ jobs:
   weekly-pass:
     name: Weekly CI Pass
     runs-on: ubuntu-latest
-    needs: [newest-supported, pre-release]
+    needs: [setup, newest-supported, pre-release]
     if: always()
     steps:
       - name: All required jobs passed
