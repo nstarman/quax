@@ -19,7 +19,8 @@ dependencies = [
   "jax>=0.5.3,!=0.7.0,!=0.7.1",
   "jaxtyping>=0.3.3",
   "equinox>=0.13.2",
-  "plum-dispatch>=2.2.1",
+  'plum-dispatch>=2.5.7; python_version < "3.14"',
+  'plum-dispatch>=2.9.0; python_version >= "3.14"',
   "packaging>=20.0",
 ]
 description = "Multiple dispatch in JAX via custom interpreters."
