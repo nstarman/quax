@@ -19,14 +19,14 @@ cd quax
 
 ```bash
 uv sync --group dev
-pre-commit install  # `pre-commit` is installed by `uv` on the previous line
+prek install  # `prek` is installed by `uv` on the previous line
 ```
 
 **Using pip:**
 
 ```bash
 pip install -e . --dependency-groups dev
-pre-commit install  # `pre-commit` is installed by `pip` on the previous line
+prek install  # `prek` is installed by `pip` on the previous line
 ```
 
 ---
