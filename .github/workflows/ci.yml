@@ -49,8 +49,8 @@ jobs:
       - name: Install
         run: uv sync --no-default-groups --group lint --locked
 
-      - name: Checks with pre-commit
-        run: uv run --frozen pre-commit run --all-files
+      - name: Checks with prek
+        run: uv run --frozen prek run --all-files
 
   tests:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
