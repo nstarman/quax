@@ -9,7 +9,7 @@ uv run pytest                # run all tests (doctests included)
 uv run pytest tests/unit/    # unit tests only
 uv run pytest tests/usage/   # integration/usage tests
 uv run mkdocs serve          # build and serve docs locally
-uv run pre-commit run -a     # lint + format (ruff, pyright, taplo)
+uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 ```
 
 > Always use `uv run` — never bare `python` or `pytest`.
