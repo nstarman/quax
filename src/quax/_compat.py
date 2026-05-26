@@ -13,6 +13,7 @@ __all__ = (
     "JAX_VERSION",
     # Flags
     "JAX_GE_0_9_2",
+    "JAX_GE_0_10_1",
     # Features
     "jit_p",
     "typeof",
@@ -22,6 +23,7 @@ JAX_VERSION: Final = Version(version("jax"))
 JAX_GE_0_7_0: Final = JAX_VERSION >= Version("0.7.0")
 JAX_GE_0_8_2: Final = JAX_VERSION >= Version("0.8.2")
 JAX_GE_0_9_2: Final = JAX_VERSION >= Version("0.9.2")
+JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
 
 jit_p: jexc.Primitive
 if JAX_GE_0_7_0:
