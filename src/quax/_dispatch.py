@@ -113,7 +113,7 @@ def _default_process(
     return default(primitive, values, params)
 
 
-def _wrap_if_array(x: ArrayLike | Value, /) -> Value:
+def _wrap_if_array(x: Any, /) -> Value:
     return (
         _DenseArrayValue(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
     )
