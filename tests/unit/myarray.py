@@ -13,7 +13,7 @@ from jaxtyping import Array, ArrayLike, Bool
 from packaging.version import Version
 
 import quax
-from quax._compat import JAX_VERSION, typeof
+from quax._compat import JAX_GE_0_10_1, JAX_VERSION, typeof
 
 
 @final
@@ -1451,6 +1451,15 @@ def sqrt_p(x: MyArray, /, **kw: Any) -> MyArray:
 @quax.register(lax.squeeze_p)
 def squeeze_p(x: MyArray, **kw: Any) -> MyArray:
     return replace(x, array=lax.squeeze_p.bind(x.array, **kw))
+
+
+# ==============================================================================
+
+if JAX_GE_0_10_1:
+
+    @quax.register(lax.stack_p)
+    def stack_p(*xs: MyArray, **kw: Any) -> MyArray:
+        return MyArray(lax.stack_p.bind(*[x.array for x in xs], **kw))
 
 
 # ==============================================================================
