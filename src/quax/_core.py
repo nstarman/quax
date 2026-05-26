@@ -96,7 +96,7 @@ class _QuaxTracer(core.Tracer):
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
         return self.value.aval()
 
-    def full_lower(self) -> Union[ArrayLike, "_QuaxTracer"]:
+    def full_lower(self) -> Union[core.Tracer, "_QuaxTracer"]:  # pyright: ignore[reportIncompatibleVariableOverride]
         if isinstance(self.value, _DenseArrayValue):
             return core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
         else:
@@ -130,11 +130,10 @@ def _default_process(
     return default(primitive, values, params)
 
 
-def _wrap_if_array(x: Union[ArrayLike, "Value"]) -> "Value":
-    if eqx.is_array_like(x):
-        return _DenseArrayValue(cast(ArrayLike, x))
-    else:
-        return cast(Value, x)
+def _wrap_if_array(x: Any, /) -> "Value":
+    return (
+        _DenseArrayValue(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
+    )
 
 
 class _QuaxTrace(
@@ -198,6 +197,32 @@ class _QuaxTrace(
         if primitive.multiple_results:
             return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
         return _QuaxTracer(self, _wrap_if_array(out))  # pyright: ignore[reportArgumentType]
+
+    def stage_value(self, val: Any) -> Any:
+        """Lifts a value into this trace.
+
+        Behavior:
+
+        - If `val` is a JAX `SymbolicZero` (SZ), return it unchanged.
+        - If `val` is a sequence (but not bytes/str), lift each element
+          and return a list of tracers.
+        - Otherwise wrap array-likes into `_DenseArrayValue` via
+          `_wrap_if_array` and return a single `_QuaxTracer`.
+
+        This mirrors the semantic intent of JAX's Trace.stage_value: create
+        tracers for concrete values without emitting an identity primitive.
+        """
+        # Preserve JAX's SymbolicZero sentinel as-is so callers that check
+        # `type(x) is SZ` continue to work.
+        if type(val) is SZ:
+            return val
+
+        # Treat sequences (lists/tuples) as multiple staged values.
+        if isinstance(val, Sequence) and not isinstance(val, (str, bytes)):
+            return [_QuaxTracer(self, _wrap_if_array(v)) for v in val]
+
+        # Default: wrap arrays into a Value and return a tracer.
+        return _QuaxTracer(self, _wrap_if_array(val))
 
     if JAX_GE_0_9_2:
         # In JAX v0.9.2+ (PR https://github.com/jax-ml/jax/pull/35730) JAX was
