@@ -5,7 +5,7 @@ from typing import Any, TypeAlias, TypeVar
 
 import equinox as eqx
 import jax
-import jax._src.prng
+import jax._src.prng  # pyright: ignore[reportMissingImports]
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
