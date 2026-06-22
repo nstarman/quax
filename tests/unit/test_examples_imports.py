@@ -1,7 +1,7 @@
 import importlib
 import sys
 
-import quax  # ensure quax is imported before tests manipulate sys.modules
+import quax  # noqa: F401  # ensure quax is imported before tests manipulate sys.modules
 
 
 EXAMPLE_MODULES = ("lora", "named", "prng", "sparse", "structured_matrices", "zero")
