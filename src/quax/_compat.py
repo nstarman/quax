@@ -18,6 +18,7 @@ __all__ = (
     "JAX_GE_0_7_2",
     "JAX_GE_0_9_2",
     "JAX_GE_0_10_1",
+    "JAX_GE_0_10_2",
     # Features
     "jit_p",
     "typeof",
@@ -29,6 +30,7 @@ JAX_GE_0_7_2: Final = JAX_VERSION >= Version("0.7.2")
 JAX_GE_0_8_2: Final = JAX_VERSION >= Version("0.8.2")
 JAX_GE_0_9_2: Final = JAX_VERSION >= Version("0.9.2")
 JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
+JAX_GE_0_10_2: Final = JAX_VERSION >= Version("0.10.2")
 
 jit_p: jexc.Primitive
 if JAX_GE_0_7_0:
