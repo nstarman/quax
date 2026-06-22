@@ -5,6 +5,8 @@ import pytest
 
 import quax
 import quax.examples.prng as prng
+import quax.examples.prng._core as prng_core
+from quax._compat import JAX_GE_0_10_2
 
 
 def test_uniform():
@@ -61,3 +63,8 @@ def test_brownian():
         return cumvals
 
     run(prng.ThreeFry(0))
+
+
+def test_threefry_backend_import():
+    expected = "jax._src.random.threefry2x32" if JAX_GE_0_10_2 else "jax._src.prng"
+    assert prng_core._jax_threefry.__name__ == expected
