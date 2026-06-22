@@ -1,6 +1,8 @@
 import importlib
 import sys
 
+import quax  # ensure quax is imported before tests manipulate sys.modules
+
 
 EXAMPLE_MODULES = ("lora", "named", "prng", "sparse", "structured_matrices", "zero")
 
@@ -22,3 +24,4 @@ def test_examples_submodule_loaded_on_attribute_access():
     examples = importlib.import_module("quax.examples")
     assert "quax.examples.prng" not in sys.modules
     assert examples.prng.__name__ == "quax.examples.prng"
+    assert "quax.examples.prng" in sys.modules
