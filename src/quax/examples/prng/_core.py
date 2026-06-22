@@ -1,11 +1,11 @@
 import abc
 import functools as ft
+import importlib
 from collections.abc import Sequence
 from typing import Any, TypeAlias, TypeVar
 
 import equinox as eqx
 import jax
-import jax._src.prng
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
@@ -14,6 +14,13 @@ import numpy as np
 from jaxtyping import Array, ArrayLike, Float, Integer, UInt, UInt32
 
 import quax
+from quax._compat import JAX_GE_0_10_2
+
+
+if JAX_GE_0_10_2:
+    _jax_threefry = importlib.import_module("jax._src.random.threefry2x32")
+else:
+    _jax_threefry = importlib.import_module("jax._src.prng")
 
 
 RealArray: TypeAlias = ArrayLike
@@ -49,17 +56,17 @@ class ThreeFry(PRNG):
     value: UInt32[Array, "*batch 2"]
 
     def __init__(self, seed: Integer[ArrayLike, ""]):
-        self.value = jax._src.prng.threefry_seed(jnp.asarray(seed))  # pyright: ignore[reportPrivateImportUsage]
+        self.value = _jax_threefry.threefry_seed(jnp.asarray(seed))
 
     def aval(self):
         *shape, _ = self.value.shape
         return jax.core.ShapedArray(shape, jnp.uint32)
 
     def random_bits(self, bit_width: int, shape: tuple[int, ...]) -> UInt[Array, "..."]:
-        return jax._src.prng.threefry_random_bits(self.value, bit_width, shape)  # pyright: ignore[reportPrivateImportUsage]
+        return _jax_threefry.threefry_random_bits(self.value, bit_width, shape)
 
     def split(self, num: int) -> Sequence["ThreeFry"]:
-        new_values = jax._src.prng.threefry_split(self.value, (num,))  # pyright: ignore[reportPrivateImportUsage]
+        new_values = _jax_threefry.threefry_split(self.value, (num,))
         return [eqx.tree_at(lambda s: s.value, self, x) for x in new_values]
 
 

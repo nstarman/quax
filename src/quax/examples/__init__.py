@@ -1,8 +1,16 @@
-from . import (
-    lora as lora,
-    named as named,
-    prng as prng,
-    sparse as sparse,
-    structured_matrices as structured_matrices,
-    zero as zero,
-)
+import importlib
+
+
+__all__ = ("lora", "named", "prng", "sparse", "structured_matrices", "zero")
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        module = importlib.import_module(f"{__name__}.{name}")
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted((*globals(), *__all__))
