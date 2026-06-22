@@ -10,9 +10,9 @@ repos:
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.410
     hooks:
-    - id: pyright
-      additional_dependencies: ["equinox", "pytest", "jax", "jaxtyping", "plum-dispatch"]
-      exclude: "^tests/.*"
+      - id: pyright
+        additional_dependencies: ["equinox", "pytest", "jax", "jaxtyping", "plum-dispatch"]
+        exclude: "^tests/.*"
 
   - repo: https://github.com/ComPWA/taplo-pre-commit
     rev: v0.9.3
