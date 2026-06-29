@@ -45,6 +45,28 @@ else:
     typeof = jax.core.get_aval  # pyright: ignore[reportAttributeAccessIssue]
 
 
+# Mark `jax.Array` as "faithful" for `plum` multiple dispatch.
+#
+# `plum` caches method resolution keyed on the *types* of the arguments, but
+# only when every type registered on a function is "faithful" -- i.e. when
+# ``isinstance(x, T)`` agrees with ``issubclass(type(x), T)``, so that the type
+# alone determines dispatch. Newer JAX gives `jax.Array` a custom metaclass
+# ``__instancecheck__``, so `plum` conservatively treats it as non-faithful.
+#
+# A single non-faithful type on a `plum` function disables its resolution cache
+# entirely. Because `quax` registers ``convert`` methods targeting `jax.Array`
+# (below), and `plum` runs ``convert`` on the return value of every dispatched
+# function with a concrete return annotation, that uncached resolution is re-run
+# on every such call -- a large, easily-avoided cost for any library built on
+# `quax.ArrayValue`.
+#
+# Setting ``__faithful__`` re-enables the cache. It only gates *caching* of
+# `plum`'s deterministic, type-based resolution; it never changes which method
+# is selected, so results are unchanged. This must run before the ``convert``
+# methods below are registered, so their signatures are built faithful.
+jax.Array.__faithful__ = True  # type: ignore[attr-defined]
+
+
 # Register plum conversions for JAX's typed literal scalars (TypedInt,
 # TypedFloat, TypedComplex). These types were introduced in JAX 0.7.2 to
 # preserve dtype information during canonicalization. They allow any library
