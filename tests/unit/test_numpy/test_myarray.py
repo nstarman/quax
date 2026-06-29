@@ -565,9 +565,7 @@ xN3 = MyArray(jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=float))
         ("eigvals", (xN3,), {}),
         ("eigh", (xN3,), {}),
         ("eigvalsh", (xN3,), {}),
-        pytest.param(
-            "inv", (x1225,), {}, marks=pytest.mark.xfail(reason="FIXME: tracer leak")
-        ),
+        ("inv", (x1225,), {}),
         ("matmul", (xN3, xN3), {}),
         ("matrix_norm", (xN3,), {"ord": 2}),
         ("matrix_power", (xN3, 2), {}),
@@ -577,12 +575,7 @@ xN3 = MyArray(jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=float))
         ("pinv", (xN3,), {}),
         ("qr", (xN3,), {}),
         ("slogdet", (x1225,), {}),
-        pytest.param(
-            "solve",
-            (x1225, jnp.array([1, 2])),
-            {},
-            marks=pytest.mark.xfail(reason="FIXME: tracer leak"),
-        ),
+        ("solve", (x1225, jnp.array([1, 2])), {}),
         ("svd", (xN3,), {}),
         ("svdvals", (xN3,), {}),
         ("tensordot", (xN3, xN3), {"axes": 1}),
