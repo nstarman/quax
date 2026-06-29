@@ -1,11 +1,12 @@
 """Tests for JAX compatibility features in quax._compat."""
 
+import importlib
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 import plum
 import pytest
-from plum.type import is_faithful
 
 from quax._compat import JAX_GE_0_7_2
 
@@ -149,19 +150,26 @@ def test_typed_complex_with_imaginary():
 # function. These tests guard against that regression.
 
 
+def _plum_attr(candidates, attr):
+    """Fetch a plum attribute whose private module path varies across versions."""
+    for modname in candidates:
+        try:
+            return getattr(importlib.import_module(modname), attr)
+        except (ImportError, AttributeError):  # pragma: no cover
+            continue
+    pytest.skip(f"plum.{attr} is not importable in this plum version")
+
+
 def test_jax_array_marked_faithful():
     """`quax._compat` marks `jax.Array` faithful, and `plum` recognises it."""
     assert getattr(jax.Array, "__faithful__", False) is True
+    is_faithful = _plum_attr(("plum.type", "plum._type"), "is_faithful")
     assert is_faithful(jax.Array) is True
 
 
 def _convert_dispatcher():
     """Return plum's internal ``convert`` dispatcher, or skip if relocated."""
-    try:
-        from plum.promotion import _convert
-    except ImportError:  # pragma: no cover - guards against plum internals moving
-        pytest.skip("plum's internal convert dispatcher is not importable")
-    return _convert
+    return _plum_attr(("plum.promotion", "plum._promotion"), "_convert")
 
 
 def test_convert_resolver_stays_faithful():
