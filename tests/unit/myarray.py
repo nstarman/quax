@@ -719,27 +719,12 @@ def lgamma_p(x: MyArray) -> MyArray:
 
 @quax.register(lax.linear_solve_p)
 def linear_solve_p(
-    arg0: MyArray,
-    arg1: MyArray,
-    arg2: MyArray,
-    arg3: MyArray,
-    arg4: MyArray,
-    arg5: MyArray,
-    arg6: ArrayLike,
-    **kw: Any,
-) -> MyArray:
-    return MyArray(
-        lax.linear_solve_p.bind(
-            arg0.array,
-            arg1.array,
-            arg2.array,
-            arg3.array,
-            arg4.array,
-            arg5.array,
-            arg6,
-            **kw,
-        )
-    )
+    arg0: MyArray, *args: MyArray | ArrayLike, **kw: Any
+) -> list[MyArray]:
+    return [
+        MyArray(x)
+        for x in lax.linear_solve_p.bind(arg0.array, *(unwrap(a) for a in args), **kw)
+    ]
 
 
 # ==============================================================================
