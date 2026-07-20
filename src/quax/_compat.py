@@ -11,10 +11,12 @@ __all__ = (
     # Features
     "jit_p",
     "is_early_inline",
+    "scan_bind_params",
     "typeof",
+    "unpack_scan_args",
 )
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from importlib.metadata import version
 from typing import Any, Final
 
@@ -61,6 +63,78 @@ else:
     def is_early_inline(inline: Any, /) -> bool:
         """Whether `jit_p`'s `inline` parameter asks for inlining at trace time."""
         return bool(inline)
+
+
+# JAX 0.11.0 reworked `scan_p`'s parameters: the positional `num_consts` /
+# `num_carry` split (plus `linear` and `_split_transpose`) was replaced by a
+# pair of `FlatTree` descriptors, `ft_in` and `ft_out`, which describe the
+# const/carry/xs grouping of the inputs and the carry/ys grouping of the
+# outputs.
+#
+# `unpack_scan_args` recovers the (consts, carry, xs) grouping, and
+# `scan_bind_params` builds the parameters for re-binding `scan_p` with a
+# quaxified body -- which generally has a *different* number of flat operands,
+# since a single `ArrayValue` can flatten to several arrays.
+if JAX_GE_0_11_0:
+    from jax._src import (
+        flattree as jax_flattree,  # pyright: ignore[reportAttributeAccessIssue]
+    )
+
+    def unpack_scan_args(
+        args: Sequence[Any], params: dict[str, Any], /
+    ) -> tuple[list, list, list]:
+        """Split `scan_p`'s flat operands into (consts, carry, xs)."""
+        groups = params["ft_in"].update(args).unpack()
+        return tuple(list(g.vals) for g in groups)  # type: ignore[return-value]
+
+    def scan_bind_params(
+        params: dict[str, Any],
+        /,
+        *,
+        num_consts: int,
+        num_carry: int,
+        num_xs: int,
+        num_ys: int,
+    ) -> dict[str, Any]:
+        """Parameters for re-binding `scan_p` with the given group sizes.
+
+        The rebuilt `ft_in`/`ft_out` use plain `nones`: the quaxified body is
+        retraced from scratch, so none of the caller's forwarding or filtering
+        optimizations (e.g. the `RightsOnly` markers JAX uses to prune extensive
+        outputs) carry over to it.
+        """
+        rest = {k: v for k, v in params.items() if k not in ("ft_in", "ft_out")}
+        nones = jax_flattree.nones
+        return {
+            **rest,
+            "ft_in": jax_flattree.pack(
+                (nones(num_consts), nones(num_carry), nones(num_xs))
+            ),
+            "ft_out": jax_flattree.pack((nones(num_carry), nones(num_ys))),
+        }
+
+else:
+
+    def unpack_scan_args(
+        args: Sequence[Any], params: dict[str, Any], /
+    ) -> tuple[list, list, list]:
+        """Split `scan_p`'s flat operands into (consts, carry, xs)."""
+        nc = params["num_consts"]
+        body_end = nc + params["num_carry"]
+        return list(args[:nc]), list(args[nc:body_end]), list(args[body_end:])
+
+    def scan_bind_params(
+        params: dict[str, Any],
+        /,
+        *,
+        num_consts: int,
+        num_carry: int,
+        num_xs: int,
+        num_ys: int,
+    ) -> dict[str, Any]:
+        """Parameters for re-binding `scan_p` with the given group sizes."""
+        del num_xs, num_ys
+        return {**params, "num_consts": num_consts, "num_carry": num_carry}
 
 
 typeof: Callable[[Any], Any]
