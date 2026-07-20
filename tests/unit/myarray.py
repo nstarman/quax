@@ -13,7 +13,7 @@ from jaxtyping import Array, ArrayLike, Bool
 from packaging.version import Version
 
 import quax
-from quax._compat import JAX_GE_0_10_1, JAX_VERSION, typeof
+from quax._compat import JAX_GE_0_10_1, JAX_GE_0_11_0, JAX_VERSION, typeof
 
 
 @final
@@ -1508,6 +1508,15 @@ def top_k_p(operand: MyArray, /, **kw: Any) -> list[MyArray]:
 @quax.register(lax.transpose_p)
 def transpose_p(operand: MyArray, /, **kw: Any) -> MyArray:
     return replace(operand, array=lax.transpose_p.bind(operand.array, **kw))
+
+
+# ==============================================================================
+
+if JAX_GE_0_11_0:
+
+    @quax.register(lax.unstack_p)
+    def unstack_p(x: MyArray, /, **kw: Any) -> list[MyArray]:
+        return [MyArray(y) for y in lax.unstack_p.bind(x.array, **kw)]
 
 
 # ==============================================================================

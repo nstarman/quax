@@ -11,15 +11,15 @@ import jax.extend.core as jexc
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike
 
-from ._compat import jit_p
+from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
 from ._dispatch import register
 from ._quaxify import _Quaxify, quaxify
 from ._values import _make_cache_finalizer, ArrayValue
 
 
 # Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_wref, jitted_fn).
-# Populated on any call where inline=False — both from eager mode and from the
-# JIT-inside-JIT path.  In both cases the jaxpr is stable (JAX's pjit layer
+# Populated on any call that is not inlined at trace time — both from eager mode
+# and from the JIT-inside-JIT path.  In both cases the jaxpr is stable (pjit
 # caches it keyed by function + abstract args), so id(jaxpr) is a reliable key.
 #
 # entry[0] is a weakref to the jaxpr; the finalizer evicts the entry when the
@@ -31,22 +31,26 @@ _jit_quax_cache: dict[tuple, tuple[Any, Any]] = {}
 
 @register(jit_p)
 def jit_quax(
-    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: bool, **kwargs: Any
+    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: Any, **kwargs: Any
 ) -> Any:
     del kwargs
 
-    # inline=True: JAX has already decided to inline the body — just re-quaxify
+    # `inline` is a bool before JAX 0.11.0 and a `jax.Inline` enum from 0.11.0
+    # on, so it is typed as `Any` here and interpreted by `is_early_inline`.
+    #
+    # Early inline: JAX has already decided to inline the body — just re-quaxify
     # and interpret it directly without the jax.jit wrapper overhead.
-    if inline:
+    if is_early_inline(inline):
         return quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
-    # inline=False path: cache the jax.jit-wrapped quaxify callable so the
+    # Non-inlined path: cache the jax.jit-wrapped quaxify callable so the
     # compiled XLA kernel is reused on subsequent calls with the same jaxpr.
     # This applies both for eager calls to a @jax.jit function and for nested
     # JIT tracing. id(jaxpr) is a reliable key here because the jaxpr is stable
-    # for a given cached JAX lowering, and inline is always False at this point.
+    # for a given cached JAX lowering, and inlining is never requested at this
+    # point.
     key = (id(jaxpr), treedef)
     entry = _jit_quax_cache.get(key)
     if entry is None:
@@ -167,22 +171,25 @@ _scan_quax_cache: dict[tuple, tuple] = {}
 
 
 @register(jax.lax.scan_p)
-def scan_quax(
-    *args: ArrayValue | ArrayLike, num_consts: int, num_carry: int, jaxpr, **kwargs: Any
-) -> Any:
+def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
     """Quax handler for ``lax.scan_p``.
 
     Splits the flat ``args`` sequence into the three groups that ``lax.scan``
     uses — constants, initial carry, and stacked ``xs`` — then builds a
     quaxified jaxpr for the scan body and re-binds the primitive with it.
 
+    How that grouping is encoded in the primitive's parameters changed in JAX
+    0.11.0, so both the split and the re-bind go through `_compat`.
+
     The quaxified body jaxpr is cached by ``(id(jaxpr), consts_treedef,
     carry_treedef, xs_treedef)`` so that repeated calls with the same scan
     body and pytree structure skip the ``jax.make_jaxpr`` tracing step.
     """
-    consts_flat, c_tree = jtu.tree_flatten(args[:num_consts])
-    carry_flat, v_tree = jtu.tree_flatten(args[num_consts : num_consts + num_carry])
-    xs_flat, x_tree = jtu.tree_flatten(args[num_consts + num_carry :])
+    consts, carry, xs = unpack_scan_args(args, kwargs)
+
+    consts_flat, c_tree = jtu.tree_flatten(consts)
+    carry_flat, v_tree = jtu.tree_flatten(carry)
+    xs_flat, x_tree = jtu.tree_flatten(xs)
 
     nc = len(consts_flat)
     nv = len(carry_flat)
@@ -218,9 +225,13 @@ def scan_quax(
         *carry_flat,
         *xs_flat,
         jaxpr=quax_jaxpr,
-        num_consts=nc,
-        num_carry=nv,
-        **kwargs,
+        **scan_bind_params(
+            kwargs,
+            num_consts=nc,
+            num_carry=nv,
+            num_xs=len(xs_flat),
+            num_ys=len(quax_jaxpr.out_avals) - nv,
+        ),
     )
 
     return jtu.tree_unflatten(out_tree, out_flat)
