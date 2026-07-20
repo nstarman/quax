@@ -15,7 +15,14 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jaxtyping import ArrayLike, PyTree
 
-from ._compat import JAX_GE_0_9_2, jit_p, typeof
+from ._compat import (
+    is_early_inline,
+    JAX_GE_0_9_2,
+    jit_p,
+    scan_bind_params,
+    typeof,
+    unpack_scan_args,
+)
 
 
 T = TypeVar("T")
@@ -615,11 +622,15 @@ class _DenseArrayValue(ArrayValue):
 
 @register(jit_p)
 def jit_quax(
-    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: bool, **kwargs: Any
+    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: Any, **kwargs: Any
 ) -> Any:
     del kwargs
     fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
-    if inline:
+    # `inline` is a bool before JAX 0.11.0 and a `jax.Inline` enum from 0.11.0
+    # on, so it is typed as `Any` here and interpreted by `is_early_inline`.
+    # Enum members are always truthy, so a bare `if inline:` would wrongly
+    # inline on every call under 0.11.
+    if is_early_inline(inline):
         return fun(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
@@ -708,16 +719,16 @@ def cond_quax(
 @register(jax.lax.scan_p)
 def _(
     *args: ArrayValue | ArrayLike,
-    num_consts: int,
-    num_carry: int,
     jaxpr,
     **kwargs,
 ):
-    consts_flat, consts_struct = jtu.tree_flatten(args[:num_consts])
-    carry_flat, carry_struct = jtu.tree_flatten(
-        args[num_consts : num_consts + num_carry]
-    )
-    xs_flat, xs_struct = jtu.tree_flatten(args[num_consts + num_carry :])
+    # How the const/carry/xs grouping is encoded in `scan_p`'s parameters
+    # changed in JAX 0.11.0, so both the split and the re-bind go via `_compat`.
+    consts, carry, xs = unpack_scan_args(args, kwargs)
+
+    consts_flat, consts_struct = jtu.tree_flatten(consts)
+    carry_flat, carry_struct = jtu.tree_flatten(carry)
+    xs_flat, xs_struct = jtu.tree_flatten(xs)
 
     trace_in = (
         *consts_flat,
@@ -748,9 +759,13 @@ def _(
         *carry_flat,
         *xs_flat,
         jaxpr=quax_jaxpr,
-        num_consts=num_consts_flat,
-        num_carry=num_carry_flat,
-        **kwargs,
+        **scan_bind_params(
+            kwargs,
+            num_consts=num_consts_flat,
+            num_carry=num_carry_flat,
+            num_xs=len(xs_flat),
+            num_ys=len(quax_jaxpr.out_avals) - num_carry_flat,
+        ),
     )
 
     return jtu.tree_unflatten(out_struct, out_flat)
