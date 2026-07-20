@@ -4,6 +4,7 @@ __all__ = (
     "JAX_VERSION",
     # Flags
     "JAX_GE_0_7_2",
+    "JAX_GE_0_8_0",
     "JAX_GE_0_9_2",
     "JAX_GE_0_10_1",
     "JAX_GE_0_10_2",
@@ -31,6 +32,7 @@ from packaging.version import Version
 JAX_VERSION: Final = Version(version("jax"))
 JAX_GE_0_7_0: Final = JAX_VERSION >= Version("0.7.0")
 JAX_GE_0_7_2: Final = JAX_VERSION >= Version("0.7.2")
+JAX_GE_0_8_0: Final = JAX_VERSION >= Version("0.8.0")
 JAX_GE_0_8_2: Final = JAX_VERSION >= Version("0.8.2")
 JAX_GE_0_9_2: Final = JAX_VERSION >= Version("0.9.2")
 JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
@@ -167,11 +169,12 @@ jax.Array.__faithful__ = True  # type: ignore[attr-defined]
 
 
 # Register plum conversions for JAX's typed literal scalars (TypedInt,
-# TypedFloat, TypedComplex). These types were introduced in JAX 0.7.2 to
-# preserve dtype information during canonicalization. They allow any library
+# TypedFloat, TypedComplex). These types were introduced in JAX 0.8.0 (the
+# `jax._src.literals` module exists in 0.7.2, but without the `Typed*` classes)
+# to preserve dtype information during canonicalization. They allow any library
 # using quax.ArrayValue to seamlessly handle Python scalars that JAX internally
 # represents as typed literals.
-if JAX_GE_0_7_2:
+if JAX_GE_0_8_0:
     from jax._src import literals as jax_literals
 
     @plum.conversion_method(type_from=jax_literals.TypedInt, type_to=Array)  # type: ignore[arg-type]
