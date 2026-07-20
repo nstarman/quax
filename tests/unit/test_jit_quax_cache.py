@@ -5,12 +5,13 @@ Two structural assumptions are verified:
 1. JAX's jaxpr is stable (same Python object) across repeated traces with
    identical argument avals, making id(jaxpr) a reliable cache key.
 2. The cache key is (id(jaxpr), treedef) — inline is NOT part of the key;
-   inline=True calls bypass the cache entirely (early return).
+   calls that JAX asked to inline at trace time bypass the cache entirely
+   (early return).
 
 Plus the GC-safety invariant: cache entries store weakrefs to the jaxpr so
 the finalizer can evict stale entries, preventing unbounded cache growth.
 
-Both eager mode and JIT-inside-JIT mode populate the cache (inline=False only).
+Both eager mode and JIT-inside-JIT mode populate the cache (non-inlined only).
 The jaxpr is kept alive by JAX's own pjit layer, so the weakref finalizer is
 rarely if ever triggered in normal usage.
 """
@@ -21,9 +22,10 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 import quax
-from quax._compat import jit_p
+from quax._compat import JAX_GE_0_11_0, jit_p
 from quax._primitives import _jit_quax_cache, jit_quax
 
 
@@ -263,4 +265,46 @@ def test_inline_true_bypasses_cache():
     assert set(_jit_quax_cache.keys()) == keys_before, (
         "inline=True must bypass _jit_quax_cache entirely — no entries "
         "should be added or removed."
+    )
+
+
+@pytest.mark.skipif(not JAX_GE_0_11_0, reason="jax.Inline was introduced in JAX 0.11.0")
+@pytest.mark.parametrize(
+    ("member", "inlines"),
+    [
+        ("JAX_EARLY", True),
+        ("JAX_LATE", False),
+        ("XLA_EARLY", False),
+        ("XLA_LATE", False),
+        ("AUTO", False),
+    ],
+)
+def test_inline_enum_members(member, inlines):
+    """From JAX 0.11.0 `inline` is a `jax.Inline` enum rather than a bool.
+    Only `JAX_EARLY` (the old `True`) takes the early-return path; every other
+    member keeps the call in the jaxpr and so must populate the cache, like the
+    old `False` did.  Enum members are all truthy, so a plain `if inline:`
+    would wrongly inline every one of them."""
+    _jit_quax_cache.clear()
+
+    @jax.jit
+    def inner(x):
+        return x + 1.0
+
+    def outer(x):
+        return inner(x)
+
+    closed_outer = jax.make_jaxpr(outer)(jnp.array(0.0))
+    inner_jaxpr = _extract_jit_jaxpr(closed_outer)
+    assert inner_jaxpr is not None, "No jit_p equation found in outer jaxpr"
+
+    inline = getattr(jax.Inline, member)
+    result = jit_quax(jnp.array(0.0), jaxpr=inner_jaxpr, inline=inline)
+
+    out = result[0] if isinstance(result, list) else result
+    assert float(out) == 1.0  # correct answer either way
+
+    assert (len(_jit_quax_cache) == 0) is inlines, (
+        f"Inline.{member} should {'bypass' if inlines else 'populate'} "
+        f"_jit_quax_cache, but the cache has {len(_jit_quax_cache)} entries."
     )

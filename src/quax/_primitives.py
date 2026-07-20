@@ -11,15 +11,15 @@ import jax.extend.core as jexc
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike
 
-from ._compat import jit_p
+from ._compat import is_early_inline, jit_p
 from ._dispatch import register
 from ._quaxify import _Quaxify, quaxify
 from ._values import _make_cache_finalizer, ArrayValue
 
 
 # Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_wref, jitted_fn).
-# Populated on any call where inline=False — both from eager mode and from the
-# JIT-inside-JIT path.  In both cases the jaxpr is stable (JAX's pjit layer
+# Populated on any call that is not inlined at trace time — both from eager mode
+# and from the JIT-inside-JIT path.  In both cases the jaxpr is stable (pjit
 # caches it keyed by function + abstract args), so id(jaxpr) is a reliable key.
 #
 # entry[0] is a weakref to the jaxpr; the finalizer evicts the entry when the
@@ -31,22 +31,26 @@ _jit_quax_cache: dict[tuple, tuple[Any, Any]] = {}
 
 @register(jit_p)
 def jit_quax(
-    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: bool, **kwargs: Any
+    *args: ArrayLike | ArrayValue, jaxpr: Any, inline: Any, **kwargs: Any
 ) -> Any:
     del kwargs
 
-    # inline=True: JAX has already decided to inline the body — just re-quaxify
+    # `inline` is a bool before JAX 0.11.0 and a `jax.Inline` enum from 0.11.0
+    # on, so it is typed as `Any` here and interpreted by `is_early_inline`.
+    #
+    # Early inline: JAX has already decided to inline the body — just re-quaxify
     # and interpret it directly without the jax.jit wrapper overhead.
-    if inline:
+    if is_early_inline(inline):
         return quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
-    # inline=False path: cache the jax.jit-wrapped quaxify callable so the
+    # Non-inlined path: cache the jax.jit-wrapped quaxify callable so the
     # compiled XLA kernel is reused on subsequent calls with the same jaxpr.
     # This applies both for eager calls to a @jax.jit function and for nested
     # JIT tracing. id(jaxpr) is a reliable key here because the jaxpr is stable
-    # for a given cached JAX lowering, and inline is always False at this point.
+    # for a given cached JAX lowering, and inlining is never requested at this
+    # point.
     key = (id(jaxpr), treedef)
     entry = _jit_quax_cache.get(key)
     if entry is None:

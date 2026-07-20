@@ -7,8 +7,10 @@ __all__ = (
     "JAX_GE_0_9_2",
     "JAX_GE_0_10_1",
     "JAX_GE_0_10_2",
+    "JAX_GE_0_11_0",
     # Features
     "jit_p",
+    "is_early_inline",
     "typeof",
 )
 
@@ -31,12 +33,35 @@ JAX_GE_0_8_2: Final = JAX_VERSION >= Version("0.8.2")
 JAX_GE_0_9_2: Final = JAX_VERSION >= Version("0.9.2")
 JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
 JAX_GE_0_10_2: Final = JAX_VERSION >= Version("0.10.2")
+JAX_GE_0_11_0: Final = JAX_VERSION >= Version("0.11.0")
 
 jit_p: jexc.Primitive
 if JAX_GE_0_7_0:
     jit_p = jax._src.pjit.jit_p  # pyright: ignore[reportAttributeAccessIssue]
 else:
     jit_p = jax._src.pjit.pjit_p  # pyright: ignore[reportAttributeAccessIssue]
+
+# JAX 0.11.0 changed `jit_p`'s `inline` parameter from a `bool` to the
+# `jax.Inline` enum: the old `True` became `Inline.JAX_EARLY` and the old
+# `False` became `Inline.AUTO` (see `jax._src.pjit._canonicalize_inline`).
+# Enum members are always truthy, so `bool(inline)` is no longer a valid test
+# for "JAX asked us to inline the body at trace time"; only `JAX_EARLY` means
+# that. The other members keep the call in the jaxpr and defer inlining to
+# lowering or to XLA, which is the same structural situation as the old
+# `False`.
+is_early_inline: Callable[[Any], bool]
+if JAX_GE_0_11_0:
+
+    def is_early_inline(inline: Any, /) -> bool:
+        """Whether `jit_p`'s `inline` parameter asks for inlining at trace time."""
+        return inline is True or inline is jax.Inline.JAX_EARLY  # pyright: ignore[reportAttributeAccessIssue]
+
+else:
+
+    def is_early_inline(inline: Any, /) -> bool:
+        """Whether `jit_p`'s `inline` parameter asks for inlining at trace time."""
+        return bool(inline)
+
 
 typeof: Callable[[Any], Any]
 if JAX_GE_0_8_2:
