@@ -84,14 +84,22 @@ def test_abstract_instantiation_still_errors():
         quax.ArrayValue()  # abstract: aval/materialise unimplemented
 
 
+@quax.register(jax.lax.mul_p)
+def _mul_with_converter(
+    a: _WithConverter, b: _WithConverter, **params: object
+) -> _WithConverter:
+    # Forward the primitive's params (e.g. JAX's newer `out_dtype`) rather than
+    # hard-coding `a.array * b.array`, so the rule stays valid across JAX versions.
+    return _WithConverter(jax.lax.mul_p.bind(a.array, b.array, **params))
+
+
 def test_quaxify_roundtrip_through_fast_type():
-    """End-to-end: a fast-constructed Value flows through quaxify correctly."""
+    """End-to-end: a fast-constructed Value flows through quaxify correctly.
+
+    Exercises the full round-trip — construction, wrapping into tracers, a
+    registered dispatch rule returning a `Value`, and unflattening back out.
+    """
     x = _WithConverter(jnp.arange(5.0))
-
-    @quax.register(jax.lax.mul_p)
-    def _(a: _WithConverter, b: _WithConverter):
-        return _WithConverter(a.array * b.array)
-
     out = jax.jit(quax.quaxify(lambda z: z * z))(x)
     assert isinstance(out, _WithConverter)
     assert jnp.array_equal(out.array, jnp.arange(5.0) ** 2)
