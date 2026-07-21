@@ -34,14 +34,25 @@ jobs:
       - name: Install
         run: uv sync --no-default-groups --group bench --locked
 
-      # Only the pure-Python construction/trace benchmarks run under CodSpeed's
-      # (valgrind-based) simulation mode — that is exactly the quax dispatch
-      # overhead we want to track, and it is deterministic. The `test_numpy.py`
-      # jit-compile/execute benchmarks are XLA-heavy and impractical under valgrind;
-      # they remain for local `pytest tests/benchmark --benchmark-only`.
+      # Run the construction/allocation micro-benchmarks and the eager-dispatch
+      # operation benchmarks (add/mul/matmul on quax Values) under CodSpeed's
+      # deterministic instrumentation mode — these capture the quax construction +
+      # dispatch overhead the perf work targets. The XLA-heavy `test_numpy.py`
+      # jit-compile/execute benchmarks are impractical under valgrind, so they stay
+      # local-only (`pytest tests/benchmark --benchmark-only`).
+      #
+      # `-o addopts=` drops the global jaxtyping/beartype runtime checking, and
+      # `-p no:env` stops pytest-env forcing `JAX_CHECK_TRACER_LEAKS=1`. Both are
+      # test-time aids that ~100x inflate and destabilise these numbers, so with
+      # them off the benchmarks measure production performance.
       - name: Run benchmarks under CodSpeed
         uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
         with:
-          mode: simulation
-          run: uv run --frozen pytest tests/benchmark/test_construction.py --codspeed
+          mode: instrumentation
+          run: >-
+            uv run --frozen pytest
+            tests/benchmark/test_construction.py
+            tests/benchmark/test_dispatch.py
+            --codspeed -o addopts= -p no:env
+          token: ${{ secrets.CODSPEED_TOKEN }}
           token: ${{ secrets.CODSPEED_TOKEN }}
