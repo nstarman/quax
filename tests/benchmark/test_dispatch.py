@@ -66,9 +66,9 @@ def test_add_zero(benchmark):
 @pytest.mark.benchmark(group="dispatch")
 def test_nested_quaxify_add(benchmark):
     """Nested `quaxify(quaxify(add))(MyArray)` — two dispatch layers."""
-    inner = quax.quaxify(lambda a, b: a + b)
-    inner(_xm, _ym)
-    benchmark(lambda: quax.quaxify(inner)(_xm, _ym))
+    outer = quax.quaxify(quax.quaxify(lambda a, b: a + b))
+    outer(_xm, _ym)  # warm both dispatch layers (plum resolution + cache)
+    benchmark(lambda: outer(_xm, _ym))
 
 
 @pytest.mark.benchmark(group="dispatch")

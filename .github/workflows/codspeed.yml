@@ -55,4 +55,3 @@ jobs:
             tests/benchmark/test_dispatch.py
             --codspeed -o addopts= -p no:env
           token: ${{ secrets.CODSPEED_TOKEN }}
-          token: ${{ secrets.CODSPEED_TOKEN }}
