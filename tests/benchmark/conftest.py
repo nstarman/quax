@@ -3,52 +3,53 @@
 Benchmarks are collected only when *both*:
 
 1. ``pytest-benchmark`` is installed (the `bench` dependency group), and
-2. the invocation explicitly targets them — either the ``tests/benchmark`` path or
-   any ``--benchmark*`` flag appears on the command line.
+2. the invocation explicitly targets them — either a ``--benchmark*`` flag, or a
+   positional path pointing at (or inside) this directory.
 
-So a plain ``pytest`` / ``pytest tests`` never runs them (even if the plugin happens
-to be installed in the environment), while the intended command does:
+So a plain ``pytest`` / ``pytest tests`` never runs them (even if the plugin
+happens to be installed), while the intended command does:
 
     uv run --group bench pytest tests/benchmark --benchmark-only
+
+Rather than hand-parse ``sys.argv`` (which means reasoning about which short
+options consume a value — ``-k VALUE`` does, ``-v`` does not), we use pytest's
+already-parsed positional paths (``config.args``) inside ``pytest_ignore_collect``.
 """
 
-import sys
 from pathlib import Path
 
 
 _HERE = Path(__file__).parent.resolve()
 
 
-def _benchmarks_requested() -> bool:
-    """True only if the invocation explicitly targets the benchmark suite.
-
-    "Explicitly" means a ``--benchmark*`` flag, or a positional path pointing at
-    (or inside) this directory. A bare substring match would over-trigger — e.g.
-    ``pytest -k benchmark`` selects tests by keyword but must not pull the whole
-    benchmark suite into a normal run.
-    """
-    try:
-        import pytest_benchmark  # noqa: F401
-    except ImportError:
-        return False
-
-    argv = sys.argv[1:]
-    for i, arg in enumerate(argv):
-        if arg.startswith("--benchmark"):
-            return True
-        if arg.startswith("-"):
-            continue  # an option, not a path
-        prev = argv[i - 1] if i else ""
-        if len(prev) == 2 and prev[0] == "-" and prev[1] != "-":
-            continue  # value consumed by a short option like `-k` / `-m`
+def _explicitly_targeted(config) -> bool:
+    """Whether the invocation explicitly asked for the benchmark suite."""
+    # A `--benchmark*` flag (e.g. `--benchmark-only`) always opts in.
+    if any(a.startswith("--benchmark") for a in config.invocation_params.args):
+        return True
+    # A positional path resolving to (or inside) this directory. `config.args`
+    # holds paths with options already stripped by pytest, so boolean flags like
+    # `-v` and value options like `-k VALUE` are handled correctly for free.
+    for arg in config.args:
+        path = Path(str(arg).split("::", 1)[0])
         try:
-            target = Path(arg.split("::", 1)[0]).resolve()
-        except (OSError, ValueError):
+            resolved = path.resolve()
+        except (OSError, ValueError):  # pragma: no cover - defensive
             continue
-        if target == _HERE or _HERE in target.parents:
+        if resolved == _HERE or _HERE in resolved.parents:
             return True
     return False
 
 
-if not _benchmarks_requested():
-    collect_ignore_glob = ["*"]
+def pytest_ignore_collect(collection_path, config):
+    """Ignore this directory's contents unless benchmarks were explicitly requested."""
+    path = Path(collection_path)
+    if path != _HERE and _HERE not in path.parents:
+        return None  # not under the benchmark directory; not our concern
+
+    try:
+        import pytest_benchmark  # noqa: F401
+    except ImportError:
+        return True  # plugin absent -> never collect benchmarks
+
+    return None if _explicitly_targeted(config) else True

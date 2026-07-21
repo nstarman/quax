@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from typing import Any, TypeAlias, TypedDict
-from typing_extensions import Unpack
 
 import jax
 import jax.numpy as jnp
@@ -35,7 +34,7 @@ class ParameterizationKWArgs(TypedDict):
 
 def process_pytest_argvalues(
     process_fn: Callable[[Callable[..., Any], Args], tuple[Callable[..., Any], Args]],
-    argvalues: list[tuple[Callable[..., Any], Unpack[tuple[Args, ...]]]],
+    argvalues: list[tuple[Callable[..., Any], Args]],
 ) -> ParameterizationKWArgs:
     """Process the argvalues."""
     # Get the ID for each parameterization
@@ -43,16 +42,15 @@ def process_pytest_argvalues(
     ids: list[str] = []
     processed_argvalues: list[tuple[Callable[..., Any], Args]] = []
 
-    for func, *many_args in argvalues:
-        for args in many_args:
-            ids.append(f"{func.__name__}-{get_types(args)}")
-            processed_argvalues.append(process_fn(func, args))
+    for func, args in argvalues:
+        ids.append(f"{func.__name__}-{get_types(args)}")
+        processed_argvalues.append(process_fn(func, args))
 
     # Process the argvalues and return the parameterization, with IDs
     return {"argvalues": processed_argvalues, "ids": ids}
 
 
-funcs_and_args: list[tuple[Callable[..., Any], Unpack[tuple[Args, ...]]]] = [
+funcs_and_args: list[tuple[Callable[..., Any], Args]] = [
     (jnp.abs, (xm,)),
     (jnp.acos, (xm,)),
     (jnp.acosh, (xm,)),
