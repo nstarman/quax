@@ -179,3 +179,18 @@ def test_default_process_rejects_non_array_operand(monkeypatch):
 
     with pytest.raises(TypeError, match="neither a quax.Value nor"):
         _default_process(lax.add_p, ["not-an-array"], {})
+
+
+# See https://github.com/nstarman/quax/issues/58
+def test_quaxify_no_values_is_passthrough():
+    """`quaxify(fn)(*args)` with no quax `Value` operands behaves exactly like
+    `fn`, without wrapping the operands in tracers.
+
+    Regression for #58: `jnp.compress` reads its boolean mask concretely, so a
+    needless tracer wrap raised `TracerBoolConversionError` even though there was
+    nothing to dispatch on.
+    """
+    xbool = jnp.array([True, False, True])
+    x1 = jnp.array([1.0, 2.0, 3.0])
+    got = quax.quaxify(jnp.compress)(xbool, x1)
+    assert jnp.array_equal(got, jnp.compress(xbool, x1))

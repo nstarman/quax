@@ -50,6 +50,18 @@ class _Quaxify(eqx.Module, Generic[CT]):
         return self.fn
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # If nothing being quaxified is a quax Value, there is no multiple dispatch
+        # to perform, so behave exactly like `self.fn` and skip the trace entirely.
+        # Besides saving the trace overhead, this avoids wrapping plain arrays in
+        # tracers when it is pointless -- which otherwise breaks functions that read
+        # an operand concretely, e.g. `jnp.compress` reading its boolean mask (#58).
+        # Only the default `filter_spec is True` (wrap every Value) is short-cut; a
+        # custom filter_spec may deliberately pass Values through, so leave it be.
+        if self.filter_spec is True and not any(
+            _is_value(x)
+            for x in jtu.tree_leaves((self.fn, args, kwargs), is_leaf=_is_value)
+        ):
+            return self.fn(*args, **kwargs)
         tag = core.TraceTag()
         with core.take_current_trace() as parent_trace:
             trace = _QuaxTrace(parent_trace, tag)

@@ -28,6 +28,14 @@ import quax
 from quax._compat import JAX_GE_0_11_0, jit_p
 from quax._primitives import _jit_quax_cache, jit_quax
 
+from .myarray import MyArray
+
+
+# quaxify short-circuits to `fn(*args)` when no operand is a quax Value (#58), so
+# the jit_quax cache — which only matters when Values flow through a `jit_p` — is
+# exercised by passing a `MyArray`. `_v` wraps a plain array as that Value.
+_v = MyArray
+
 
 def _extract_jit_jaxpr(closed_jaxpr: Any) -> Any:
     """Return the ClosedJaxpr param from the first jit_p equation, or None."""
@@ -99,7 +107,7 @@ def test_jit_quax_cache_populates_on_first_call():
     def inner(x):
         return x + 1.0
 
-    quax.quaxify(inner)(jnp.array(0.0))
+    quax.quaxify(inner)(_v(jnp.array(0.0)))
     assert len(_jit_quax_cache) > 0, "Cache was not populated on first call."
 
 
@@ -112,7 +120,7 @@ def test_jit_quax_cache_hit_same_avals():
     def inner(x):
         return x + 1.0
 
-    x = jnp.array(0.0)
+    x = _v(jnp.array(0.0))
     quax.quaxify(inner)(x)
     size_after_first = len(_jit_quax_cache)
     assert size_after_first > 0
@@ -136,7 +144,7 @@ def test_jit_quax_cache_miss_different_treedef():
     def inner_two(x, y):
         return x + y
 
-    x = jnp.array(1.0)
+    x = _v(jnp.array(1.0))
     quax.quaxify(inner_one)(x)
     quax.quaxify(inner_two)(x, x)
 
@@ -180,9 +188,9 @@ def test_jit_quax_cache_stable_while_jaxpr_alive():
     def inner(x):
         return x * 3.0
 
-    x = jnp.array(1.0)
+    x = _v(jnp.array(1.0))
     quax_fn = quax.quaxify(inner)
-    expected = float(quax_fn(x))
+    expected = float(quax_fn(x).array)
 
     keys_before = set(_jit_quax_cache.keys())
     assert keys_before, "Cache should be populated after first call."
@@ -194,7 +202,7 @@ def test_jit_quax_cache_stable_while_jaxpr_alive():
         "Cache entries were evicted while jaxpr was still reachable."
     )
 
-    assert float(quax_fn(x)) == expected
+    assert float(quax_fn(x).array) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +226,8 @@ def test_jit_inside_jit_populates_cache():
     def outer(x):
         return inner(x)
 
-    result = quax.quaxify(outer)(jnp.array(0.0))
-    assert float(result) == 1.0  # correct answer
+    result = quax.quaxify(outer)(_v(jnp.array(0.0)))
+    assert float(result.array) == 1.0  # correct answer
 
     assert len(_jit_quax_cache) >= 2, (
         "Expected >=2 cache entries for a JIT-inside-JIT call "

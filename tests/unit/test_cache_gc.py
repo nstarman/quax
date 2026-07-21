@@ -15,6 +15,12 @@ import jax.numpy as jnp
 import quax
 from quax._primitives import _jit_quax_cache, _scan_quax_cache, _while_quax_cache
 
+from .myarray import MyArray
+
+
+# quaxify only traces (and thus reaches these caches) when an operand is a quax
+# Value (#58), so a `MyArray` is used to drive the jit/while paths.
+
 
 # Minimal ArrayValue with a working materialise — forces scan_quax dispatch
 # (plain JAX arrays fall through to _default_process via plum's variadic dispatch).
@@ -40,7 +46,7 @@ def test_jit_cache_uses_weakref():
         return x + 1.0
 
     before = set(_jit_quax_cache.keys())
-    quax.quaxify(inner)(jnp.array(1.0))
+    quax.quaxify(inner)(MyArray(jnp.array(1.0)))
     new_keys = set(_jit_quax_cache.keys()) - before
     assert new_keys, "Expected _jit_quax_cache to be populated"
 
@@ -63,7 +69,7 @@ def test_while_cache_uses_weakrefs():
     def f(x):
         return jax.lax.while_loop(lambda y: y < 5.0, lambda y: y + 1.0, x)
 
-    x = jnp.array(0.0)
+    x = MyArray(jnp.array(0.0))
     before = set(_while_quax_cache.keys())
     quax.quaxify(f)(x)
     new_keys = set(_while_quax_cache.keys()) - before
