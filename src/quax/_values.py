@@ -8,6 +8,7 @@ import jax.extend.core as jexc
 from jaxtyping import ArrayLike
 
 from ._compat import typeof
+from ._module import _FastModuleMeta
 
 
 T = TypeVar("T")
@@ -15,7 +16,7 @@ CT = TypeVar("CT", bound=Callable)
 ValueLike: TypeAlias = Union[ArrayLike, "Value"]
 
 
-class Value(eqx.Module):
+class Value(eqx.Module, metaclass=_FastModuleMeta):
     """Represents an object which Quax can perform multiple dispatch with.
 
     In practice you will almost always want to inherit from [`quax.ArrayValue`][]
@@ -93,9 +94,14 @@ class Value(eqx.Module):
             (Using the [Equinox](https://github.com/patrick-kidger/equinox) library that
             underlies much of the JAX ecosystem.)
         """
-        # Use list comprehension for better performance
+        # Call materialise unbound (via the type) rather than `x.materialise()`:
+        # for user Value types the latter goes through equinox's
+        # Module.__getattribute__, which wraps the method in a fresh BoundMethod
+        # (a Module allocation) so jax.jit(x.method) works — pure overhead on
+        # this fallback path, which runs once per non-dense primitive input.
         arrays = [
-            x.materialise() if _is_value(x) else cast(ArrayLike, x) for x in values
+            type(x).materialise(x) if _is_value(x) else cast(ArrayLike, x)
+            for x in values
         ]
         return primitive.bind(*arrays, **params)
 
@@ -205,6 +211,34 @@ class _DenseArrayValue(ArrayValue):
         # Benchmarks show .aval() drops from ~38 µs to ~1.6 µs and
         # .materialise() from ~35 µs to ~0.3 µs with this override.
         return object.__getattribute__(self, name)
+
+
+# Bind the allocation primitives once at import; these are the entirety of
+# _dense()'s body, so avoiding the repeated global/attribute lookups matters on
+# the hottest allocation site in the trace.
+_object_new = object.__new__
+_object_setattr = object.__setattr__
+
+
+def _dense(array: ArrayLike, /) -> _DenseArrayValue:
+    """Construct a `_DenseArrayValue` while bypassing `equinox.Module` entirely.
+
+    `_DenseArrayValue` is allocated on *every* primitive input and output during a
+    quaxified trace, making it the single hottest allocation site. Going through
+    `_ModuleMeta.__call__` costs ~13 µs/call — almost all of it per-instance
+    validation (`dir(self)`, `dataclasses.fields`, converter/static/`init` scans,
+    the `__check_init__` MRO walk) that is meaningless for this type. This factory
+    drops that to ~0.2 µs (a ~57× speedup) by allocating directly.
+
+    The result is a genuine `_DenseArrayValue`: the class is already registered as
+    a pytree at class-creation time, so flatten/unflatten and every JAX/equinox
+    transform behave identically. The bypass is safe because this type is
+    internal-only, has exactly one field set once and never mutated, and is never
+    exposed to user code or handed to `jax.jit`.
+    """
+    obj = _object_new(_DenseArrayValue)
+    _object_setattr(obj, "array", array)
+    return obj
 
 
 def _make_cache_finalizer(cache: dict, key: tuple) -> Callable[[Any], None]:
