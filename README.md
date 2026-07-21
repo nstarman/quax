@@ -2,7 +2,19 @@
 <h2 align="center">JAX + multiple dispatch + custom array-ish objects</h2>
 
 <p align="center">
-  <a href="https://app.codspeed.io/nstarman/quax?utm_source=badge"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed"/></a>
+    <a href="https://pypi.org/project/quax/"><img alt="PyPI: quax" src="https://img.shields.io/pypi/v/quax?style=flat" /></a>
+    <a href="https://pypi.org/project/quax/"><img alt="PyPI versions: quax" src="https://img.shields.io/pypi/pyversions/quax" /></a>
+    <a href="https://nstarman.github.io/quax/"><img alt="Documentation" src="https://img.shields.io/badge/read_docs-here-orange" /></a>
+    <a href="https://github.com/nstarman/quax/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/nstarman/quax" /></a>
+</p>
+<p align="center">
+    <a href="https://docs.astral.sh/ruff/"><img alt="ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" /></a>
+    <a href="https://github.com/j178/prek"><img alt="pre-commit" src="https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit" /></a>
+    <a href="https://app.codspeed.io/nstarman/quax"><img alt="CodSpeed" src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" /></a>
+</p>
+<p align="center">
+    <a href="https://github.com/nstarman/quax/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/nstarman/quax/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
+    <a href="https://nstarman.github.io/quax/"><img alt="Docs status" src="https://github.com/nstarman/quax/actions/workflows/build_docs.yml/badge.svg?branch=main" /></a>
 </p>
 
 For example, this can be mean overloading matrix multiplication to exploit sparsity or structure, or automatically rewriting a LoRA's matmul `(W + AB)v` into the more-efficient `Wv + ABv`.
