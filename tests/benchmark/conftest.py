@@ -2,14 +2,16 @@
 
 Benchmarks are collected only when *both*:
 
-1. ``pytest-benchmark`` is installed (the `bench` dependency group), and
-2. the invocation explicitly targets them — either a ``--benchmark*`` flag, or a
-   positional path pointing at (or inside) this directory.
+1. a benchmark plugin (``pytest-benchmark`` or ``pytest-codspeed``, from the `bench`
+   dependency group) is installed, and
+2. the invocation explicitly targets them — a ``--benchmark*`` flag, ``--codspeed``,
+   or a positional path pointing at (or inside) this directory.
 
-So a plain ``pytest`` / ``pytest tests`` never runs them (even if the plugin
-happens to be installed), while the intended command does:
+So a plain ``pytest`` / ``pytest tests`` never runs them (even if a plugin happens
+to be installed), while the intended commands do:
 
-    uv run --group bench pytest tests/benchmark --benchmark-only
+    uv run --group bench pytest tests/benchmark --benchmark-only   # local
+    uv run --group bench pytest tests/benchmark --codspeed         # CodSpeed CI
 
 Rather than hand-parse ``sys.argv`` (which means reasoning about which short
 options consume a value — ``-k VALUE`` does, ``-v`` does not), we use pytest's
@@ -22,10 +24,22 @@ from pathlib import Path
 _HERE = Path(__file__).parent.resolve()
 
 
+def _benchmark_plugin_available() -> bool:
+    """Whether a plugin providing the ``benchmark`` fixture is installed."""
+    for plugin in ("pytest_benchmark", "pytest_codspeed"):
+        try:
+            __import__(plugin)
+            return True
+        except ImportError:
+            continue
+    return False
+
+
 def _explicitly_targeted(config) -> bool:
     """Whether the invocation explicitly asked for the benchmark suite."""
-    # A `--benchmark*` flag (e.g. `--benchmark-only`) always opts in.
-    if any(a.startswith("--benchmark") for a in config.invocation_params.args):
+    # A `--benchmark*` flag (pytest-benchmark) or `--codspeed` (CodSpeed) opts in.
+    args = config.invocation_params.args
+    if any(a.startswith("--benchmark") or a == "--codspeed" for a in args):
         return True
     # A positional path resolving to (or inside) this directory. `config.args`
     # holds paths with options already stripped by pytest, so boolean flags like
@@ -47,9 +61,7 @@ def pytest_ignore_collect(collection_path, config):
     if path != _HERE and _HERE not in path.parents:
         return None  # not under the benchmark directory; not our concern
 
-    try:
-        import pytest_benchmark  # noqa: F401
-    except ImportError:
-        return True  # plugin absent -> never collect benchmarks
+    if not _benchmark_plugin_available():
+        return True  # no benchmark plugin -> never collect benchmarks
 
     return None if _explicitly_targeted(config) else True

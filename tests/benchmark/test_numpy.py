@@ -119,7 +119,7 @@ funcs_and_args: list[tuple[Callable[..., Any], Args]] = [
 @pytest.mark.parametrize(
     ("func", "args"), **process_pytest_argvalues(process_func, funcs_and_args)
 )
-@pytest.mark.benchmark(group="quaxed", max_time=1.0, warmup=False)
+@pytest.mark.benchmark(group="quaxed")
 def test_jit_compile(benchmark, func, args):
     """Benchmark lowering + compiling the quaxified function.
 
@@ -133,7 +133,7 @@ def test_jit_compile(benchmark, func, args):
 @pytest.mark.parametrize(
     ("func", "args"), **process_pytest_argvalues(process_func, funcs_and_args)
 )
-@pytest.mark.benchmark(group="quaxed", max_time=1.0, warmup=True)
+@pytest.mark.benchmark(group="quaxed")
 def test_execute(benchmark, func, args):
     """Benchmark steady-state execution of the compiled function."""
     benchmark(lambda: jax.block_until_ready(func(*args)))
