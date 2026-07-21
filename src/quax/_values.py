@@ -1,6 +1,6 @@
 import abc
 from collections.abc import Callable, Sequence
-from typing import Any, cast, TypeAlias, TypeGuard, TypeVar, Union
+from typing import Any, cast, final, TypeAlias, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax._src.core as core
@@ -139,7 +139,12 @@ class Value(eqx.Module, metaclass=_FastModuleMeta):
 
 
 def _is_value(x: object) -> TypeGuard[Value]:
-    return isinstance(x, Value)
+    # `Value` is an ABC, so `isinstance(x, Value)` routes through the (comparatively
+    # slow) `ABCMeta.__instancecheck__`. Every Quax value type is a *real* subclass of
+    # `Value` (Quax never uses ABC virtual registration), so a plain MRO-membership
+    # test is equivalent and ~3x faster — and this predicate is on the hot leaf path
+    # (it's the `is_leaf` for the wrap/unwrap tree_maps run on every quaxify call).
+    return Value in type(x).__mro__
 
 
 class ArrayValue(Value):
@@ -175,14 +180,26 @@ class ArrayValue(Value):
         return self.aval().size
 
 
+@final
 class _DenseArrayValue(ArrayValue):
     """Internal type used to wrap up a JAX arraylike into Quax's `Value` system.
 
-    This is an implementation detail hidded from the user! It is unwrapped straight
+    Hot paths test membership with ``type(x) is _DenseArrayValue`` (cheaper than an
+    ABC ``isinstance``), which is exact only because this type is never subclassed.
+    `@final` documents that for type checkers; `__init_subclass__` enforces it at
+    runtime so a stray subclass can't silently fall off the dense fast paths.
+
+    This is an implementation detail hidden from the user! It is unwrapped straight
     before calling a dispatch rule, and re-wrapped immediately afterwards.
     """
 
     array: ArrayLike
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError(
+            "_DenseArrayValue is internal and final; the trace hot paths rely on "
+            "`type(x) is _DenseArrayValue`, so it must not be subclassed."
+        )
 
     def __init__(self, array: ArrayLike, /) -> None:
         # Bypass equinox's Module.__setattr__, which on every field assignment
