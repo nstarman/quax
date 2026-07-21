@@ -15,16 +15,26 @@ checks on *every* construction:
   `_warn_jax_transformed_function`.
 
 For quax these are almost pure overhead. [`_FastModuleMeta`][] precomputes, once at
-class-creation time, everything the fast path needs, then reproduces only the
-*essential* parts of construction — the initialisation guard, field converters, and
-`__check_init__` — while skipping the validation and warnings. The real correctness
-hooks (`__check_init__` and converters) are always preserved; only non-fatal warnings
-and the "field not initialised" `TypeError` (which fires only on an already-buggy
-`__init__`) are dropped.
+class-creation time, everything the fast path needs, then reproduces the *essential*
+parts of construction — the initialisation guard, field converters, `__check_init__`,
+and the "field not initialised" check — while skipping only the non-fatal warnings and
+the expensive `dir(self)` scan (replaced by a cheaper `hasattr` check).
 
 Should a future `equinox` release rename or remove the internals this relies on, the
 fast path disables itself and every construction falls through to `equinox`'s own,
 correct `__call__` — costing the speedup but never correctness.
+
+Known limitations (all arise from precomputing metadata at class-creation time, and
+are narrow enough not to matter in practice):
+
+- Converters and `__check_init__` hooks are captured when the class is created.
+  Monkeypatching a *new* `__check_init__` (or converter) onto the class afterwards is
+  not observed by the fast path, whereas equinox — which re-walks the MRO on every
+  construction — would pick it up.
+- The internal `type(x).aval(x)` / `type(x).materialise(x)` calls (in `_values` /
+  `_trace`) assume these are ordinary instance methods. A subclass that implements
+  them as a `@classmethod` would misbind; such an implementation is already
+  semantically wrong (they depend on instance data) and fails loudly.
 """
 
 __all__ = ()
@@ -78,10 +88,13 @@ except Exception as _exc:  # pragma: no cover - only hit on an incompatible equi
 class _FastSpec(NamedTuple):
     """Precomputed data the fast path needs to construct a class.
 
-    ``converters`` are ``(field_name, converter)`` pairs applied after ``__init__``;
-    ``checks`` are the class's ``__check_init__`` hooks in equinox's MRO order.
+    ``field_names`` are all dataclass field names, used to detect a field left
+    unset by a buggy ``__init__``; ``converters`` are ``(field_name, converter)``
+    pairs applied after ``__init__``; ``checks`` are the class's ``__check_init__``
+    hooks in equinox's MRO order.
     """
 
+    field_names: tuple[str, ...]
     converters: tuple[tuple[str, Any], ...]
     checks: tuple[Any, ...]
 
@@ -129,7 +142,8 @@ class _FastModuleMeta(_EqxModuleMeta):
                 for k in cls.__mro__
                 if "__check_init__" in k.__dict__
             )
-            _fast_specs[cls] = _FastSpec(converters, checks)
+            field_names = tuple(f.name for f in fields)
+            _fast_specs[cls] = _FastSpec(field_names, converters, checks)
         return cls
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -143,7 +157,17 @@ class _FastModuleMeta(_EqxModuleMeta):
         # `self` is a freshly-allocated instance of a dynamically-determined class;
         # `Any` is the honest type and avoids metaclass-`Self` typing friction on the
         # `_currently_initialising` / `object.__setattr__` calls below.
-        self: Any = cls.__new__(cls)  # pyright: ignore[reportArgumentType]
+        #
+        # Forward the constructor arguments to `__new__`, matching `type.__call__`
+        # (and equinox's slow path): a `Value` may override `__new__` to consume
+        # them. For the common case where `__new__` is `object.__new__`, the extras
+        # are ignored because every Module overrides `__init__`.
+        self: Any = cls.__new__(cls, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        # As `type.__call__` does: if `__new__` returned something that isn't an
+        # instance of `cls` (e.g. a cached singleton), skip `__init__` and the rest
+        # of construction and return it unchanged.
+        if not isinstance(self, cls):
+            return self
         # Register with equinox's init guard so that a *custom* __init__'s
         # `self.x = ...` assignments are permitted on the frozen dataclass (and so
         # equinox's own __setattr__ warnings still fire for those assignments). A
@@ -154,6 +178,18 @@ class _FastModuleMeta(_EqxModuleMeta):
             cls.__init__(self, *args, **kwargs)  # pyright: ignore[reportCallIssue]
         finally:
             _currently_initialising.remove(self)
+
+        # Reject a field left unset by a buggy __init__. equinox raises the same
+        # error via a `dir(self)` scan; without it the instance would flatten to a
+        # divergent pytree treedef and fail confusingly far from the cause. Checking
+        # the precomputed field names with `hasattr` is much cheaper than `dir`.
+        # Report in dataclass field order for a stable, readable message.
+        missing = [name for name in spec.field_names if not hasattr(self, name)]
+        if missing:
+            raise TypeError(
+                "The following fields were not initialised during __init__: "
+                + ", ".join(missing)
+            )
 
         # Converters first, then __check_init__ — the same order equinox uses.
         for fname, converter in spec.converters:
