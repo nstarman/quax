@@ -163,6 +163,11 @@ class _FastModuleMeta(_EqxModuleMeta):
         # them. For the common case where `__new__` is `object.__new__`, the extras
         # are ignored because every Module overrides `__init__`.
         self: Any = cls.__new__(cls, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        # As `type.__call__` does: if `__new__` returned something that isn't an
+        # instance of `cls` (e.g. a cached singleton), skip `__init__` and the rest
+        # of construction and return it unchanged.
+        if not isinstance(self, cls):
+            return self
         # Register with equinox's init guard so that a *custom* __init__'s
         # `self.x = ...` assignments are permitted on the frozen dataclass (and so
         # equinox's own __setattr__ warnings still fire for those assignments). A
@@ -178,10 +183,12 @@ class _FastModuleMeta(_EqxModuleMeta):
         # error via a `dir(self)` scan; without it the instance would flatten to a
         # divergent pytree treedef and fail confusingly far from the cause. Checking
         # the precomputed field names with `hasattr` is much cheaper than `dir`.
-        missing = {name for name in spec.field_names if not hasattr(self, name)}
+        # Report in dataclass field order for a stable, readable message.
+        missing = [name for name in spec.field_names if not hasattr(self, name)]
         if missing:
             raise TypeError(
-                f"The following fields were not initialised during __init__: {missing}"
+                "The following fields were not initialised during __init__: "
+                + ", ".join(missing)
             )
 
         # Converters first, then __check_init__ — the same order equinox uses.

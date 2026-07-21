@@ -223,6 +223,59 @@ def test_missing_field_raises():
         _MissingField(jnp.arange(3.0))
 
 
+class _MissingTwo(quax.ArrayValue):
+    """A buggy Value whose __init__ leaves fields `y` and `z` unset."""
+
+    x: jax.Array
+    y: jax.Array
+    z: jax.Array
+
+    def __init__(self, x):
+        self.x = jnp.asarray(x)  # forgets y and z
+
+    def materialise(self):
+        return self.x
+
+    def aval(self):
+        return typeof(self.x)
+
+
+def test_missing_fields_reported_in_field_order():
+    """Multiple missing fields are reported deterministically, in dataclass order."""
+    with pytest.raises(TypeError, match=r"not initialised during __init__: y, z$"):
+        _MissingTwo(jnp.arange(2.0))
+
+
+_FOREIGN = object()
+
+
+class _ReturnsForeign(quax.ArrayValue):
+    """A Value whose __new__ returns a non-instance (e.g. a cached object)."""
+
+    array: jax.Array = eqx.field(converter=jnp.asarray)
+
+    def __new__(cls, array):
+        del array
+        return _FOREIGN  # not an instance of cls
+
+    def __init__(self, array):
+        raise AssertionError(
+            "__init__ must not run when __new__ returns a foreign object"
+        )
+
+    def materialise(self):
+        return self.array
+
+    def aval(self):
+        return typeof(self.array)
+
+
+def test_new_returning_foreign_object_skips_init():
+    """Matching type.__call__: if __new__ returns a non-instance, skip __init__."""
+    result = _ReturnsForeign(jnp.arange(3.0))
+    assert result is _FOREIGN
+
+
 @quax.register(jax.lax.mul_p)
 def _mul_with_converter(
     a: _WithConverter, b: _WithConverter, **params: object
