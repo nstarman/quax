@@ -184,15 +184,22 @@ class ArrayValue(Value):
 class _DenseArrayValue(ArrayValue):
     """Internal type used to wrap up a JAX arraylike into Quax's `Value` system.
 
-    Marked `@final`: hot paths test membership with ``type(x) is _DenseArrayValue``
-    (cheaper than an ABC ``isinstance``), which is exact only because this type is
-    never subclassed.
+    Hot paths test membership with ``type(x) is _DenseArrayValue`` (cheaper than an
+    ABC ``isinstance``), which is exact only because this type is never subclassed.
+    `@final` documents that for type checkers; `__init_subclass__` enforces it at
+    runtime so a stray subclass can't silently fall off the dense fast paths.
 
     This is an implementation detail hidden from the user! It is unwrapped straight
     before calling a dispatch rule, and re-wrapped immediately afterwards.
     """
 
     array: ArrayLike
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        raise TypeError(
+            "_DenseArrayValue is internal and final; the trace hot paths rely on "
+            "`type(x) is _DenseArrayValue`, so it must not be subclassed."
+        )
 
     def __init__(self, array: ArrayLike, /) -> None:
         # Bypass equinox's Module.__setattr__, which on every field assignment

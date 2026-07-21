@@ -308,3 +308,12 @@ def test_fast_spec_precomputed():
     assert len(_fast_specs[_Checked].checks) == 1
     # Metadata lives off the class: no bespoke dunders left on user types.
     assert not any(a.startswith("__quax") for a in vars(_WithConverter))
+
+
+def test_dense_array_value_is_final_at_runtime():
+    """`_DenseArrayValue` must not be subclassable: the trace hot paths use
+    ``type(x) is _DenseArrayValue``, which a subclass would silently break."""
+    from quax._values import _DenseArrayValue
+
+    with pytest.raises(TypeError, match="must not be subclassed"):
+        type("_Sub", (_DenseArrayValue,), {})
