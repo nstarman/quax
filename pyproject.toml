@@ -53,9 +53,14 @@ ide = ["ipykernel>=7.2.0"]
 lint = ["prek>=0.3.11", "ruff>=0.15.9"]
 tests = ["beartype>=0.20.2", "pytest>=8.3.5", "pytest-env>=1.1.5", "jax[cpu]"]
 # Performance benchmarks. Kept out of `dev`/`tests` so the default suite never
-# collects them (see tests/benchmark/conftest.py); run with
-# `uv run --group bench pytest tests/benchmark --benchmark-only`.
-bench = [{ include-group = "tests" }, "pytest-benchmark>=5.1.0"]
+# collects them (see tests/benchmark/conftest.py). Run locally with
+# `uv run --group bench pytest tests/benchmark --benchmark-only`; CI runs them
+# under CodSpeed with `pytest tests/benchmark --codspeed`.
+bench = [
+  { include-group = "tests" },
+  "pytest-benchmark>=5.1.0",
+  "pytest-codspeed>=3.1.0",
+]
 
 [tool.hatch]
 build.hooks.vcs.version-file = "src/quax/_version.py"

@@ -1,0 +1,47 @@
+name: CodSpeed
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 3
+
+jobs:
+  benchmarks:
+    name: Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Install
+        run: uv sync --no-default-groups --group bench --locked
+
+      # Only the pure-Python construction/trace benchmarks run under CodSpeed's
+      # (valgrind-based) simulation mode — that is exactly the quax dispatch
+      # overhead we want to track, and it is deterministic. The `test_numpy.py`
+      # jit-compile/execute benchmarks are XLA-heavy and impractical under valgrind;
+      # they remain for local `pytest tests/benchmark --benchmark-only`.
+      - name: Run benchmarks under CodSpeed
+        uses: CodSpeedHQ/action@f99becdce5e5d51fd556489ebef684f4ecfd6286 # v4.18.5
+        with:
+          mode: simulation
+          run: uv run --frozen pytest tests/benchmark/test_construction.py --codspeed
+          token: ${{ secrets.CODSPEED_TOKEN }}
