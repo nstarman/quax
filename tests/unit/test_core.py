@@ -117,3 +117,28 @@ def test_default_path():
     got = quax.quaxify(lax.betainc)(jnp.array(1.0), x, y)
 
     assert jnp.array_equal(got, exp)
+
+
+def test_default_process_rejects_non_array_operand(monkeypatch):
+    """A non-array, non-Value operand is a dispatch miss -> TypeError.
+
+    Older jax routes such operands (e.g. a str passed to an operator) through
+    ``_default_process``, which must raise a catchable ``TypeError`` -- so a
+    caller can return ``NotImplemented`` -- rather than a bare ``AssertionError``
+    (which also vanishes under ``python -O``). Called directly so the check is
+    exercised on every jax version; newer jax rejects the operand earlier,
+    before quax is consulted.
+
+    quax's own test config runtime-typechecks ``_default_process`` (via
+    ``--jaxtyping-packages=quax,beartype``), which would reject the non-array
+    operand at the parameter boundary before this branch runs. Disable that
+    checking so the call takes the production path, where it is off.
+    """
+    import jaxtyping
+
+    from quax._core import _default_process
+
+    monkeypatch.setattr(jaxtyping.config, "jaxtyping_disable", True)
+
+    with pytest.raises(TypeError, match="neither a quax.Value nor"):
+        _default_process(lax.add_p, ["not-an-array"], {})

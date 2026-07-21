@@ -123,7 +123,18 @@ def _default_process(
             # Ignore any unwrapped _DenseArrayValues
             pass
         else:
-            assert False
+            # Operand is neither a quax Value nor array-like: a genuine dispatch
+            # miss (e.g. a str/None passed to an operator). Raise a proper
+            # TypeError so callers can catch it and defer -- e.g. return
+            # NotImplemented from an operator. A bare `assert False` here
+            # surfaced as AssertionError on older jax (which routes such operands
+            # through this path) and, under `python -O`, vanished entirely,
+            # letting the bad operand fall through to the default rule.
+            raise TypeError(
+                f"Primitive {primitive} got an operand of type "
+                f"{type(x).__name__!r} that is neither a quax.Value nor "
+                f"array-like; quax has no rule for it."
+            )
     if len(defaults) == 0:
         default = Value.default
     elif len(defaults) == 1:
