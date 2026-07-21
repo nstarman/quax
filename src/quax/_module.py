@@ -27,7 +27,7 @@ fast path disables itself and every construction falls through to `equinox`'s ow
 correct `__call__` — costing the speedup but never correctness.
 """
 
-__all__ = ("FastPathUnavailableWarning",)
+__all__ = ()
 
 import dataclasses
 import warnings
@@ -35,18 +35,6 @@ import weakref
 from typing import Any, NamedTuple
 
 import equinox as eqx
-
-
-class FastPathUnavailableWarning(UserWarning):
-    """Warned once, at import, when Quax's fast `Module` construction is disabled.
-
-    The fast path relies on a small set of `equinox` internals. If they are missing
-    (typically because the installed `equinox` is newer than Quax has been updated
-    for), Quax stays fully correct but falls back to `equinox`'s slower per-instance
-    construction, which noticeably slows `Value`-heavy tracing. This warning exists
-    so that regression is never *silent*; filter it with
-    `warnings.filterwarnings("ignore", category=quax.FastPathUnavailableWarning)`.
-    """
 
 
 _EqxModuleMeta = type(eqx.Module)
@@ -82,7 +70,7 @@ except Exception as _exc:  # pragma: no cover - only hit on an incompatible equi
         f"equinox internals it relies on (equinox {eqx.__version__}: {_exc!r}). "
         "Quax remains correct but Value-heavy tracing will be slower. This usually "
         "means the installed equinox is newer than this version of Quax supports.",
-        FastPathUnavailableWarning,
+        RuntimeWarning,
         stacklevel=2,
     )
 

@@ -96,8 +96,11 @@ def test_degradation_is_not_silent():
         finally:
             builtins.__import__ = _real_import
 
-        cats = {w.category.__name__ for w in rec}
-        assert "FastPathUnavailableWarning" in cats, f"no warning; saw {cats}"
+        # Identify the warning by its message (not a bespoke category).
+        msgs = [str(w.message) for w in rec]
+        assert any(
+            "fast equinox.Module construction is disabled" in m for m in msgs
+        ), f"no degradation warning; saw {msgs}"
         assert quax._module._FASTPATH_AVAILABLE is False
         # Fallback must still construct Values correctly (equinox slow path).
         import jax.numpy as jnp
