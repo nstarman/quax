@@ -41,7 +41,11 @@ def jit_quax(
     # Early inline: JAX has already decided to inline the body — just re-quaxify
     # and interpret it directly without the jax.jit wrapper overhead.
     if is_early_inline(inline):
-        return quaxify(jexc.jaxpr_as_fun(jaxpr))(*args)
+        # Construct `_Quaxify` directly rather than via `quaxify()`: this runs on
+        # every inlined pjit in a quaxified trace, and `quaxify()`'s
+        # `module_update_wrapper` (which only exists to copy __wrapped__/__doc__
+        # for user introspection) is pure overhead for this transient wrapper.
+        return _Quaxify(jexc.jaxpr_as_fun(jaxpr), True, dynamic=False)(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
