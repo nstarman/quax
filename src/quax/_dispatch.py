@@ -10,7 +10,7 @@ import jax.extend.core as jexc
 import plum
 from jaxtyping import ArrayLike
 
-from ._values import _dense, CT, Value, ValueLike
+from ._values import _dense, _is_value, CT, Value, ValueLike
 
 
 _rules: dict[jexc.Primitive, plum.Function] = {}
@@ -91,7 +91,7 @@ def _default_process(
     default: DefaultCallable | None = None
     value_default = Value.default  # Cache attribute lookup
     for x in values:
-        if isinstance(x, Value):
+        if _is_value(x):  # MRO check; avoids ABCMeta.__instancecheck__
             x_default = type(x).default
             if x_default is value_default:
                 continue

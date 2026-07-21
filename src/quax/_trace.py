@@ -52,7 +52,7 @@ class _QuaxTracer(core.Tracer):
     def full_lower(self) -> "core.Tracer | _QuaxTracer":  # pyright: ignore[reportIncompatibleVariableOverride]
         return (
             core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
-            if isinstance(self.value, _DenseArrayValue)
+            if type(self.value) is _DenseArrayValue
             else self
         )
 
@@ -109,7 +109,11 @@ class _QuaxTrace(
                 if not (isinstance(t, _QuaxTracer) and t._trace.tag is tag):  # type: ignore[attr-defined]
                     break
                 v = t.value
-                if not isinstance(v, _DenseArrayValue):
+                # `type() is` rather than `isinstance`: _DenseArrayValue is
+                # internal and never subclassed, and it inherits an ABC metaclass,
+                # so `isinstance` would pay for ABCMeta.__instancecheck__ on every
+                # input of every primitive. This is the hottest predicate in O1.
+                if type(v) is not _DenseArrayValue:
                     break
                 arrays.append(v.array)
             else:
@@ -123,7 +127,7 @@ class _QuaxTrace(
         # ── full dispatch path ───────────────────────────────────────────────
         # Parse the tracers into values, unpacking any _DenseArrayValues.
         values = tuple(
-            (x.array if isinstance(x := self.to_value(t), _DenseArrayValue) else x)
+            (x.array if type(x := self.to_value(t)) is _DenseArrayValue else x)
             for t in tracers
         )
 
@@ -328,5 +332,5 @@ def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
     if eqx.is_array_like(x):
         x = trace.full_raise(x)
     if isinstance(x, _QuaxTracer):
-        return x.value.array if isinstance(x.value, _DenseArrayValue) else x.value
+        return x.value.array if type(x.value) is _DenseArrayValue else x.value
     return x
