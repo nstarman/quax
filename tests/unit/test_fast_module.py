@@ -177,6 +177,52 @@ def test_abstract_instantiation_still_errors():
         quax.ArrayValue()  # abstract: aval/materialise unimplemented
 
 
+class _WithNew(quax.ArrayValue):
+    """A Value overriding __new__ to consume a constructor argument."""
+
+    array: jax.Array = eqx.field(converter=jnp.asarray)
+
+    def __new__(cls, array):
+        del array  # exercises arg-forwarding to __new__, not the value itself
+        return super().__new__(cls)
+
+    def materialise(self):
+        return self.array
+
+    def aval(self):
+        return typeof(self.array)
+
+
+def test_new_receives_constructor_args():
+    """The fast path forwards constructor args to a custom __new__."""
+    v = _WithNew(jnp.arange(3.0))
+    assert jnp.array_equal(v.array, jnp.arange(3.0))
+
+
+class _MissingField(quax.ArrayValue):
+    """A buggy Value whose __init__ leaves field `b` unset."""
+
+    a: jax.Array
+    b: jax.Array
+
+    def __init__(self, a):
+        self.a = jnp.asarray(a)
+        # intentionally forgets self.b
+
+    def materialise(self):
+        return self.a
+
+    def aval(self):
+        return typeof(self.a)
+
+
+def test_missing_field_raises():
+    """A field left unset by __init__ raises a clear error, not a silent divergent
+    pytree treedef."""
+    with pytest.raises(TypeError, match="not initialised during __init__"):
+        _MissingField(jnp.arange(3.0))
+
+
 @quax.register(jax.lax.mul_p)
 def _mul_with_converter(
     a: _WithConverter, b: _WithConverter, **params: object
