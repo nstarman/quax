@@ -163,7 +163,8 @@ def test_jit_quax_cache_entry_weakref_matches_key():
     def inner(x):
         return x * 3.0
 
-    quax.quaxify(inner)(jnp.array(1.0))
+    quax.quaxify(inner)(_v(jnp.array(1.0)))
+    assert _jit_quax_cache, "Cache was not populated — nothing to check."
 
     for key, entry in _jit_quax_cache.items():
         stored_id, _treedef = key  # key is now (id(jaxpr), treedef) — no inline
