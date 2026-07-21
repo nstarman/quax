@@ -7,6 +7,7 @@ import jax._src.core as core
 import jax.tree_util as jtu
 from jaxtyping import PyTree
 
+from ._module import _FastModuleMeta
 from ._trace import _QuaxTrace, _unwrap_tracer, _wrap_tracer
 from ._values import _is_value, CT
 
@@ -40,7 +41,11 @@ def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
     return eqx.combine(dynamic, static, is_leaf=_is_value)
 
 
-class _Quaxify(eqx.Module, Generic[CT]):
+class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
+    # `_Quaxify` is re-constructed on the hot path: every inlined `pjit` in a
+    # quaxified trace makes `jit_quax` build a fresh one (see `_primitives.py`).
+    # Using the fast metaclass skips equinox's per-instance validation (the
+    # `dir(self)` scan etc.), which otherwise costs ~40 µs per construction.
     fn: CT
     filter_spec: PyTree[bool | Callable[[Any], bool]]
     dynamic: bool = eqx.field(static=True)
