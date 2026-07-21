@@ -7,7 +7,6 @@ from typing_extensions import Unpack
 import jax
 import jax.numpy as jnp
 import pytest
-from jax._src.stages import Compiled
 
 import quax
 
@@ -20,8 +19,10 @@ x = jnp.linspace(0, 1, 1000)
 xm = MyArray(x)
 
 
-def process_func(func: Callable[..., Any], args: Args) -> tuple[Compiled, Args]:
-    """JIT and compile the function."""
+def process_func(
+    func: Callable[..., Any], args: Args
+) -> tuple[Callable[..., Any], Args]:
+    """Wrap ``func`` with ``jax.jit(quax.quaxify(...))``, ready to lower/execute."""
     return jax.jit(quax.quaxify(func)), args
 
 
@@ -40,7 +41,7 @@ def process_pytest_argvalues(
     # Get the ID for each parameterization
     get_types = lambda args: tuple(str(type(a)) for a in args)
     ids: list[str] = []
-    processed_argvalues: list[tuple[Compiled, Args]] = []
+    processed_argvalues: list[tuple[Callable[..., Any], Args]] = []
 
     for func, *many_args in argvalues:
         for args in many_args:
