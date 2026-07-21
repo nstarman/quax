@@ -112,25 +112,24 @@ class _FastModuleMeta(_EqxModuleMeta):
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
         if _FASTPATH_AVAILABLE:
-            try:
-                fields = dataclasses.fields(cls)  # type: ignore[arg-type]
-                # Converters must still be applied post-init (equinox does this
-                # regardless of whether __init__ is dataclass-generated or custom).
-                converters = tuple(
-                    (f.name, c)
-                    for f in fields
-                    if (c := f.metadata.get("converter")) is not None
-                )
-                # __check_init__ hooks, outermost-class-first, exactly as equinox
-                # walks them. These enforce user invariants and must always run.
-                checks = tuple(
-                    k.__dict__["__check_init__"]
-                    for k in cls.__mro__
-                    if "__check_init__" in k.__dict__
-                )
-                _fast_specs[cls] = _FastSpec(converters, checks)
-            except Exception:  # pragma: no cover - defensive; class stays on slow path
-                pass
+            # `cls` is an equinox.Module, which equinox has just turned into a frozen
+            # dataclass in `super().__new__`, so `dataclasses.fields` is always valid.
+            fields = dataclasses.fields(cls)  # type: ignore[arg-type]
+            # Converters must still be applied post-init (equinox does this
+            # regardless of whether __init__ is dataclass-generated or custom).
+            converters = tuple(
+                (f.name, c)
+                for f in fields
+                if (c := f.metadata.get("converter")) is not None
+            )
+            # __check_init__ hooks, outermost-class-first, exactly as equinox walks
+            # them. These enforce user invariants and must always run.
+            checks = tuple(
+                k.__dict__["__check_init__"]
+                for k in cls.__mro__
+                if "__check_init__" in k.__dict__
+            )
+            _fast_specs[cls] = _FastSpec(converters, checks)
         return cls
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
