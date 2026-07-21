@@ -19,7 +19,7 @@ from ._dispatch import (
     _rules,
     _wrap_if_array,
 )
-from ._values import _DenseArrayValue, _is_value, T, Value
+from ._values import _dense, _DenseArrayValue, _is_value, T, Value
 
 
 class _QuaxTracer(core.Tracer):
@@ -36,7 +36,14 @@ class _QuaxTracer(core.Tracer):
         # the resulting shape/dtype must itself be static/immutable; all
         # JAX/equinox transforms return new objects). aval() may still be
         # derived from dynamic jax.Array fields.
-        self._cached_aval: core.AbstractValue = value.aval()
+        #
+        # Call aval unbound (via the type) rather than `value.aval()`: for user
+        # Value types the latter goes through equinox's Module.__getattribute__,
+        # which wraps the method in a fresh BoundMethod (itself a Module
+        # allocation, ~20 µs) so that jax.jit(value.method) works. That wrapping
+        # is pure overhead here — this aval is consumed immediately and never
+        # handed to jax.jit. _DenseArrayValue already bypasses __getattribute__.
+        self._cached_aval: core.AbstractValue = type(value).aval(value)
 
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -63,7 +70,7 @@ class _QuaxTrace(
     def to_value(self, val: Any) -> Any:
         if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:  # type: ignore[attr-defined]
             return val.value
-        return _DenseArrayValue(val)
+        return _dense(val)
 
     # ===========================================
     # Override methods from jax.core.Trace
@@ -110,8 +117,8 @@ class _QuaxTrace(
                 with core.set_current_trace(self.parent_trace):
                     out = primitive.bind(*arrays, **params)
                 if primitive.multiple_results:
-                    return [_QuaxTracer(self, _DenseArrayValue(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
-                return _QuaxTracer(self, _DenseArrayValue(out))  # pyright: ignore[reportArgumentType]
+                    return [_QuaxTracer(self, _dense(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
+                return _QuaxTracer(self, _dense(out))  # pyright: ignore[reportArgumentType]
 
         # ── full dispatch path ───────────────────────────────────────────────
         # Parse the tracers into values, unpacking any _DenseArrayValues.
@@ -258,7 +265,7 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
     # value-level SZ so the JVP rule can check `type(t) is SZ` directly, while
     # leaving mixed tangents untouched.
     in_tangent_values = [
-        SZ(p.aval())
+        SZ(type(p).aval(p))
         if (leaves := jtu.tree_leaves(t)) and all(type(l) is SZ for l in leaves)
         else t
         for p, t in zip(in_primal_values, in_tangent_values_raw)
@@ -289,8 +296,10 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
                 out_primal_values, out_tangent_values, strict=True
             ):
                 if primal.__class__ != tangent.__class__:
-                    primal = primal.materialise()
-                    tangent = tangent.materialise()
+                    # Unbound calls skip equinox's BoundMethod-wrapping
+                    # __getattribute__ (see _QuaxTracer.__init__).
+                    primal = type(primal).materialise(primal)
+                    tangent = type(tangent).materialise(tangent)
                 out_primal_values2.append(primal)
                 out_tangent_values2.append(tangent)
             del out_tracers

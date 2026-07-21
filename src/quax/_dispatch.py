@@ -10,7 +10,7 @@ import jax.extend.core as jexc
 import plum
 from jaxtyping import ArrayLike
 
-from ._values import _DenseArrayValue, CT, Value, ValueLike
+from ._values import _dense, CT, Value, ValueLike
 
 
 _rules: dict[jexc.Primitive, plum.Function] = {}
@@ -114,6 +114,4 @@ def _default_process(
 
 
 def _wrap_if_array(x: Any, /) -> Value:
-    return (
-        _DenseArrayValue(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
-    )
+    return _dense(cast(ArrayLike, x)) if eqx.is_array_like(x) else cast(Value, x)
