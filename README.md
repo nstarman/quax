@@ -1,6 +1,10 @@
 <h1 align="center">Quax</h1>
 <h2 align="center">JAX + multiple dispatch + custom array-ish objects</h2>
 
+<p align="center">
+  <a href="https://app.codspeed.io/nstarman/quax?utm_source=badge"><img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed"/></a>
+</p>
+
 For example, this can be mean overloading matrix multiplication to exploit sparsity or structure, or automatically rewriting a LoRA's matmul `(W + AB)v` into the more-efficient `Wv + ABv`.
 
 Applications include:
