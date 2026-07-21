@@ -8,16 +8,16 @@ import numpy as np
 import plum
 import pytest
 
-from quax._compat import JAX_GE_0_7_2
+from quax._compat import JAX_GE_0_8_0
 
 
 # Skip all tests if JAX version doesn't support TypedInt
 pytestmark = pytest.mark.skipif(
-    not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required for TypedInt"
+    not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required for TypedInt"
 )
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_int_conversion():
     """Test that TypedInt can be converted to jax.Array."""
     from jax._src.literals import TypedInt
@@ -33,7 +33,7 @@ def test_typed_int_conversion():
     assert arr.dtype == np.int32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_float_conversion():
     """Test that TypedFloat can be converted to jax.Array."""
     from jax._src.literals import TypedFloat
@@ -49,7 +49,7 @@ def test_typed_float_conversion():
     assert arr.dtype == np.float32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_complex_conversion():
     """Test that TypedComplex can be converted to jax.Array."""
     from jax._src.literals import TypedComplex
@@ -65,7 +65,7 @@ def test_typed_complex_conversion():
     assert arr.dtype == np.complex64
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_int_zero():
     """Test TypedInt conversion with zero value."""
     from jax._src.literals import TypedInt
@@ -77,7 +77,7 @@ def test_typed_int_zero():
     assert arr.dtype == np.int32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_float_negative():
     """Test TypedFloat conversion with negative value."""
     from jax._src.literals import TypedFloat
@@ -89,7 +89,7 @@ def test_typed_float_negative():
     assert arr.dtype == np.float32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_complex_zero():
     """Test TypedComplex conversion with zero value."""
     from jax._src.literals import TypedComplex
@@ -101,7 +101,7 @@ def test_typed_complex_zero():
     assert arr.dtype == np.complex64
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_int_large_value():
     """Test TypedInt conversion with large value that fits in int32."""
     from jax._src.literals import TypedInt
@@ -114,7 +114,7 @@ def test_typed_int_large_value():
     assert arr.dtype == np.int32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_float_precision():
     """Test TypedFloat conversion preserves precision for float32."""
     from jax._src.literals import TypedFloat
@@ -127,7 +127,7 @@ def test_typed_float_precision():
     assert arr.dtype == np.float32
 
 
-@pytest.mark.skipif(not JAX_GE_0_7_2, reason="JAX >= 0.7.2 required")
+@pytest.mark.skipif(not JAX_GE_0_8_0, reason="JAX >= 0.8.0 required")
 def test_typed_complex_with_imaginary():
     """Test TypedComplex conversion with pure imaginary number."""
     from jax._src.literals import TypedComplex
