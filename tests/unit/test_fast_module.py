@@ -195,10 +195,14 @@ def test_quaxify_roundtrip_through_fast_type():
     assert jnp.array_equal(out.array, jnp.arange(5.0) ** 2)
 
 
-def test_fast_flag_precomputed():
-    """Concrete simple Values qualify for the fast path; class metadata is cached."""
-    assert _WithConverter.__quax_fast__ is True
-    assert _Checked.__quax_fast__ is True
+def test_fast_spec_precomputed():
+    """Qualifying Values register a spec (keyed off the class, not stored on it)."""
+    from quax._module import _fast_specs
+
+    assert _WithConverter in _fast_specs
+    assert _Checked in _fast_specs
     # Converter recorded for application; check_init recorded for enforcement.
-    assert any(name == "array" for name, _ in _WithConverter.__quax_converters__)
-    assert len(_Checked.__quax_checks__) == 1
+    assert any(name == "array" for name, _ in _fast_specs[_WithConverter].converters)
+    assert len(_fast_specs[_Checked].checks) == 1
+    # Metadata lives off the class: no bespoke dunders left on user types.
+    assert not any(a.startswith("__quax") for a in vars(_WithConverter))

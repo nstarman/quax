@@ -31,7 +31,8 @@ __all__ = ("FastPathUnavailableWarning",)
 
 import dataclasses
 import warnings
-from typing import Any
+import weakref
+from typing import Any, NamedTuple
 
 import equinox as eqx
 
@@ -58,8 +59,8 @@ _EqxModuleMeta = type(eqx.Module)
 # throughput.
 #
 # The fallbacks are typed callables (not `None`) so the fast path stays type-clean;
-# they are never reached, because `_FASTPATH_AVAILABLE is False` forces every class's
-# `__quax_fast__` flag off and construction goes through `super().__call__`.
+# they are never reached, because `_FASTPATH_AVAILABLE is False` keeps every class out
+# of `_fast_specs` (below), so construction goes through `super().__call__`.
 try:
     from equinox._module._module import _currently_initialising, is_abstract_module
 
@@ -86,17 +87,32 @@ except Exception as _exc:  # pragma: no cover - only hit on an incompatible equi
     )
 
 
+class _FastSpec(NamedTuple):
+    """Precomputed data the fast path needs to construct a class.
+
+    ``converters`` are ``(field_name, converter)`` pairs applied after ``__init__``;
+    ``checks`` are the class's ``__check_init__`` hooks in equinox's MRO order.
+    """
+
+    converters: tuple[tuple[str, Any], ...]
+    checks: tuple[Any, ...]
+
+
+# Per-class fast-path metadata, keyed off the class rather than stored as attributes
+# on it (the same weak-collection idiom equinox uses for `_has_dataclass_init` /
+# `_currently_initialising`). A class is present iff it qualifies for the fast path;
+# absence means "fall back to equinox's construction", so no separate flag is needed.
+# Weak keys let entries for dynamically-created classes be collected with the class.
+_fast_specs: "weakref.WeakKeyDictionary[type, _FastSpec]" = weakref.WeakKeyDictionary()
+
+
 class _FastModuleMeta(_EqxModuleMeta):
     """Metaclass that skips `equinox.Module`'s per-instance validation where safe.
 
     Applied to [`quax.Value`][], so every Quax value type inherits the fast
     construction path. See the module docstring for the rationale and the exact set
-    of checks that are (and are not) preserved.
-
-    The per-class ``__quax_fast__`` / ``__quax_converters__`` / ``__quax_checks__``
-    metadata is precomputed in ``__new__`` and read in ``__call__``; it is set
-    dynamically (annotating it on the metaclass would make Equinox's
-    ``dataclass_transform`` synthesise an ``__init__``), hence the read-site ignores.
+    of checks that are (and are not) preserved. Per-class metadata lives in the
+    module-level `_fast_specs` registry rather than as attributes on the class.
     """
 
     def __new__(
@@ -107,9 +123,6 @@ class _FastModuleMeta(_EqxModuleMeta):
         **kwargs: Any,
     ) -> type:
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
-        converters: tuple[tuple[str, Any], ...] = ()
-        checks: tuple[Any, ...] = ()
-        fast = False
         if _FASTPATH_AVAILABLE:
             try:
                 fields = dataclasses.fields(cls)  # type: ignore[arg-type]
@@ -127,21 +140,17 @@ class _FastModuleMeta(_EqxModuleMeta):
                     for k in cls.__mro__
                     if "__check_init__" in k.__dict__
                 )
-                fast = True
-            except Exception:  # pragma: no cover - defensive
-                fast = False
-        # Dunder names are never treated as dataclass fields (fields come from
-        # annotations), so these are safe to stash on the class.
-        cls.__quax_fast__ = fast
-        cls.__quax_converters__ = converters
-        cls.__quax_checks__ = checks
+                _fast_specs[cls] = _FastSpec(converters, checks)
+            except Exception:  # pragma: no cover - defensive; class stays on slow path
+                pass
         return cls
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
-        # Abstract instantiation, and any class the fast path could not analyse,
-        # go through equinox's own __call__ (which raises the right errors and
-        # runs the full validation).
-        if not cls.__quax_fast__ or is_abstract_module(cls):  # pyright: ignore[reportAttributeAccessIssue]
+        # A class the fast path could not analyse is absent from `_fast_specs`;
+        # abstract instantiation is still deferred to equinox's own __call__ (which
+        # raises the right errors and runs the full validation).
+        spec = _fast_specs.get(cls)
+        if spec is None or is_abstract_module(cls):
             return super().__call__(*args, **kwargs)
 
         # `self` is a freshly-allocated instance of a dynamically-determined class;
@@ -160,10 +169,10 @@ class _FastModuleMeta(_EqxModuleMeta):
             _currently_initialising.remove(self)
 
         # Converters first, then __check_init__ — the same order equinox uses.
-        for fname, converter in cls.__quax_converters__:  # pyright: ignore[reportAttributeAccessIssue]
+        for fname, converter in spec.converters:
             object.__setattr__(
                 self, fname, converter(object.__getattribute__(self, fname))
             )
-        for check in cls.__quax_checks__:  # pyright: ignore[reportAttributeAccessIssue]
+        for check in spec.checks:
             check(self)
         return self
