@@ -188,7 +188,7 @@ class _DenseArrayValue(ArrayValue):
     (cheaper than an ABC ``isinstance``), which is exact only because this type is
     never subclassed.
 
-    This is an implementation detail hidded from the user! It is unwrapped straight
+    This is an implementation detail hidden from the user! It is unwrapped straight
     before calling a dispatch rule, and re-wrapped immediately afterwards.
     """
 
