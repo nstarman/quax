@@ -14,13 +14,103 @@ import pytest
 
 import quax
 from quax._compat import typeof
-from quax._module import _FastModuleMeta
+from quax._module import _FastModuleMeta, _FASTPATH_AVAILABLE
 
 
 def test_value_uses_fast_metaclass():
     """`quax.Value` (and thus every subclass) is built by `_FastModuleMeta`."""
     assert isinstance(quax.Value, _FastModuleMeta)
     assert isinstance(quax.ArrayValue, _FastModuleMeta)
+
+
+def test_fast_path_available():
+    """CI canary: the fast construction path must stay live on supported equinox.
+
+    The fast path relies on a few `equinox` internals behind a guarded import that
+    falls back to a correct-but-slow path if they move. That fallback keeps Quax
+    working but silently removes the whole point of this module. This test makes the
+    regression loud: if a future `equinox` breaks the fast path, CI (including the
+    "newest supported deps" job) goes red here.
+
+    If this fails after an `equinox` upgrade, update `quax/_module.py` to the new
+    internals — do not delete this test or the guard.
+    """
+    assert _FASTPATH_AVAILABLE is True
+
+
+def test_fast_path_actually_bypasses_equinox_slow_call(monkeypatch):
+    """Stronger canary: fast construction must not go through equinox's slow
+    `_ModuleMeta.__call__`, even if the guarded import happens to still succeed."""
+    import equinox._module._module as eqxmod
+
+    seen: list[str] = []
+    original = eqxmod._ModuleMeta.__call__
+
+    def spy(cls, *args, **kwargs):
+        seen.append(cls.__name__)
+        return original(cls, *args, **kwargs)
+
+    monkeypatch.setattr(eqxmod._ModuleMeta, "__call__", spy)
+
+    _WithConverter(jnp.arange(3.0))  # concrete fast type
+    assert "_WithConverter" not in seen  # never hit equinox's per-instance validation
+
+
+def test_degradation_is_not_silent():
+    """An incompatible equinox must *warn* (not silently) and fall back correctly.
+
+    Runs in a subprocess so simulating a broken equinox (by removing an internal
+    before quax imports) cannot corrupt this test session's module state.
+    """
+    import subprocess
+    import sys
+    import textwrap
+
+    # Make ONLY quax's `from equinox._module._module import ... is_abstract_module`
+    # fail, by returning a shim missing that name — while leaving the real equinox
+    # module (which its own code depends on) intact. This mirrors a future equinox
+    # that has moved the internal, without breaking equinox itself.
+    script = textwrap.dedent(
+        """
+        import builtins, types, warnings
+
+        _real_import = builtins.__import__
+        _target = "equinox._module._module"
+        _hidden = "is_abstract_module"
+
+        def _patched_import(name, g=None, l=None, fromlist=(), level=0):
+            mod = _real_import(name, g, l, fromlist, level)
+            if name == _target and fromlist and _hidden in fromlist:
+                shim = types.ModuleType(name)
+                for k, v in vars(mod).items():
+                    if k != _hidden:
+                        setattr(shim, k, v)
+                return shim
+            return mod
+
+        builtins.__import__ = _patched_import
+        try:
+            with warnings.catch_warnings(record=True) as rec:
+                warnings.simplefilter("always")
+                import quax
+        finally:
+            builtins.__import__ = _real_import
+
+        cats = {w.category.__name__ for w in rec}
+        assert "FastPathUnavailableWarning" in cats, f"no warning; saw {cats}"
+        assert quax._module._FASTPATH_AVAILABLE is False
+        # Fallback must still construct Values correctly (equinox slow path).
+        import jax.numpy as jnp
+        from quax._values import _DenseArrayValue
+        assert _DenseArrayValue(jnp.arange(2.0)).array is not None
+        print("OK")
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
 
 
 class _WithConverter(quax.ArrayValue):

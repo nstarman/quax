@@ -27,18 +27,36 @@ fast path disables itself and every construction falls through to `equinox`'s ow
 correct `__call__` — costing the speedup but never correctness.
 """
 
-__all__ = ()
+__all__ = ("FastPathUnavailableWarning",)
 
 import dataclasses
+import warnings
 from typing import Any
 
 import equinox as eqx
+
+
+class FastPathUnavailableWarning(UserWarning):
+    """Warned once, at import, when Quax's fast `Module` construction is disabled.
+
+    The fast path relies on a small set of `equinox` internals. If they are missing
+    (typically because the installed `equinox` is newer than Quax has been updated
+    for), Quax stays fully correct but falls back to `equinox`'s slower per-instance
+    construction, which noticeably slows `Value`-heavy tracing. This warning exists
+    so that regression is never *silent*; filter it with
+    `warnings.filterwarnings("ignore", category=quax.FastPathUnavailableWarning)`.
+    """
 
 
 _EqxModuleMeta = type(eqx.Module)
 
 # Internals the fast path depends on. Kept behind a guarded import so that a change
 # in `equinox` degrades to the slow-but-correct path rather than breaking at import.
+# Degradation is deliberately *not silent*: we warn here, and a CI canary test
+# (`test_fast_path_available`) asserts the fast path stays live on supported
+# `equinox` versions so a breaking upgrade turns CI red rather than quietly halving
+# throughput.
+#
 # The fallbacks are typed callables (not `None`) so the fast path stays type-clean;
 # they are never reached, because `_FASTPATH_AVAILABLE is False` forces every class's
 # `__quax_fast__` flag off and construction goes through `super().__call__`.
@@ -46,7 +64,7 @@ try:
     from equinox._module._module import _currently_initialising, is_abstract_module
 
     _FASTPATH_AVAILABLE = True
-except Exception:  # pragma: no cover - only hit on an incompatible equinox
+except Exception as _exc:  # pragma: no cover - only hit on an incompatible equinox
 
     class _UnavailableInitGuard:
         def add(self, obj: Any, /) -> None: ...
@@ -58,6 +76,14 @@ except Exception:  # pragma: no cover - only hit on an incompatible equinox
         return True
 
     _FASTPATH_AVAILABLE = False
+    warnings.warn(
+        "Quax's fast equinox.Module construction is disabled: could not access the "
+        f"equinox internals it relies on (equinox {eqx.__version__}: {_exc!r}). "
+        "Quax remains correct but Value-heavy tracing will be slower. This usually "
+        "means the installed equinox is newer than this version of Quax supports.",
+        FastPathUnavailableWarning,
+        stacklevel=2,
+    )
 
 
 class _FastModuleMeta(_EqxModuleMeta):
