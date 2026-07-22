@@ -74,7 +74,7 @@ def _(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
 @quax.register(jax.lax.integer_pow_p)
 def _(x: Unitful, *, y: int):
     units = {k: v * y for k, v in x.units.items()}
-    return Unitful(x.array, units)
+    return Unitful(jax.lax.integer_pow_p.bind(x.array, y=y), units)
 
 
 @quax.register(jax.lax.lt_p)
