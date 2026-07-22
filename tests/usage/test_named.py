@@ -1,6 +1,7 @@
 from typing import cast
 
 import equinox as eqx
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
@@ -78,6 +79,29 @@ def test_matmul_pairwise_axis_check(getkey):
         x, y_aligned
     )
     assert out.axes == ()
+
+
+def test_matmul_mismatched_contract_length(getkey):
+    # `dimension_numbers` with unequal contracted-axis counts is malformed;
+    # `zip` would silently truncate and hide it. The length guard rejects it up
+    # front. `lax.dot_general` validates lengths itself, so reach the NamedArray
+    # rule by binding `dot_general_p` directly with corrupted dimension_numbers
+    # (reusing a real trace's params so this stays JAX-version-robust).
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    arr = jnp.ones((3, 3))
+    jaxpr = jax.make_jaxpr(
+        lambda a, b: lax.dot_general(a, b, (((1,), (0,)), ((), ())))
+    )(arr, arr)
+    (eqn,) = [e for e in jaxpr.jaxpr.eqns if e.primitive is lax.dot_general_p]
+    params = dict(eqn.params)
+    params["dimension_numbers"] = (((0, 1), (0,)), ((), ()))  # 2 lhs vs 1 rhs
+
+    with pytest.raises(TypeError, match="Cannot contract mismatched dimensions"):
+        quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
 
 
 def test_existing_function(getkey):
