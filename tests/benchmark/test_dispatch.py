@@ -38,6 +38,19 @@ _rhs = jax.random.normal(_key, (16, 8))
 _dot_dn = (((1,), (0,)), ((), ()))
 
 
+# An inner `@jax.jit` that quax does *not* inline, so its `pjit` takes the cached
+# `jit_quax` path (`_jit_quax_cache` — a jax.jit-wrapped quaxify callable whose
+# compiled kernel is reused), distinct from the inlined-`pjit` path the other
+# dispatch benchmarks hit.
+@jax.jit
+def _inner_jit(a):
+    return a * 2.0 + 1.0
+
+
+def _calls_inner_jit(a):
+    return _inner_jit(a)
+
+
 def _bench(benchmark, fn, *args):
     """Warm the dispatch cache, then benchmark eager ``quaxify(fn)(*args)``."""
     qfn = quax.quaxify(fn)
@@ -76,3 +89,10 @@ def test_matmul_lora(benchmark):
     """`quaxify(dot_general)(LoraArray, array)` — LoRA matmul (many primitives,
     inlined pjits)."""
     _bench(benchmark, lax.dot_general, _lora, _rhs, _dot_dn)
+
+
+@pytest.mark.benchmark(group="dispatch")
+def test_jit_cache_hit(benchmark):
+    """`quaxify` over a function calling an inner `@jax.jit` — the cached
+    (non-inlined) `jit_quax` path, hitting `_jit_quax_cache`."""
+    _bench(benchmark, _calls_inner_jit, _xm)
