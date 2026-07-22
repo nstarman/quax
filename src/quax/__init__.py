@@ -5,6 +5,10 @@ __all__ = (
     "quaxify",
     "Value",
     "ArrayValue",
+    "examples",
+    # Backward-compatibility aliases for `examples.lora` / `examples.zero`.
+    "lora",
+    "zero",
 )
 
 import importlib.metadata
