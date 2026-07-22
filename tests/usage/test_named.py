@@ -105,6 +105,28 @@ def test_matmul_mismatched_contract_length(getkey):
         quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
 
 
+def test_matmul_out_of_range_axis(getkey):
+    # An out-of-range axis index in `dimension_numbers` is malformed. The rule
+    # skips its name check for such input and lets `lax.dot_general` raise its
+    # clear `TypeError` ("... dimension numbers ... less than the number of
+    # axes"), rather than a bare `IndexError` from indexing `lhs.axes`.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    arr = jnp.ones((3, 3))
+    jaxpr = jax.make_jaxpr(
+        lambda a, b: lax.dot_general(a, b, (((1,), (0,)), ((), ())))
+    )(arr, arr)
+    (eqn,) = [e for e in jaxpr.jaxpr.eqns if e.primitive is lax.dot_general_p]
+    params = dict(eqn.params)
+    params["dimension_numbers"] = (((5,), (0,)), ((), ()))  # axis 5 out of range
+
+    with pytest.raises(TypeError):
+        quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
+
+
 def test_existing_function(getkey):
     # We can use NamedArrays even in functions that weren't designed for it! The output
     # will be a NamedArray as well!
