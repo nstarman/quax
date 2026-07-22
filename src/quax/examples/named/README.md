@@ -1,6 +1,6 @@
 # Named arrays
 
-These are arrays with named dimensions. We can then use these to specify which dimensions we'd like to reduce down, or e.g. to check that we only perform matmuls down axes with matchign semantics.
+These are arrays with named dimensions. We can then use these to specify which dimensions we'd like to reduce down, or e.g. to check that we only perform matmuls down axes with matching semantics.
 
 ## Example
 
@@ -36,3 +36,24 @@ named.trace       # Trace down two named axes.
 ```
 
 The usual JAX addition, subtraction, multiplication, and contraction (matrix-vector multiplication; matrix-matrix multiplication `jnp.tensordot` etc.) are also supported.
+
+## Semantics
+
+Names **validate**; they do not **align**. Operations run positionally, exactly as
+the usual JAX operations do, and the names are checked to line up with that
+positional pairing (and used to label the output):
+
+- For an elementwise op, the operands must have the *same axes in the same
+  order* — `(A, B) + (B, A)` is rejected, not silently transposed and added.
+- For a contraction, each contracted (and batched) axis must share a name with
+  the axis it is *positionally* paired against — `dot_general` contracts
+  `lhs_contract[k]` with `rhs_contract[k]`, so those two axes must match.
+
+This deliberately differs from a fully name-driven system (e.g. `xarray`), which
+would *reorder* operands to align shared names. Here a mismatch is an error,
+surfacing a likely bug rather than quietly reinterpreting the operation.
+
+Axes are matched by **identity**: two axes are "the same name" only if they are
+the same `Axis` object (so re-using an `Axis` instance is how you express that
+two arrays share a dimension). Two separately constructed `Axis(3)`s are
+distinct names.
