@@ -94,8 +94,11 @@ def uniform(
     dtype = jax.dtypes.canonicalize_dtype(dtype)
     minval = lax.convert_element_type(minval, dtype)
     maxval = lax.convert_element_type(maxval, dtype)
-    minval = jnp.broadcast_to(minval, (1,) * (len(shape) - minval.ndim))
-    maxval = jnp.broadcast_to(maxval, (1,) * (len(shape) - maxval.ndim))
+    # Broadcast the (possibly array-valued) bounds up to the output rank, keeping
+    # their own trailing dims -- as `jax.random.uniform` does. A plain
+    # `broadcast_to` to an all-ones shape mishandles any non-scalar bound.
+    minval = lax.broadcast_to_rank(minval, len(shape))
+    maxval = lax.broadcast_to_rank(maxval, len(shape))
 
     finfo = jnp.finfo(dtype)
     nbits = finfo.bits
@@ -132,8 +135,8 @@ def normal(
     PRNGs, e.g. `prng.ThreeFry(...)`.
     """
 
-    if not jnp.issubdtype(dtype, jnp.floating):
-        raise ValueError("Must use floating dtype")
+    if not jnp.issubdtype(dtype, jnp.inexact):
+        raise ValueError("Must use floating or complex dtype")
     dtype = jax.dtypes.canonicalize_dtype(dtype)
     if jnp.issubdtype(dtype, jnp.complexfloating):
         sqrt2 = np.array(np.sqrt(2), dtype)
