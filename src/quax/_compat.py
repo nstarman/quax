@@ -128,9 +128,22 @@ else:
         num_xs: int,
         num_ys: int,
     ) -> dict[str, Any]:
-        """Parameters for re-binding `scan_p` with the given group sizes."""
-        del num_xs, num_ys
-        return {**params, "num_consts": num_consts, "num_carry": num_carry}
+        """Parameters for re-binding `scan_p` with the given group sizes.
+
+        `linear` is a per-operand flag tuple (consts + carry + xs). Quaxifying
+        the body generally changes the flat operand count -- a single
+        `ArrayValue` can flatten to several arrays -- so the incoming `linear`
+        no longer matches the new operands and JAX's scan rules raise. Rebuild
+        it sized to the new operand count; the body is retraced from scratch, so
+        no linearity information carries over anyway.
+        """
+        del num_ys
+        return {
+            **params,
+            "num_consts": num_consts,
+            "num_carry": num_carry,
+            "linear": (False,) * (num_consts + num_carry + num_xs),
+        }
 
 
 typeof: Callable[[Any], Any]
