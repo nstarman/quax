@@ -140,11 +140,7 @@ else:
         analysis so `lax.scan`'s AD does not lose it to an all-`False` rebuild.
         """
         del num_ys
-        new_params = {
-            **params,
-            "num_consts": num_consts,
-            "num_carry": num_carry,
-        }
+        new_params = {**params, "num_consts": num_consts, "num_carry": num_carry}
         n_operands = num_consts + num_carry + num_xs
         linear = params.get("linear")
         if linear is None or len(linear) != n_operands:
