@@ -19,6 +19,46 @@ def test_normal():
     prng.normal(key)
 
 
+def test_normal_complex():
+    """`normal` supports complex dtypes (as `jax.random.normal` does).
+
+    Regression: the dtype guard tested `jnp.floating`, which excludes complex,
+    so any complex dtype raised before reaching the (fully written) complex
+    branch -- making that branch dead code.
+    """
+    key = prng.ThreeFry(0)
+    out = prng.normal(key, shape=(5,), dtype=jnp.complex64)
+    assert out.dtype == jnp.complex64
+    assert out.shape == (5,)
+
+
+def test_normal_rejects_integer():
+    key = prng.ThreeFry(0)
+    with pytest.raises(ValueError):
+        prng.normal(key, shape=(2,), dtype=jnp.int32)
+
+
+def test_uniform_array_bounds():
+    """`uniform` accepts array-valued `minval`/`maxval` (as `jax.random.uniform`).
+
+    Regression: the bounds were broadcast to an all-ones shape of the wrong
+    rank, so any non-scalar bound raised instead of giving a per-element range.
+    """
+    key = prng.ThreeFry(0)
+    minval = jnp.array([0.0, 10.0, 20.0])
+    maxval = jnp.array([1.0, 11.0, 21.0])
+
+    # Per-element bounds.
+    out = prng.uniform(key, shape=(3,), minval=minval, maxval=maxval)
+    assert out.shape == (3,)
+    assert bool((out >= minval).all() and (out < maxval).all())
+
+    # Bounds broadcast against a higher-rank output shape.
+    out2 = prng.uniform(key, shape=(4, 3), minval=minval, maxval=maxval)
+    assert out2.shape == (4, 3)
+    assert bool((out2 >= minval).all() and (out2 < maxval).all())
+
+
 def test_cannot_add():
     key = prng.ThreeFry(0)
     with pytest.raises(TypeError):

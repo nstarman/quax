@@ -11,7 +11,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float, Integer, UInt, UInt32
+from jaxtyping import Array, ArrayLike, Float, Inexact, Integer, UInt, UInt32
 
 import quax
 from quax._compat import JAX_GE_0_10_2
@@ -82,7 +82,7 @@ def uniform(
     dtype: DTypeLikeFloat = jnp.float_,
     minval: RealArray = 0.0,
     maxval: RealArray = 1.0,
-) -> Float[Array, ""]:
+) -> Float[Array, "..."]:
     """Samples a random number uniformly distributed over `[minval, maxval)`.
 
     Arguments as `jax.random.uniform`, except that the first argument must be one of our
@@ -94,8 +94,11 @@ def uniform(
     dtype = jax.dtypes.canonicalize_dtype(dtype)
     minval = lax.convert_element_type(minval, dtype)
     maxval = lax.convert_element_type(maxval, dtype)
-    minval = jnp.broadcast_to(minval, (1,) * (len(shape) - minval.ndim))
-    maxval = jnp.broadcast_to(maxval, (1,) * (len(shape) - maxval.ndim))
+    # Broadcast the (possibly array-valued) bounds up to the output rank, keeping
+    # their own trailing dims -- as `jax.random.uniform` does. A plain
+    # `broadcast_to` to an all-ones shape mishandles any non-scalar bound.
+    minval = lax.broadcast_to_rank(minval, len(shape))
+    maxval = lax.broadcast_to_rank(maxval, len(shape))
 
     finfo = jnp.finfo(dtype)
     nbits = finfo.bits
@@ -125,15 +128,15 @@ def uniform(
 
 def normal(
     key: PRNG, shape: tuple[int, ...] = (), dtype: DTypeLikeInexact = jnp.float_
-) -> Float[Array, ""]:
+) -> Inexact[Array, "..."]:
     """Samples from a normal distribution.
 
     Arguments as `jax.random.normal`, except that the first argument must be one of our
     PRNGs, e.g. `prng.ThreeFry(...)`.
     """
 
-    if not jnp.issubdtype(dtype, jnp.floating):
-        raise ValueError("Must use floating dtype")
+    if not jnp.issubdtype(dtype, jnp.inexact):
+        raise ValueError("Must use floating or complex dtype")
     dtype = jax.dtypes.canonicalize_dtype(dtype)
     if jnp.issubdtype(dtype, jnp.complexfloating):
         sqrt2 = np.array(np.sqrt(2), dtype)
