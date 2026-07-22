@@ -120,7 +120,8 @@ def _(
             + [("l", i) for i in sorted([*lhs_unused, row])]
             + [("r", i) for i in rhs_unused]
         )
-        perm = tuple(produced.index(tok) for tok in canonical)
+        position = {tok: i for i, tok in enumerate(produced)}
+        perm = tuple(position[tok] for tok in canonical)
         if perm != tuple(range(len(perm))):
             out = quax.quaxify(jnp.transpose)(out, perm)
         return out
