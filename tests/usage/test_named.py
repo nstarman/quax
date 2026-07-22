@@ -83,9 +83,10 @@ def test_matmul_pairwise_axis_check(getkey):
 
 def test_matmul_mismatched_contract_length(getkey):
     # `dimension_numbers` with unequal contracted-axis counts is malformed;
-    # `zip` would silently truncate and hide it. The length guard rejects it up
-    # front. `lax.dot_general` validates lengths itself, so reach the NamedArray
-    # rule by binding `dot_general_p` directly with corrupted dimension_numbers
+    # `zip(..., strict=True)` rejects it (a `ValueError`) instead of silently
+    # truncating and hiding the mismatch behind a later JAX error.
+    # `lax.dot_general` validates lengths itself, so reach the NamedArray rule
+    # by binding `dot_general_p` directly with corrupted dimension_numbers
     # (reusing a real trace's params so this stays JAX-version-robust).
     A = named.Axis(3)
     B = named.Axis(3)
@@ -100,7 +101,7 @@ def test_matmul_mismatched_contract_length(getkey):
     params = dict(eqn.params)
     params["dimension_numbers"] = (((0, 1), (0,)), ((), ()))  # 2 lhs vs 1 rhs
 
-    with pytest.raises(TypeError, match="Cannot contract mismatched dimensions"):
+    with pytest.raises(ValueError):
         quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
 
 

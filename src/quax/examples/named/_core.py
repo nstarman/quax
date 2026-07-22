@@ -136,15 +136,16 @@ def _(lhs: NamedArray, rhs: NamedArray, *, dimension_numbers, **kwargs) -> Named
     # `lhs_contract[k]` is contracted with `rhs_contract[k]`. Compare the pairs,
     # not the axis-name *sets* -- a set comparison accepts a wrong pairing when
     # two dims share the same names in a different order (e.g. contracting
-    # (A, B) against (B, A)), silently contracting mismatched axes. The length
-    # guard rejects malformed `dimension_numbers` up front, rather than letting
-    # `zip` truncate and hide the mismatch behind a later JAX error.
-    if len(lhs_contract) != len(rhs_contract) or any(
-        lhs.axes[i] != rhs.axes[j] for i, j in zip(lhs_contract, rhs_contract)
+    # (A, B) against (B, A)), silently contracting mismatched axes. `strict=True`
+    # additionally rejects a malformed `dimension_numbers` whose paired axis
+    # tuples differ in length, rather than letting `zip` truncate and hide it.
+    if any(
+        lhs.axes[i] != rhs.axes[j]
+        for i, j in zip(lhs_contract, rhs_contract, strict=True)
     ):
         raise TypeError("Cannot contract mismatched dimensions.")
-    if len(lhs_batch) != len(rhs_batch) or any(
-        lhs.axes[i] != rhs.axes[j] for i, j in zip(lhs_batch, rhs_batch)
+    if any(
+        lhs.axes[i] != rhs.axes[j] for i, j in zip(lhs_batch, rhs_batch, strict=True)
     ):
         raise TypeError("Cannot batch mismatched dimensions.")
     out = lax.dot_general(lhs.array, rhs.array, dimension_numbers, **kwargs)
