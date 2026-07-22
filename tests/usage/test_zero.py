@@ -153,6 +153,21 @@ def test_slice(getkey):
     assert eqx.tree_equal(out, zero.Zero(true_shape, jnp.float32))
 
 
+def test_strided_slice():
+    # Strides whose spans are not multiples of the stride. The output shape must
+    # match materialising then slicing, i.e. ceil((limit - start) / stride) --
+    # a plain floor division would give the wrong (off-by-one) shape here.
+    z = zero.Zero((5, 7), jnp.float32)
+
+    def f(x):
+        return lax.slice(x, (0, 1), (5, 7), (2, 3))
+
+    out = quax.quaxify(f)(z)
+    true_shape = f(jnp.zeros((5, 7), jnp.float32)).shape
+    assert true_shape == (3, 2)  # indices 0,2,4 and 1,4 -> ceil, not floor
+    assert eqx.tree_equal(out, zero.Zero(true_shape, jnp.float32))
+
+
 @pytest.mark.skip("dynamic quaxify is disabled for now")
 def test_creation():
     for maybe_jit in (jax.jit, lambda x: x):
