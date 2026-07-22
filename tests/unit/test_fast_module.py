@@ -23,6 +23,18 @@ def test_value_uses_fast_metaclass():
     assert isinstance(quax.ArrayValue, _FastModuleMeta)
 
 
+def test_fast_metaclass_declares_dataclass_transform():
+    """`dataclass_transform` must be applied *directly* to `_FastModuleMeta`.
+
+    PEP 681 does not propagate the marker to a metaclass subclass, so a static type
+    checker only treats `quax.Value` subclasses as dataclasses (typed `__init__`,
+    field-aware `dataclasses.replace`) when the decorator sits on `_FastModuleMeta`
+    itself. Inheriting it from equinox's `_ModuleMeta` is not enough -- hence the
+    check on the class's own ``__dict__`` rather than ``hasattr``.
+    """
+    assert "__dataclass_transform__" in _FastModuleMeta.__dict__
+
+
 def test_fast_path_available():
     """CI canary: the fast construction path must stay live on supported equinox.
 

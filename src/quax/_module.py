@@ -42,12 +42,21 @@ __all__ = ()
 import dataclasses
 import warnings
 import weakref
-from typing import Any, NamedTuple
+from typing import Any, dataclass_transform, NamedTuple, TYPE_CHECKING
 
 import equinox as eqx
 
 
-_EqxModuleMeta = type(eqx.Module)
+if TYPE_CHECKING:
+    # Static checkers cannot resolve `type(eqx.Module)` to a concrete class, which
+    # severs the metaclass chain and stops the `dataclass_transform` below from
+    # reaching `Value` subclasses (their `__init__` would look untyped). Import the
+    # metaclass by name for type-checking only; the runtime path keeps
+    # `type(eqx.Module)` so a future equinox rename degrades gracefully at run time
+    # instead of breaking import.
+    from equinox._module._module import _ModuleMeta as _EqxModuleMeta
+else:
+    _EqxModuleMeta = type(eqx.Module)
 
 # Internals the fast path depends on. Kept behind a guarded import so that a change
 # in `equinox` degrades to the slow-but-correct path rather than breaking at import.
@@ -107,6 +116,13 @@ class _FastSpec(NamedTuple):
 _fast_specs: "weakref.WeakKeyDictionary[type, _FastSpec]" = weakref.WeakKeyDictionary()
 
 
+# Re-declare equinox's `dataclass_transform` on this metaclass. PEP 681 does not
+# propagate the marker to a metaclass subclass, so without this static type checkers
+# stop treating `quax.Value` (and every user subclass) as a dataclass: constructor
+# calls become "untyped" and `dataclasses.replace(..., field=...)` is rejected. At
+# runtime the transform is inherited from equinox regardless; this only restores the
+# static view. Field specifiers mirror `equinox._module._module._ModuleMeta`.
+@dataclass_transform(field_specifiers=(dataclasses.field, eqx.field))
 class _FastModuleMeta(_EqxModuleMeta):
     """Metaclass that skips `equinox.Module`'s per-instance validation where safe.
 
