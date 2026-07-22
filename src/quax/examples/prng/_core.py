@@ -11,7 +11,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float, Integer, UInt, UInt32
+from jaxtyping import Array, ArrayLike, Float, Inexact, Integer, UInt, UInt32
 
 import quax
 from quax._compat import JAX_GE_0_10_2
@@ -82,7 +82,7 @@ def uniform(
     dtype: DTypeLikeFloat = jnp.float_,
     minval: RealArray = 0.0,
     maxval: RealArray = 1.0,
-) -> Float[Array, ""]:
+) -> Float[Array, "..."]:
     """Samples a random number uniformly distributed over `[minval, maxval)`.
 
     Arguments as `jax.random.uniform`, except that the first argument must be one of our
@@ -128,7 +128,7 @@ def uniform(
 
 def normal(
     key: PRNG, shape: tuple[int, ...] = (), dtype: DTypeLikeInexact = jnp.float_
-) -> Float[Array, ""]:
+) -> Inexact[Array, "..."]:
     """Samples from a normal distribution.
 
     Arguments as `jax.random.normal`, except that the first argument must be one of our
