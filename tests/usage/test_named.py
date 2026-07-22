@@ -81,6 +81,28 @@ def test_matmul_pairwise_axis_check(getkey):
     assert out.axes == ()
 
 
+def test_matmul_batch_axis_check(getkey):
+    # Batched `dot_general` pairs batch axes positionally too, so batching
+    # (A, B) against (B, A) is a name mismatch. A and B share a size, so the
+    # batch dims are size-compatible and only the *name* check should reject it.
+    # The contracted axis (K) matches, so the contract check passes first.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    K = named.Axis(4)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (A, B, K))
+    y_swapped = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (B, A, K))
+    y_aligned = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (A, B, K))
+
+    dn = (((2,), (2,)), ((0, 1), (0, 1)))  # contract axis 2; batch axes 0, 1
+
+    with pytest.raises(TypeError, match="Cannot batch mismatched dimensions"):
+        quax.quaxify(lambda a, b: lax.dot_general(a, b, dn))(x, y_swapped)
+
+    # Aligned batch axes (A with A, B with B) are accepted.
+    out = quax.quaxify(lambda a, b: lax.dot_general(a, b, dn))(x, y_aligned)
+    assert out.axes == (A, B)
+
+
 def test_matmul_mismatched_contract_length(getkey):
     # `dimension_numbers` with unequal contracted-axis counts is malformed;
     # `zip(..., strict=True)` rejects it (a `ValueError`) instead of silently
