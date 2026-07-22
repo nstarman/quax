@@ -1,7 +1,15 @@
 import importlib
 
 
-__all__ = ("lora", "named", "prng", "sparse", "structured_matrices", "zero")
+__all__ = (
+    "lora",
+    "named",
+    "prng",
+    "sparse",
+    "structured_matrices",
+    "unitful",
+    "zero",
+)
 
 
 def __getattr__(name: str):

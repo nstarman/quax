@@ -76,7 +76,10 @@ def _to_struct(x):
     elif isinstance(x, get_args(ArrayLike)):
         return jax.ShapeDtypeStruct(jnp.shape(x), jnp.result_type(x))
     else:
-        assert False
+        raise TypeError(
+            f"Cannot convert {type(x).__name__} to a ShapeDtypeStruct; expected a "
+            "quax.ArrayValue or an array-like."
+        )
 
 
 @quax.quaxify

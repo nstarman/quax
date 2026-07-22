@@ -24,4 +24,9 @@ A developer of a library built on Quax (e.g. if you wanted to write your own lib
 ::: quax.ArrayValue
     options:
         members:
-            - does_not_exit
+            - aval
+            - materialise
+            - shape
+            - dtype
+            - ndim
+            - size

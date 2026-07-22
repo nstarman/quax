@@ -2,7 +2,15 @@ import importlib
 import sys
 
 
-EXAMPLE_MODULES = ("lora", "named", "prng", "sparse", "structured_matrices", "zero")
+EXAMPLE_MODULES = (
+    "lora",
+    "named",
+    "prng",
+    "sparse",
+    "structured_matrices",
+    "unitful",
+    "zero",
+)
 
 
 def clear_examples_modules():
