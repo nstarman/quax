@@ -211,7 +211,12 @@ def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
     key = (id(jaxpr), c_tree, v_tree, x_tree)
     entry = _scan_quax_cache.get(key)
     if entry is None:
-        trace_in = (*consts_flat, *carry_flat, *[x[0, ...] for x in xs_flat])
+        # Trace the body against one abstract per-step slice of each xs (its
+        # shape without the leading scan axis). Using an abstract slice rather
+        # than a concrete `x[0]` keeps this valid when the scan length is 0,
+        # which `x[0]` would index out of bounds.
+        xs_slices = [jax.ShapeDtypeStruct(x.shape[1:], x.dtype) for x in xs_flat]
+        trace_in = (*consts_flat, *carry_flat, *xs_slices)
         fn = core.jaxpr_as_fun(jaxpr)
 
         @no_type_check  # for beartype
