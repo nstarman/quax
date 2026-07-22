@@ -1,6 +1,7 @@
 from typing import cast
 
 import equinox as eqx
+import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
@@ -56,6 +57,96 @@ def test_matmul(getkey):
         quax.quaxify(lambda x, y: x @ y)(b, a)
     with pytest.raises(TypeError, match="Cannot contract mismatched dimensions"):
         quax.quaxify(jnp.matmul)(b, a)
+
+
+def test_matmul_pairwise_axis_check(getkey):
+    # `dot_general` contracts axes pairwise, so contracting (A, B) against
+    # (B, A) is a name mismatch (A would be contracted with B). A set-based
+    # check wrongly accepted this because the name *sets* are equal.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y_reversed = named.NamedArray(jr.normal(getkey(), (3, 3)), (B, A))
+    y_aligned = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    with pytest.raises(TypeError, match="Cannot contract mismatched dimensions"):
+        quax.quaxify(lambda a, b: jnp.tensordot(a, b, axes=([0, 1], [0, 1])))(
+            x, y_reversed
+        )
+
+    # The correctly-paired contraction (A with A, B with B) is accepted.
+    out = quax.quaxify(lambda a, b: jnp.tensordot(a, b, axes=([0, 1], [0, 1])))(
+        x, y_aligned
+    )
+    assert out.axes == ()
+
+
+def test_matmul_batch_axis_check(getkey):
+    # Batched `dot_general` pairs batch axes positionally too, so batching
+    # (A, B) against (B, A) is a name mismatch. A and B share a size, so the
+    # batch dims are size-compatible and only the *name* check should reject it.
+    # The contracted axis (K) matches, so the contract check passes first.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    K = named.Axis(4)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (A, B, K))
+    y_swapped = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (B, A, K))
+    y_aligned = named.NamedArray(jr.normal(getkey(), (3, 3, 4)), (A, B, K))
+
+    dn = (((2,), (2,)), ((0, 1), (0, 1)))  # contract axis 2; batch axes 0, 1
+
+    with pytest.raises(TypeError, match="Cannot batch mismatched dimensions"):
+        quax.quaxify(lambda a, b: lax.dot_general(a, b, dn))(x, y_swapped)
+
+    # Aligned batch axes (A with A, B with B) are accepted.
+    out = quax.quaxify(lambda a, b: lax.dot_general(a, b, dn))(x, y_aligned)
+    assert out.axes == (A, B)
+
+
+def test_matmul_mismatched_contract_length(getkey):
+    # `dimension_numbers` with unequal contracted-axis counts is malformed;
+    # `zip(..., strict=True)` rejects it (a `ValueError`) instead of silently
+    # truncating and hiding the mismatch behind a later JAX error.
+    # `lax.dot_general` validates lengths itself, so reach the NamedArray rule
+    # by binding `dot_general_p` directly with corrupted dimension_numbers
+    # (reusing a real trace's params so this stays JAX-version-robust).
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    arr = jnp.ones((3, 3))
+    jaxpr = jax.make_jaxpr(
+        lambda a, b: lax.dot_general(a, b, (((1,), (0,)), ((), ())))
+    )(arr, arr)
+    (eqn,) = [e for e in jaxpr.jaxpr.eqns if e.primitive is lax.dot_general_p]
+    params = dict(eqn.params)
+    params["dimension_numbers"] = (((0, 1), (0,)), ((), ()))  # 2 lhs vs 1 rhs
+
+    with pytest.raises(ValueError):
+        quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
+
+
+def test_matmul_out_of_range_axis(getkey):
+    # An out-of-range axis index in `dimension_numbers` is malformed. The rule
+    # skips its name check for such input and lets `lax.dot_general` raise its
+    # clear `TypeError` ("... dimension numbers ... less than the number of
+    # axes"), rather than a bare `IndexError` from indexing `lhs.axes`.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    arr = jnp.ones((3, 3))
+    jaxpr = jax.make_jaxpr(
+        lambda a, b: lax.dot_general(a, b, (((1,), (0,)), ((), ())))
+    )(arr, arr)
+    (eqn,) = [e for e in jaxpr.jaxpr.eqns if e.primitive is lax.dot_general_p]
+    params = dict(eqn.params)
+    params["dimension_numbers"] = (((5,), (0,)), ((), ()))  # axis 5 out of range
+
+    with pytest.raises(TypeError):
+        quax.quaxify(lambda a, b: lax.dot_general_p.bind(a, b, **params))(x, y)
 
 
 def test_existing_function(getkey):

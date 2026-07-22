@@ -132,10 +132,32 @@ _register_elementwise_binop(lax.sub, lax.sub_p)
 @quax.register(lax.dot_general_p)
 def _(lhs: NamedArray, rhs: NamedArray, *, dimension_numbers, **kwargs) -> NamedArray:
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
-    if {lhs.axes[i] for i in lhs_contract} != {rhs.axes[i] for i in rhs_contract}:
-        raise TypeError("Cannot contract mismatched dimensions.")
-    if {lhs.axes[i] for i in lhs_batch} != {rhs.axes[i] for i in rhs_batch}:
-        raise TypeError("Cannot batch mismatched dimensions.")
+    # `dot_general` pairs the contracted (and batched) axes positionally:
+    # `lhs_contract[k]` is contracted with `rhs_contract[k]`. Compare the pairs,
+    # not the axis-name *sets* -- a set comparison accepts a wrong pairing when
+    # two dims share the same names in a different order (e.g. contracting
+    # (A, B) against (B, A)), silently contracting mismatched axes. `strict=True`
+    # additionally rejects a malformed `dimension_numbers` whose paired axis
+    # tuples differ in length, rather than letting `zip` truncate and hide it.
+    #
+    # Only name-check when every axis index is in range; for an out-of-range
+    # index (possible when binding `dot_general_p` directly) fall through to
+    # `lax.dot_general` below, which raises a clear "dimension numbers ... less
+    # than the number of axes" error rather than a bare `IndexError` from here.
+    n_lhs, n_rhs = len(lhs.axes), len(rhs.axes)
+    if all(0 <= i < n_lhs for i in (*lhs_contract, *lhs_batch)) and all(
+        0 <= j < n_rhs for j in (*rhs_contract, *rhs_batch)
+    ):
+        if any(
+            lhs.axes[i] != rhs.axes[j]
+            for i, j in zip(lhs_contract, rhs_contract, strict=True)
+        ):
+            raise TypeError("Cannot contract mismatched dimensions.")
+        if any(
+            lhs.axes[i] != rhs.axes[j]
+            for i, j in zip(lhs_batch, rhs_batch, strict=True)
+        ):
+            raise TypeError("Cannot batch mismatched dimensions.")
     out = lax.dot_general(lhs.array, rhs.array, dimension_numbers, **kwargs)
     shared = tuple(lhs.axes[i] for i in lhs_batch)
     lhs_used = lhs_contract + lhs_batch
