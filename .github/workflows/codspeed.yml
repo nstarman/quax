@@ -34,10 +34,11 @@ jobs:
       - name: Install
         run: uv sync --no-default-groups --group bench --locked
 
-      # Run the construction/allocation micro-benchmarks and the eager-dispatch
-      # operation benchmarks (add/mul/matmul on quax Values) under CodSpeed's
-      # deterministic instrumentation mode — these capture the quax construction +
-      # dispatch overhead the perf work targets. The XLA-heavy `test_numpy.py`
+      # Run the construction/allocation micro-benchmarks, the eager-dispatch
+      # operation benchmarks (add/mul/matmul on quax Values), and the control-flow
+      # handler benchmarks (while/cond/scan) under CodSpeed's deterministic
+      # instrumentation mode — these capture the quax construction + dispatch +
+      # control-flow overhead the perf work targets. The XLA-heavy `test_numpy.py`
       # jit-compile/execute benchmarks are impractical under valgrind, so they stay
       # local-only (`pytest tests/benchmark --benchmark-only`).
       #
@@ -53,5 +54,6 @@ jobs:
             uv run --frozen pytest
             tests/benchmark/test_construction.py
             tests/benchmark/test_dispatch.py
+            tests/benchmark/test_control_flow.py
             --codspeed -o addopts= -p no:env
           token: ${{ secrets.CODSPEED_TOKEN }}
