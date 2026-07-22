@@ -100,7 +100,31 @@ def _(
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, None))
         for rhs_i in rhs_unused:
             matvec = jax.vmap(matvec, in_axes=(None, None, None, rhs_i), out_axes=-1)
-        return quax.quaxify(matvec)(lhs.lower_diag, lhs.main_diag, lhs.upper_diag, rhs)
+        out = quax.quaxify(matvec)(lhs.lower_diag, lhs.main_diag, lhs.upper_diag, rhs)
+
+        # Each `out_axes=0` vmap prepends its mapped dim and each `out_axes=-1`
+        # vmap appends, so the result's axes come out as
+        #   reversed(lhs_free) + reversed(batch) + [row] + rhs_free
+        # -- not `dot_general`'s canonical (batch, lhs_free, rhs_free) order.
+        # `row` (= lhs_ndim - 2) is the matvec's own output dim and is itself a
+        # lhs free dim. Transpose the produced order into the canonical one.
+        row = lhs_ndim - 2
+        produced = (
+            [("l", i) for i in reversed(lhs_unused)]
+            + [("l", i) for i in reversed(lhs_batch)]
+            + [("l", row)]
+            + [("r", i) for i in rhs_unused]
+        )
+        canonical = (
+            [("l", i) for i in lhs_batch]
+            + [("l", i) for i in sorted([*lhs_unused, row])]
+            + [("r", i) for i in rhs_unused]
+        )
+        position = {tok: i for i, tok in enumerate(produced)}
+        perm = tuple(position[tok] for tok in canonical)
+        if perm != tuple(range(len(perm))):
+            out = quax.quaxify(jnp.transpose)(out, perm)
+        return out
     else:
         return quax.quaxify(lax.dot_general)(
             lhs.materialise(), rhs, dimension_numbers, **kwargs
