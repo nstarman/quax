@@ -41,6 +41,26 @@ def test_add(getkey):
     assert out2 == true_out
 
 
+def test_add_axis_mismatch(getkey):
+    # Elementwise ops combine the underlying arrays positionally, so adding
+    # (A, B) to (B, A) is a name mismatch. The old set-based broadcast check
+    # accepted it and silently computed the positional sum with mislabelled
+    # axes; now it is rejected, matching how `dot_general` validates its pairing.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y_reversed = named.NamedArray(jr.normal(getkey(), (3, 3)), (B, A))
+    y_aligned = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    for op in (lambda a, b: a + b, lambda a, b: a * b, lambda a, b: a - b):
+        # Reordered axes are rejected...
+        with pytest.raises(ValueError, match="Cannot broadcast named axes"):
+            quax.quaxify(op)(x, y_reversed)
+        # ...and aligned axes (A with A, B with B) combine fine.
+        out = quax.quaxify(op)(x, y_aligned)
+        assert out.axes == (A, B)
+
+
 def test_matmul(getkey):
     Foo = named.Axis(3)
     Bar = named.Axis(3)

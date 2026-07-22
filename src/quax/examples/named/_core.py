@@ -87,39 +87,48 @@ NamedArray.__init__.__doc__ = """**Arguments:**
 
 
 def _broadcast_axes(axes1, axes2):
+    # By the time an elementwise `*_p` fires, JAX has already broadcast the
+    # operands to the same rank, so two `NamedArray`s reaching here have
+    # equal-length axis tuples (differing ranks fail earlier: `NamedArray` has
+    # no `broadcast_in_dim` rule). The names must then match by position -- as
+    # the `dot_general` rule validates its pairing, names check that operands
+    # share matching semantics rather than reordering to align (see the module
+    # README). A set-based check instead accepts reordered names (e.g. (A, B)
+    # against (B, A)), which are then computed positionally and mislabelled.
     if len(axes1) == 0:
         return axes2
-    elif len(axes2) == 0:
+    if len(axes2) == 0:
         return axes1
-    elif set(axes1).issubset(set(axes2)):
-        return axes2
-    elif set(axes2).issubset(set(axes1)):
-        return axes1
-    else:
-        raise ValueError(f"Cannot broadcast {axes1} against {axes2}")
+    if axes1 != axes2:
+        raise ValueError(f"Cannot broadcast named axes {axes1} against {axes2}.")
+    return axes1
 
 
 def _register_elementwise_binop(
     op: Callable[[Any, Any], Any], prim: jex.core.Primitive
 ):
-    quax_op = quax.quaxify(op)
+    # Re-bind `prim` (rather than call the high-level `op`) so its parameters are
+    # forwarded unchanged -- e.g. the `out_dtype` newer JAX threads through
+    # `mul_p`, which the handlers must accept or dispatch fails with an
+    # "unexpected keyword argument" error.
+    bind = quax.quaxify(prim.bind)
 
     @quax.register(prim)
-    def _(x: NamedArray, y: NamedArray) -> NamedArray:
+    def _(x: NamedArray, y: NamedArray, **params: Any) -> NamedArray:
         axes = _broadcast_axes(x.axes, y.axes)
-        return NamedArray(quax_op(x.array, y.array), axes)
+        return NamedArray(bind(x.array, y.array, **params), axes)
 
     @quax.register(prim)
-    def _(x: ArrayLike | quax.ArrayValue, y: NamedArray) -> NamedArray:
+    def _(x: ArrayLike | quax.ArrayValue, y: NamedArray, **params: Any) -> NamedArray:
         if quax.quaxify(jnp.shape)(x) == ():
-            return NamedArray(quax_op(x, y.array), y.axes)
+            return NamedArray(bind(x, y.array, **params), y.axes)
         else:
             raise ValueError(f"Cannot apply {op} to non-scalar array and named array.")
 
     @quax.register(prim)
-    def _(x: NamedArray, y: ArrayLike | quax.ArrayValue) -> NamedArray:
+    def _(x: NamedArray, y: ArrayLike | quax.ArrayValue, **params: Any) -> NamedArray:
         if quax.quaxify(jnp.shape)(y) == ():
-            return NamedArray(quax_op(x.array, y), x.axes)
+            return NamedArray(bind(x.array, y, **params), x.axes)
         else:
             raise ValueError(f"Cannot apply {op} to non-scalar array and named array.")
 
