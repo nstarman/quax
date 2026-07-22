@@ -2,8 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any, final, TypeGuard
-from typing_extensions import Self
+from typing import Any, final, Self, TypeGuard
 
 import equinox as eqx
 import jax
