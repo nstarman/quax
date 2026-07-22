@@ -18,10 +18,6 @@ from quax._primitives import _jit_quax_cache, _scan_quax_cache, _while_quax_cach
 from .myarray import MyArray
 
 
-# quaxify only traces (and thus reaches these caches) when an operand is a quax
-# Value (#58), so a `MyArray` is used to drive the jit/while paths.
-
-
 # Minimal ArrayValue with a working materialise — forces scan_quax dispatch
 # (plain JAX arrays fall through to _default_process via plum's variadic dispatch).
 class _ScanValue(quax.ArrayValue):
