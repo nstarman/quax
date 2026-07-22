@@ -58,6 +58,28 @@ def test_matmul(getkey):
         quax.quaxify(jnp.matmul)(b, a)
 
 
+def test_matmul_pairwise_axis_check(getkey):
+    # `dot_general` contracts axes pairwise, so contracting (A, B) against
+    # (B, A) is a name mismatch (A would be contracted with B). A set-based
+    # check wrongly accepted this because the name *sets* are equal.
+    A = named.Axis(3)
+    B = named.Axis(3)
+    x = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+    y_reversed = named.NamedArray(jr.normal(getkey(), (3, 3)), (B, A))
+    y_aligned = named.NamedArray(jr.normal(getkey(), (3, 3)), (A, B))
+
+    with pytest.raises(TypeError, match="Cannot contract mismatched dimensions"):
+        quax.quaxify(lambda a, b: jnp.tensordot(a, b, axes=([0, 1], [0, 1])))(
+            x, y_reversed
+        )
+
+    # The correctly-paired contraction (A with A, B with B) is accepted.
+    out = quax.quaxify(lambda a, b: jnp.tensordot(a, b, axes=([0, 1], [0, 1])))(
+        x, y_aligned
+    )
+    assert out.axes == ()
+
+
 def test_existing_function(getkey):
     # We can use NamedArrays even in functions that weren't designed for it! The output
     # will be a NamedArray as well!

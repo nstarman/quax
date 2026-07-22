@@ -132,9 +132,14 @@ _register_elementwise_binop(lax.sub, lax.sub_p)
 @quax.register(lax.dot_general_p)
 def _(lhs: NamedArray, rhs: NamedArray, *, dimension_numbers, **kwargs) -> NamedArray:
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
-    if {lhs.axes[i] for i in lhs_contract} != {rhs.axes[i] for i in rhs_contract}:
+    # `dot_general` pairs the contracted (and batched) axes positionally:
+    # `lhs_contract[k]` is contracted with `rhs_contract[k]`. Compare the pairs,
+    # not the axis-name *sets* -- a set comparison accepts a wrong pairing when
+    # two dims share the same names in a different order (e.g. contracting
+    # (A, B) against (B, A)), silently contracting mismatched axes.
+    if any(lhs.axes[i] != rhs.axes[j] for i, j in zip(lhs_contract, rhs_contract)):
         raise TypeError("Cannot contract mismatched dimensions.")
-    if {lhs.axes[i] for i in lhs_batch} != {rhs.axes[i] for i in rhs_batch}:
+    if any(lhs.axes[i] != rhs.axes[j] for i, j in zip(lhs_batch, rhs_batch)):
         raise TypeError("Cannot batch mismatched dimensions.")
     out = lax.dot_general(lhs.array, rhs.array, dimension_numbers, **kwargs)
     shared = tuple(lhs.axes[i] for i in lhs_batch)
