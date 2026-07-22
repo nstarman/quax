@@ -58,8 +58,7 @@ class _Quaxify(eqx.Module, Generic[CT]):
         # Only the default `filter_spec is True` (wrap every Value) is short-cut; a
         # custom filter_spec may deliberately pass Values through, so leave it be.
         if self.filter_spec is True and not any(
-            _is_value(x)
-            for x in jtu.tree_leaves((self.fn, args, kwargs), is_leaf=_is_value)
+            map(_is_value, jtu.tree_leaves((self.fn, args, kwargs), is_leaf=_is_value))
         ):
             return self.fn(*args, **kwargs)
         tag = core.TraceTag()
