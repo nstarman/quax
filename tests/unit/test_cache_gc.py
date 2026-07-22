@@ -101,6 +101,42 @@ def test_scan_cache_uses_weakref():
     assert isinstance(entry[0], weakref.ref)
 
 
+def test_jit_cache_does_not_pin_real_jaxpr():
+    """A real quaxified ``@jax.jit`` entry must not pin its own jaxpr.
+
+    Regression for a self-pin: the cached ``jitted`` closure used to reference
+    the jaxpr its ``entry[0]`` weakref watched, so the finalizer could never
+    fire and the cache grew without bound. After the source function and JAX's
+    own caches are dropped, the jaxpr must become collectable and evict the
+    entry. Uses a real ``jit_p`` path (not a fake jaxpr) so the closure's
+    reference graph is actually exercised.
+    """
+    _jit_quax_cache.clear()
+
+    @jax.jit
+    def f(x):
+        return x + 1.0
+
+    # A MyArray Value flows through, so jit_p reaches jit_quax and caches. While
+    # `f` is alive JAX's own pjit cache keeps the jaxpr reachable, so the entry
+    # is present.
+    quax.quaxify(f)(MyArray(jnp.array(0.0)))
+    assert _jit_quax_cache, "Expected _jit_quax_cache to be populated"
+
+    # Drop the source function and JAX's caches. The jaxpr is now reachable only
+    # if the cached entry itself pins it — which is exactly the bug. After the
+    # fix the jaxpr is collected and the finalizer evicts the entry.
+    del f
+    jax.clear_caches()
+    gc.collect()
+    gc.collect()
+
+    assert not _jit_quax_cache, (
+        "jit cache entry survived after its jaxpr became unreachable — the "
+        "cached jitted fn is pinning the jaxpr its weakref watches."
+    )
+
+
 def test_jit_cache_evicts_on_gc():
     """Entry is removed from _jit_quax_cache when the weakreffed jaxpr is collected."""
     jaxpr = _FakeJaxpr()

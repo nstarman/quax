@@ -3,7 +3,7 @@
 __all__ = ()
 
 import weakref
-from typing import Any, cast, no_type_check
+from typing import Any, no_type_check
 
 import jax
 import jax._src.core as core
@@ -58,14 +58,24 @@ def jit_quax(
     key = (id(jaxpr), treedef)
     entry = _jit_quax_cache.get(key)
     if entry is None:
-        fun = quaxify(jexc.jaxpr_as_fun(jaxpr))
-        wref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
-        # Calling _Quaxify.__call__ directly (unbound) bypasses
-        # eqx.Module.__call__'s dir() + BoundMethod overhead.
-        _fun = cast(_Quaxify, fun)
-        qfun = lambda x: _Quaxify.__call__(_fun, *jtu.tree_unflatten(treedef, x))
+        # The cached `jitted` must NOT strongly reference `jaxpr`: doing so would
+        # pin the very object `entry[0]`'s weakref watches, so the finalizer could
+        # never fire and the cache would grow without bound. Instead `qfun`
+        # reaches `jaxpr` through the weakref, resolved only while tracing --
+        # `jax.jit` runs compiled XLA on warm calls and never re-enters this
+        # Python body. During any call `jaxpr` is alive (the caller passes it in),
+        # so the weakref is always live when tracing actually happens.
+        jaxpr_ref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
+
+        def qfun(x: Any, _ref: Any = jaxpr_ref) -> Any:
+            # Constructing `_Quaxify` directly (and calling `__call__` unbound)
+            # bypasses `quaxify()`'s wrapper and eqx.Module.__call__'s dir() +
+            # BoundMethod overhead.
+            fn = _Quaxify(jexc.jaxpr_as_fun(_ref()), True, dynamic=False)
+            return _Quaxify.__call__(fn, *jtu.tree_unflatten(treedef, x))
+
         jitted = jax.jit(qfun)
-        entry = (wref, jitted)
+        entry = (jaxpr_ref, jitted)
         _jit_quax_cache[key] = entry
 
     return entry[1](leaves)  # call without Quax; jax.jit reuses compiled kernel
