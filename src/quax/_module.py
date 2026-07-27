@@ -42,9 +42,16 @@ __all__ = ()
 import dataclasses
 import warnings
 import weakref
-from typing import Any, dataclass_transform, NamedTuple, TYPE_CHECKING
+from typing import Any, cast, dataclass_transform, NamedTuple, TYPE_CHECKING, TypeVar
 
 import equinox as eqx
+
+
+# The class being constructed (see `_FastModuleMeta.__call__`), so construction
+# returns the concrete type. Left unbounded: a bound (even `eqx.Module`) makes
+# `type[_T]` too narrow to annotate a metaclass `cls` parameter ("must be a
+# supertype of its class `_FastModuleMeta`").
+_T = TypeVar("_T")
 
 
 if TYPE_CHECKING:
@@ -162,17 +169,27 @@ class _FastModuleMeta(_EqxModuleMeta):
             _fast_specs[cls] = _FastSpec(field_names, converters, checks)
         return cls
 
-    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+    def __call__(cls: type[_T], *args: Any, **kwargs: Any) -> _T:
+        # `type[_T] -> _T` so a construction `MyValue(...)` type-checks as
+        # `MyValue`, not `Any`: pyright uses the metaclass `__call__` return type
+        # for the constructor expression, so a plain `-> Any` here would erase the
+        # `dataclass_transform`-synthesised signature for every `Value` subclass.
+        # `self` below stays `Any` (an instance of a dynamically-determined class),
+        # which is unrelated to this outward-facing return type.
+        #
         # A class the fast path could not analyse is absent from `_fast_specs`;
         # abstract instantiation is still deferred to equinox's own __call__ (which
         # raises the right errors and runs the full validation).
         spec = _fast_specs.get(cls)
         if spec is None or is_abstract_module(cls):
-            return super().__call__(*args, **kwargs)
+            # equinox's `__call__` is typed `Any | None`; it returns an instance
+            # of `cls` for the non-abstract, non-singleton path.
+            return cast(_T, super().__call__(*args, **kwargs))
 
-        # `self` is a freshly-allocated instance of a dynamically-determined class;
-        # `Any` is the honest type and avoids metaclass-`Self` typing friction on the
-        # `_currently_initialising` / `object.__setattr__` calls below.
+        # `self` is typed `Any` (a freshly-allocated instance of a
+        # dynamically-determined class), which avoids metaclass-`Self` typing
+        # friction on the `_currently_initialising` / `object.__setattr__` calls
+        # below without affecting the `-> _T` return type documented above.
         #
         # Forward the constructor arguments to `__new__`, matching `type.__call__`
         # (and equinox's slow path): a `Value` may override `__new__` to consume
@@ -189,11 +206,13 @@ class _FastModuleMeta(_EqxModuleMeta):
         # equinox's own __setattr__ warnings still fire for those assignments). A
         # dataclass-generated __init__ uses object.__setattr__ and does not need
         # this, but registering unconditionally is cheap and uniform.
-        _currently_initialising.add(self)
+        # (`isinstance` above narrows `self` to `_T`; it is an `eqx.Module` here, but
+        # `_T` is unbounded, so the guard-set calls need a suppression.)
+        _currently_initialising.add(self)  # pyright: ignore[reportArgumentType]
         try:
             cls.__init__(self, *args, **kwargs)  # pyright: ignore[reportCallIssue]
         finally:
-            _currently_initialising.remove(self)
+            _currently_initialising.remove(self)  # pyright: ignore[reportArgumentType]
 
         # Reject a field left unset by a buggy __init__. equinox raises the same
         # error via a `dir(self)` scan; without it the instance would flatten to a

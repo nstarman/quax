@@ -6,6 +6,8 @@ invariants, static fields, pytree flatten/unflatten, and abstract-instantiation
 errors. It must also degrade gracefully when its fast path is unavailable.
 """
 
+import typing
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -145,6 +147,23 @@ def test_converter_is_applied():
     assert jnp.array_equal(v.array, jnp.asarray([1.0, 2.0, 3.0]))
 
 
+def test_call_returns_concrete_type_not_any():
+    """`_FastModuleMeta.__call__` must be generic (`-> _T`), not `-> Any`.
+
+    A static checker uses the metaclass `__call__` return type for a construction
+    expression, so a plain ``-> Any`` would erase the
+    `dataclass_transform`-synthesised signature and make ``MyValue(...)`` type as
+    ``Any`` for every `Value` subclass -- silently dropping downstream typing (e.g.
+    ``unxt.Quantity(1, "m")`` inferring `Any`).
+
+    Asserted at runtime (the pyright hook excludes ``tests/``, so a static
+    ``assert_type`` here would not be CI-enforced): the return annotation must be a
+    ``TypeVar`` bound to the class, not ``Any``.
+    """
+    ret = typing.get_type_hints(_FastModuleMeta.__call__).get("return")
+    assert isinstance(ret, typing.TypeVar), ret
+
+
 class _Checked(quax.ArrayValue):
     data: jax.Array
     scale: float = eqx.field(static=True)
@@ -186,7 +205,10 @@ def test_static_field_and_pytree_roundtrip():
 def test_abstract_instantiation_still_errors():
     """Abstract Values cannot be instantiated (equinox's error is preserved)."""
     with pytest.raises(TypeError):
-        quax.ArrayValue()  # abstract: aval/materialise unimplemented
+        # Deliberately instantiate the abstract class to check the runtime error.
+        # pyright now (correctly) flags this since `__call__` types construction as
+        # the concrete class rather than `Any`.
+        quax.ArrayValue()  # pyright: ignore[reportAbstractUsage]
 
 
 class _WithNew(quax.ArrayValue):
