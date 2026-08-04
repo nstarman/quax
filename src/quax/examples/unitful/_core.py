@@ -16,6 +16,15 @@ class Dimension:
     def __repr__(self):
         return self.name
 
+    def __lt__(self, other):
+        # `units` is a dict keyed by `Dimension`, and JAX sorts dict keys when
+        # flattening a pytree -- which equinox does to every `Module.__init__`
+        # argument. Without an ordering, any multi-dimension `Unitful` (e.g.
+        # `{meters: 1, seconds: -1}`) fails to construct.
+        if not isinstance(other, Dimension):
+            return NotImplemented
+        return self.name < other.name
+
 
 kilograms = Dimension("kg")
 meters = Dimension("m")
