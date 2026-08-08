@@ -5,7 +5,7 @@ from typing import Any, cast, final, TypeAlias, TypeGuard, TypeVar, Union
 import equinox as eqx
 import jax._src.core as core
 import jax.extend.core as jexc
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 from ._compat import typeof
 from ._module import _FastModuleMeta

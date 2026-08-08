@@ -9,7 +9,7 @@ import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.tree_util as jtu
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
 from ._dispatch import register

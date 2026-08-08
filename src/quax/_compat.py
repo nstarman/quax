@@ -24,7 +24,7 @@ import jax
 import jax.extend.core as jexc
 import jax.numpy as jnp
 import plum
-from jaxtyping import Array
+from jax import Array
 from packaging.version import Version
 
 
