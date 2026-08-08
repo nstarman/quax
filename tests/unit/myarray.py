@@ -1,5 +1,6 @@
 """Test with :class:`MyArray` inputs."""
 
+import typing as tp
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, final, Self, TypeGuard
@@ -7,12 +8,19 @@ from typing import Any, final, Self, TypeGuard
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from bearshape.jax import Bool
 from jax import lax
-from jaxtyping import Array, ArrayLike, Bool
+from jax.typing import ArrayLike
 from packaging.version import Version
 
 import quax
 from quax._compat import JAX_GE_0_10_1, JAX_GE_0_11_0, JAX_VERSION, typeof
+
+
+if tp.TYPE_CHECKING:
+    AnyShape: tp.TypeAlias = int
+else:
+    AnyShape = ...
 
 
 @final
@@ -50,19 +58,19 @@ class MyArray(quax.ArrayValue):
         """Get the length."""
         return self.array.shape[0] if self.array.ndim > 0 else 0
 
-    def __lt__(self, other: Any) -> Bool[Array, "..."]:
+    def __lt__(self, other: Any) -> Bool[AnyShape]:
         """Less than operator."""
         return self.array < other
 
-    def __le__(self, other: Any) -> Bool[Array, "..."]:
+    def __le__(self, other: Any) -> Bool[AnyShape]:
         """Less than or equal operator."""
         return self.array <= other
 
-    def __ge__(self, other: Any) -> Bool[Array, "..."]:
+    def __ge__(self, other: Any) -> Bool[AnyShape]:
         """Greater than or equal operator."""
         return self.array >= other
 
-    def __gt__(self, other: Any) -> Bool[Array, "..."]:
+    def __gt__(self, other: Any) -> Bool[AnyShape]:
         """Greater than operator."""
         return self.array > other
 
