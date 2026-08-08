@@ -3,12 +3,14 @@
 __all__ = ()
 
 import weakref
-from typing import Any, no_type_check
+from collections.abc import Callable
+from typing import Any, cast, no_type_check
 
 import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.tree_util as jtu
+from bearshape.jax import Tree
 from jax.typing import ArrayLike
 
 from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
@@ -45,7 +47,11 @@ def jit_quax(
         # every inlined pjit in a quaxified trace, and `quaxify()`'s
         # `module_update_wrapper` (which only exists to copy __wrapped__/__doc__
         # for user introspection) is pure overhead for this transient wrapper.
-        return _Quaxify(jexc.jaxpr_as_fun(jaxpr), True, dynamic=False)(*args)
+        return _Quaxify(
+            jexc.jaxpr_as_fun(jaxpr),
+            cast(Tree[bool | Callable[[Any], bool]], True),
+            dynamic=False,
+        )(*args)
 
     leaves, treedef = jtu.tree_flatten(args)  # remove all Values
 
@@ -67,6 +73,7 @@ def jit_quax(
         # so the weakref is always live when tracing actually happens.
         jaxpr_ref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
 
+        @no_type_check  # for beartype (re-defined per call; see Task 12)
         def qfun(x: Any, _ref: Any = jaxpr_ref) -> Any:
             # Constructing `_Quaxify` directly (and calling `__call__` unbound)
             # bypasses `quaxify()`'s wrapper and eqx.Module.__call__'s dir() +
@@ -152,8 +159,21 @@ def cond_quax(
 
     out_trees: list[Any] = []
 
-    def _make_quax_branch(jaxpr: core.ClosedJaxpr, /) -> core.ClosedJaxpr:
-        def flat_quax_call(flat_args: list[Any]) -> list[Any]:
+    # `@no_type_check` alone does not stop `beartype.claw` from decorating these --
+    # claw's AST transform decides whether to insert `@beartype` purely from the
+    # presence of a parameter/return annotation (see `is_node_callable_typed` in
+    # beartype's source), *before* `@no_type_check` is ever consulted. And even
+    # decorating a `@no_type_check`-marked callable still calls beartype's own
+    # `is_object_blacklisted(obj)` (`@callable_cached`, an unbounded, never-evicted
+    # dict keyed by the literal object), which permanently pins that object -- and
+    # everything its closure holds, including live `DynamicJaxprTracer`s here --
+    # alive for the rest of the process, tripping `JAX_CHECK_TRACER_LEAKS=1`.
+    # Dropping the annotations (not just adding `@no_type_check`) is what actually
+    # keeps claw from touching these; see Task 12.
+    @no_type_check  # for beartype (re-defined per call; see Task 12)
+    def _make_quax_branch(jaxpr, /):
+        @no_type_check  # for beartype (re-defined per call; see Task 12)
+        def flat_quax_call(flat_args):
             _args = jtu.tree_unflatten(in_tree, flat_args)
             flat_out, out_tree = jtu.tree_flatten(
                 quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
