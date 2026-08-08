@@ -1,14 +1,38 @@
+import typing as tp
 from typing import cast
 
 import equinox as eqx
+import jax
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
-from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree, Shaped
+from bearshape import B, Dimension, DtypeSpec, make_array_type, Scalar
+from bearshape.jax import Shaped, Tree
+from jax import Array
+from jax.typing import ArrayLike
 
 import quax
+
+
+if tp.TYPE_CHECKING:
+    VariadicB: tp.TypeAlias = int
+    X: tp.TypeAlias = int
+    Y: tp.TypeAlias = int
+    Z: tp.TypeAlias = int
+    _PRNGKeyShape = tp.TypeVar("_PRNGKeyShape")
+    PRNGKeyArray = tp.TypeAliasType(
+        "PRNGKeyArray", jax.Array, type_params=(_PRNGKeyShape,)
+    )
+else:
+    VariadicB = ~B
+    X = Dimension("x")
+    Y = Dimension("y")
+    Z = Dimension("z")
+    PRNGKeyArray = make_array_type(
+        jax.Array, DtypeSpec("PRNGKey", frozenset({"key<fry>"}))
+    )
 
 
 class LoraArray(quax.ArrayValue):
@@ -28,21 +52,21 @@ class LoraArray(quax.ArrayValue):
     to be computationally cheaper.
     """
 
-    _w: Shaped[Array, "*batch x y"]
-    a: Shaped[Array, "*batch x z"]
-    b: Shaped[Array, "*batch z y"]
+    _w: Shaped[VariadicB, X, Y]
+    a: Shaped[VariadicB, X, Z]
+    b: Shaped[VariadicB, Z, Y]
     stop_gradient: bool = eqx.field(static=True)
     allow_materialise: bool = eqx.field(static=True)
 
     def __init__(
         self,
-        weight: Shaped[Array, "*batch x y"],
+        weight: Shaped[VariadicB, X, Y],
         *,
         rank: int,
         scale: float = 0.01,
         allow_materialise: bool = False,
         stop_gradient: bool = True,
-        key: PRNGKeyArray,
+        key: PRNGKeyArray[Scalar],
     ):
         """**Arguments:**
 
@@ -95,14 +119,14 @@ def _is_linear(x):
 
 
 def loraify(
-    model: PyTree,
+    model: Tree[object],
     *,
     rank: int,
     scale: float = 0.01,
     allow_materialise: bool = False,
     stop_gradient: bool = True,
-    key: PRNGKeyArray,
-) -> PyTree:
+    key: PRNGKeyArray[Scalar],
+) -> Tree[object]:
     """Converts an [Equinox](https://github.com/patrick-kidger/equinox) model into a
     low-rank adapted version.
 
