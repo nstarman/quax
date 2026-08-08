@@ -112,7 +112,11 @@ It should be fairly straightforward to add support for these; open an issue or p
 
 **Built on Quax**  
 [Quaxed](https://github.com/GalacticDynamics/quaxed): a namespace of already-wrapped `quaxify(jnp.foo)` operations.  
-[unxt](https://github.com/GalacticDynamics/unxt): Unitful Quantities.
+[quax-blocks](https://github.com/GalacticDynamics/quax-blocks): blocks for constructing `quax` classes.  
+[unxt](https://github.com/GalacticDynamics/unxt): unitful quantities.  
+[coordinax](https://github.com/GalacticDynamics/coordinax): coordinates in JAX.  
+[galax](https://github.com/GalacticDynamics/galax): galactic and gravitational dynamics, with GPU and autodiff.  
+[phasecurvefit](https://github.com/GalacticDynamics/phasecurvefit): construct paths through phase-space points.
 
 **Awesome JAX**  
 [Awesome JAX](https://github.com/n2cholas/awesome-jax): a longer list of other JAX projects.  
