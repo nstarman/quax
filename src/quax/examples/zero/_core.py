@@ -5,7 +5,8 @@ import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike
+from jax import Array
+from jax.typing import ArrayLike
 
 import quax
 

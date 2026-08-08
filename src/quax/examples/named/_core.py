@@ -7,7 +7,7 @@ import jax.core
 import jax.extend as jex
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 import quax
 from quax._compat import typeof
