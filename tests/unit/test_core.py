@@ -216,7 +216,7 @@ def test_quaxify_preserves_bearshape_cross_arg_binding():
 
     from quax._compat import typeof
 
-    variadic_b = ~B  # local, one-off use -- see the ignore comment below
+    variadic_b = ~B  # type: ignore[operator]  # local, one-off use -- see below
 
     class _CanaryValue(quax.ArrayValue):
         array: jax.Array
