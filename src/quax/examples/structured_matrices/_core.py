@@ -1,12 +1,23 @@
+import typing as tp
 from typing import cast
 
 import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, Shaped
+from bearshape import B, N
+from bearshape.jax import Shaped
+from jax.typing import ArrayLike
 
 import quax
+
+
+if tp.TYPE_CHECKING:
+    VariadicB: tp.TypeAlias = int
+    NPlus1: tp.TypeAlias = int
+else:
+    VariadicB = ~B
+    NPlus1 = N + 1
 
 
 class TridiagonalMatrix(quax.ArrayValue):
@@ -14,9 +25,9 @@ class TridiagonalMatrix(quax.ArrayValue):
     diagonals.
     """
 
-    lower_diag: Shaped[Array, "*batch size"]
-    main_diag: Shaped[Array, "*batch size+1"]
-    upper_diag: Shaped[Array, "*batch size"]
+    lower_diag: Shaped[VariadicB, N]
+    main_diag: Shaped[VariadicB, NPlus1]
+    upper_diag: Shaped[VariadicB, N]
     allow_materialise: bool = eqx.field(default=False, static=True)
 
     def __check_init__(self):
@@ -59,7 +70,10 @@ class TridiagonalMatrix(quax.ArrayValue):
 
 
 def _tridiagonal_matvec(
-    lower_diag: Array, main_diag: Array, upper_diag: Array, vector: Array
+    lower_diag: jax.Array,
+    main_diag: jax.Array,
+    upper_diag: jax.Array,
+    vector: jax.Array,
 ):
     (size1,) = lower_diag.shape
     (size2,) = main_diag.shape
@@ -82,7 +96,7 @@ def _(
     dimension_numbers,
     **kwargs,
 ):
-    rhs = cast("Array", rhs)  # quax(jax) is type broadened.
+    rhs = cast("jax.Array", rhs)  # quax(jax) is type broadened.
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
     lhs_ndim = lhs.ndim
     if lhs_contract == (lhs_ndim - 1,) and (lhs_ndim - 2 not in lhs_batch):
