@@ -191,3 +191,56 @@ def test_quaxify_no_values_is_passthrough():
     x1 = jnp.array([1.0, 2.0, 3.0])
     got = quax.quaxify(jnp.compress)(xbool, x1)
     assert jnp.array_equal(got, jnp.compress(xbool, x1))
+
+
+def test_quaxify_preserves_bearshape_cross_arg_binding():
+    """Cross-argument dimension binding must still be enforced when the
+    annotated function is called through `quax.quaxify` with a genuine
+    `quax.Value` operand -- not just directly.
+
+    A `quax.Value` operand forces `_Quaxify.__call__`'s slow/trace path
+    (`_partition_and_wrap` wraps it in a `_QuaxTracer` before calling the
+    wrapped function) rather than its fast-path shortcut, which bypasses the
+    trace machinery entirely whenever no operand is a `Value`. bearshape's
+    default (no `@bearshape.check`) memo discovery walks the beartype call
+    stack via frame introspection; this regression-tests that it still finds
+    the right frame through quaxify's extra trace layers, rather than
+    silently skipping the cross-argument check.
+    """
+    import jax
+    import jax.numpy as jnp
+    from bearshape import B, N
+    from bearshape.jax import Shaped
+    from beartype import beartype
+    from beartype.roar import BeartypeCallHintParamViolation
+
+    from quax._compat import typeof
+
+    variadic_b = ~B  # local, one-off use -- see the ignore comment below
+
+    class _CanaryValue(quax.ArrayValue):
+        array: jax.Array
+
+        def materialise(self):
+            return self.array
+
+        def aval(self):
+            return typeof(self.array)
+
+    @beartype
+    def add_same_n(
+        x: Shaped[variadic_b, N],  # type: ignore[valid-type]
+        y: Shaped[variadic_b, N],  # type: ignore[valid-type]
+    ) -> Shaped[variadic_b, N]:  # type: ignore[valid-type]
+        return x + y
+
+    quaxified = quax.quaxify(add_same_n)
+    value = _CanaryValue(jnp.zeros(3))  # a quax.Value -> forces the trace path
+
+    # Matching N: passes, and still returns the right value.
+    result = quaxified(value, jnp.zeros(3))
+    assert result.shape == (3,)
+
+    # Mismatched N: must still raise -- this is the frame-discovery canary.
+    with pytest.raises(BeartypeCallHintParamViolation):
+        quaxified(value, jnp.zeros(4))
