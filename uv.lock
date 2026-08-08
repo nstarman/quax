@@ -36,6 +36,18 @@ wheels = [
 ]
 
 [[package]]
+name = "bearshape"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "beartype" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/69/f4/128557b40f1c77fc45f1ddfe13a0c479be0a6b2b93e2206f08beaa2d84c7/bearshape-0.0.1.tar.gz", hash = "sha256:f9ead28b049001e1134c0d9b79aa50579c8430b253651ce0691d446efb3e9055", size = 37916, upload-time = "2026-05-29T13:14:12.031Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/78/94c79d3b5e1713f8291704bf011abff89ac39d483a0e0aa23d68227caee8/bearshape-0.0.1-py3-none-any.whl", hash = "sha256:3424e6a1b0ab1ed15ad2f6638852128328cd88b4aaa27aac649f0a114b815597", size = 48394, upload-time = "2026-05-29T13:14:10.876Z" },
+]
+
+[[package]]
 name = "beartype"
 version = "0.22.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1235,9 +1247,6 @@ dependencies = [
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e1/b4/cf932fcd1960a2fd6d9b09eb403253a8709aeee975961afa6299239a830e/pytest_codspeed-5.0.3.tar.gz", hash = "sha256:91afef90e6a96b013495e4702ef5d6358614a449e71008cdc194ef668778b92f", size = 324571, upload-time = "2026-05-22T16:20:49.231Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/f5/a8f70147216e4b84046ca406d03ecc8e83e3ea56ba1bdca0bb79cca79fee/pytest_codspeed-5.0.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:005348ea52ace3ede2e2f595913912ad2564cca7b124211a88dc78a9cb1fca63", size = 366249, upload-time = "2026-05-22T16:20:39.985Z" },
-    { url = "https://files.pythonhosted.org/packages/f6/bd/7a4dbcf457fcc3ed788c55d402f3af2671e0e342b6098090fd590aa8712e/pytest_codspeed-5.0.3-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:dbe6a4a00b449b6ba2771f644cbc38bdf55acf5c812e60e5659110e19dd9f510", size = 932229, upload-time = "2026-05-22T16:20:37.283Z" },
-    { url = "https://files.pythonhosted.org/packages/b1/e1/414ea4c66559f24ec06aeb6db62bfc7079582dac1452e648affe1eb5cfb4/pytest_codspeed-5.0.3-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7ac4344f34bbcdd17f6f8c30dbac3da2f80d223dd112e568fd7f7c2cd4cbc693", size = 934647, upload-time = "2026-05-22T16:20:31.997Z" },
     { url = "https://files.pythonhosted.org/packages/ac/ef/32ce60d42a4aa43e728d988e13eb6568fbc7b10a514517b459bafd3f2b94/pytest_codspeed-5.0.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:f56d0339cd98d26f6e561987be25bdd2761a5d53d8f73493b1ebe02d0d451093", size = 366253, upload-time = "2026-05-22T16:21:10.013Z" },
     { url = "https://files.pythonhosted.org/packages/2a/15/c66ef90a793c5d2c039e63a1726a5e55c678be2618b0f5f1660d0f79e25f/pytest_codspeed-5.0.3-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:4c682f6645d4eb472f3bd95dbda1805e3af4243610572cb7d6bf94a88e8a0b6c", size = 932465, upload-time = "2026-05-22T16:20:34.265Z" },
     { url = "https://files.pythonhosted.org/packages/1a/7b/d231279301967f05b7909160489e85ee3a1b9da76094ea25343faba1abc2/pytest_codspeed-5.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f852bee785a7a124cb1720b1915670c6742af87747dc4d838f3ffdbd365ce9d9", size = 934925, upload-time = "2026-05-22T16:20:47.63Z" },
@@ -1415,6 +1424,7 @@ wheels = [
 name = "quax"
 source = { editable = "." }
 dependencies = [
+    { name = "bearshape" },
     { name = "equinox" },
     { name = "jax" },
     { name = "jaxtyping" },
@@ -1468,6 +1478,7 @@ tests = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bearshape" },
     { name = "equinox", specifier = ">=0.13.2" },
     { name = "jax", specifier = ">=0.7.2" },
     { name = "jaxtyping", specifier = ">=0.3.3" },
