@@ -129,9 +129,9 @@ def test_regression_38(getkey):
 
     func = quax.quaxify(f)
 
-    # Error type depends on whether jaxtyping is on. TypeCheckError is raised
-    # when jaxtyping is on. NotFoundLookupError is raised when jaxtyping is off,
-    # which then kicks over to the default process, which can raise a
-    # RuntimeError if allow_materialise is False.
+    # BeartypeCallHintViolation is raised when beartype's shape/type check
+    # rejects the call. NotFoundLookupError is raised when plum simply has no
+    # matching dispatch rule, which then kicks over to the default process,
+    # which can raise a RuntimeError if allow_materialise is False.
     with pytest.raises((BeartypeCallHintViolation, NotFoundLookupError, RuntimeError)):
         _ = func(y)
