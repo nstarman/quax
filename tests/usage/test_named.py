@@ -6,7 +6,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
-from jaxtyping import Array
+from jax import Array
 
 import quax
 import quax.examples.named as named

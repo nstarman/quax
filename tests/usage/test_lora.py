@@ -6,7 +6,7 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
-from jaxtyping import TypeCheckError
+from beartype.roar import BeartypeCallHintViolation
 from plum import NotFoundLookupError
 
 import quax
@@ -133,5 +133,5 @@ def test_regression_38(getkey):
     # when jaxtyping is on. NotFoundLookupError is raised when jaxtyping is off,
     # which then kicks over to the default process, which can raise a
     # RuntimeError if allow_materialise is False.
-    with pytest.raises((TypeCheckError, NotFoundLookupError, RuntimeError)):
+    with pytest.raises((BeartypeCallHintViolation, NotFoundLookupError, RuntimeError)):
         _ = func(y)
