@@ -50,7 +50,7 @@ docs = [
   "zensical",
 ]
 ide = ["ipykernel>=7.2.0"]
-lint = ["prek>=0.3.11", "ruff>=0.15.9"]
+lint = ["mypy>=1.19.0", "prek>=0.3.11", "ruff>=0.15.9"]
 tests = ["beartype>=0.20.2", "pytest>=8.3.5", "pytest-env>=1.1.5", "jax[cpu]"]
 # Performance benchmarks. Kept out of `dev`/`tests` so the default suite never
 # collects them (see tests/benchmark/conftest.py). Run locally with
@@ -100,7 +100,7 @@ JAX_CHECK_TRACER_LEAKS = 1
 
 [tool.ruff.lint]
 fixable = ["I001", "F401", "UP"]
-ignore  = ["E402", "E721", "E731", "E741", "F722"]
+ignore  = ["E402", "E721", "E731", "E741"]
 select  = ["E", "F", "I001", "UP"]
 
 [tool.ruff.lint.flake8-import-conventions.extend-aliases]
@@ -119,3 +119,23 @@ docstring-code-format = true
 [tool.pyright]
 include                          = ["src/quax", "tests"]
 reportIncompatibleMethodOverride = true
+
+[tool.mypy]
+disallow_incomplete_defs = false
+disallow_untyped_defs    = false
+enable_error_code        = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+files                    = ["src/quax", "tests"]
+python_version           = "3.11"
+strict                   = true
+warn_return_any          = false
+warn_unreachable         = true
+warn_unused_configs      = true
+
+[[tool.mypy.overrides]]
+disallow_incomplete_defs = true
+disallow_untyped_defs    = true
+module                   = "quax.*"
+
+[[tool.mypy.overrides]]
+ignore_missing_imports = true
+module                 = ["equinox.*", "jax.*", "plum.*"]
