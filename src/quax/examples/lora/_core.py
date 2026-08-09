@@ -1,4 +1,5 @@
 import typing as tp
+import typing_extensions as tpe
 from typing import cast
 
 import equinox as eqx
@@ -22,7 +23,7 @@ if tp.TYPE_CHECKING:
     Y: tp.TypeAlias = int
     Z: tp.TypeAlias = int
     _PRNGKeyShape = tp.TypeVar("_PRNGKeyShape")
-    PRNGKeyArray = tp.TypeAliasType(
+    PRNGKeyArray = tpe.TypeAliasType(
         "PRNGKeyArray", jax.Array, type_params=(_PRNGKeyShape,)
     )
 else:
