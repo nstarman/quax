@@ -3,14 +3,12 @@
 __all__ = ()
 
 import weakref
-from collections.abc import Callable
-from typing import Any, cast, no_type_check
+from typing import Any, no_type_check
 
 import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.tree_util as jtu
-from bearshape.jax import Tree
 from jax.typing import ArrayLike
 
 from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
@@ -49,7 +47,7 @@ def jit_quax(
         # for user introspection) is pure overhead for this transient wrapper.
         return _Quaxify(
             jexc.jaxpr_as_fun(jaxpr),
-            cast(Tree[bool | Callable[[Any], bool]], True),
+            True,
             dynamic=False,
         )(*args)
 
@@ -73,7 +71,10 @@ def jit_quax(
         # so the weakref is always live when tracing actually happens.
         jaxpr_ref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
 
-        @no_type_check  # for beartype (re-defined per call; see Task 12)
+        # Annotations are dropped (not just `@no_type_check`) so beartype.claw
+        # never decorates this closure -- see the Key Pitfalls note in AGENTS.md
+        # on why a closure re-defined per call must stay unannotated.
+        @no_type_check  # for beartype (re-defined per call)
         def qfun(x: Any, _ref: Any = jaxpr_ref) -> Any:
             # Constructing `_Quaxify` directly (and calling `__call__` unbound)
             # bypasses `quaxify()`'s wrapper and eqx.Module.__call__'s dir() +
@@ -169,10 +170,10 @@ def cond_quax(
     # everything its closure holds, including live `DynamicJaxprTracer`s here --
     # alive for the rest of the process, tripping `JAX_CHECK_TRACER_LEAKS=1`.
     # Dropping the annotations (not just adding `@no_type_check`) is what actually
-    # keeps claw from touching these; see Task 12.
-    @no_type_check  # for beartype (re-defined per call; see Task 12)
+    # keeps claw from touching these -- see the Key Pitfalls note in AGENTS.md.
+    @no_type_check  # for beartype (re-defined per call)
     def _make_quax_branch(jaxpr, /):
-        @no_type_check  # for beartype (re-defined per call; see Task 12)
+        @no_type_check  # for beartype (re-defined per call)
         def flat_quax_call(flat_args):
             _args = jtu.tree_unflatten(in_tree, flat_args)
             flat_out, out_tree = jtu.tree_flatten(

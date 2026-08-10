@@ -47,7 +47,7 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
     # Using the fast metaclass skips equinox's per-instance validation (the
     # `dir(self)` scan etc.), which otherwise costs ~40 µs per construction.
     fn: CT
-    filter_spec: Tree[bool | Callable[[Any], bool]]
+    filter_spec: bool | Tree[bool | Callable[[Any], bool]]
     dynamic: bool = eqx.field(static=True)
 
     @property
@@ -79,7 +79,7 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
 
     def __get__(
         self, instance: object | None, owner: Any
-    ) -> Union["_Quaxify[CT]", eqx.Partial["_Quaxify[CT]"]]:
+    ) -> Union["_Quaxify", eqx.Partial]:
         # Getting from a class
         if instance is None:
             return self
@@ -90,9 +90,7 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
 def quaxify(
     fn: CT,
     /,
-    filter_spec: Tree[bool | Callable[[Any], bool]] = cast(
-        Tree[bool | Callable[[Any], bool]], True
-    ),
+    filter_spec: bool | Tree[bool | Callable[[Any], bool]] = True,
 ) -> CT:
     """'Quaxifies' a function, so that it understands custom array-ish objects like
     [`quax.examples.lora.LoraArray`][]. When this function is called, multiple dispatch
