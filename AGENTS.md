@@ -70,7 +70,7 @@ Use `@quax.register(prim, precedence=1)` to resolve plum ambiguity between overl
 
 Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks: `xfail_quax58`, `mark_todo`, `mark_nomd`.
 
-`pytest` runs with `JAX_CHECK_TRACER_LEAKS=1` and jaxtyping/beartype enabled — type errors surface at test time.
+`pytest` runs with `JAX_CHECK_TRACER_LEAKS=1` and bearshape/beartype (via `beartype.claw`) enabled — type errors surface at test time.
 
 ## Key Pitfalls
 
