@@ -4,7 +4,7 @@ import equinox as eqx  # https://github.com/patrick-kidger/equinox
 import jax
 import jax.core as core
 import jax.numpy as jnp
-from jax.typing import ArrayLike  # https://jax.readthedocs.io/en/latest/jax.typing.html
+from jax.typing import ArrayLike
 
 import quax
 
