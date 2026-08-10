@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
   "jax>=0.7.2",
-  "bearshape",
+  "bearshape>=0.0.1,<0.1",
   "equinox>=0.13.2",
   'plum-dispatch>=2.5.7; python_version < "3.14"',
   'plum-dispatch>=2.9.0; python_version >= "3.14"',
@@ -130,11 +130,6 @@ strict                   = true
 warn_return_any          = false
 warn_unreachable         = true
 warn_unused_configs      = true
-
-[[tool.mypy.overrides]]
-disallow_incomplete_defs = true
-disallow_untyped_defs    = true
-module                   = "quax.*"
 
 [[tool.mypy.overrides]]
 ignore_missing_imports = true

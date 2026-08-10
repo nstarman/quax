@@ -1723,7 +1723,7 @@ tests = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bearshape" },
+    { name = "bearshape", specifier = ">=0.0.1,<0.1" },
     { name = "equinox", specifier = ">=0.13.2" },
     { name = "jax", specifier = ">=0.7.2" },
     { name = "packaging", specifier = ">=20.0" },

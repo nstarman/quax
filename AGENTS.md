@@ -63,7 +63,7 @@ Use `@quax.register(prim, precedence=1)` to resolve plum ambiguity between overl
 | Path | Purpose |
 |------|---------|
 | [tests/unit/myarray.py](tests/unit/myarray.py) | Shared `MyArray(ArrayValue)` fixture with registered primitives |
-| [tests/conftest.py](tests/conftest.py) | `getkey` fixture via `eqxi.GetKey()` |
+| [tests/conftest.py](tests/conftest.py) | Installs the `beartype.claw` runtime-typecheck hook; `getkey` fixture via `eqxi.GetKey()` |
 | `tests/unit/test_numpy/` | Parametrized `jnp.*` tests (separate files for `MyArray` vs plain JAX arrays) |
 | `tests/unit/test_lax/` | Same for `lax` primitives |
 | `tests/usage/` | Integration tests for each `quax.examples` type |
@@ -81,6 +81,7 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
 - **Doctests run** from `README.md`, `docs/`, and `src/` — keep examples in those files valid.
+- **Never annotate a closure in `_primitives.py` that gets re-defined on every call** (e.g. `qfun` inside `jit_quax`, `_make_quax_branch`/`flat_quax_call` inside `cond_quax`) — `beartype.claw` decorates any annotated function it sees, and beartype's own `is_object_blacklisted` cache (`@callable_cached`, unbounded, never evicted) permanently pins that specific closure object — and everything it closes over, including live JAX tracers — for the rest of the process. `@no_type_check` alone does NOT prevent this (claw decides whether to decorate purely from annotation presence, before `@no_type_check` is ever consulted) — the fix is to strip the closure's parameter/return annotations entirely, not just mark it `@no_type_check`. Symptom: `JAX_CHECK_TRACER_LEAKS=1` failures with "Leaked trace" errors that trace back into beartype's internals.
 
 ## Dependencies
 
