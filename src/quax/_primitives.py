@@ -71,9 +71,13 @@ def jit_quax(
         # so the weakref is always live when tracing actually happens.
         jaxpr_ref = weakref.ref(jaxpr, _make_cache_finalizer(_jit_quax_cache, key))
 
-        # Annotations are dropped (not just `@no_type_check`) so beartype.claw
-        # never decorates this closure -- see the Key Pitfalls note in AGENTS.md
-        # on why a closure re-defined per call must stay unannotated.
+        # Kept annotated (just `@no_type_check`, not stripped): beartype.claw
+        # still decorates and permanently pins this re-defined-per-call closure
+        # (see the Key Pitfalls note in AGENTS.md), but it closes over only a
+        # weakref and a treedef -- no live JAX tracers -- so the pin is a
+        # harmless leaked-function-object, not a `Leaked trace` failure. Unlike
+        # `_make_quax_branch`/`flat_quax_call` below, which do close over live
+        # tracers and must have their annotations stripped, not just `@no_type_check`.
         @no_type_check  # for beartype (re-defined per call)
         def qfun(x: Any, _ref: Any = jaxpr_ref) -> Any:
             # Constructing `_Quaxify` directly (and calling `__call__` unbound)
