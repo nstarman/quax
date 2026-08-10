@@ -1,3 +1,5 @@
+import os
+
 from beartype import BeartypeConf, BeartypeStrategy
 from beartype.claw import beartype_packages
 
@@ -10,9 +12,15 @@ from beartype.claw import beartype_packages
 # generic inside a string forward reference isn't a supported claw PEP 526 hint), which
 # `beartype.beartype` itself never sees since it isn't a function signature. Disabling
 # PEP 526 checking here restores parity with the old hook's actual coverage.
-beartype_packages(
-    ("quax",), conf=BeartypeConf(strategy=BeartypeStrategy.On, claw_is_pep526=False)
-)
+#
+# Gate behind an env var so CI's CodSpeed benchmark job (which needs
+# production performance, not instrumented) can disable it -- addopts-level
+# tricks (`-o addopts=`, `-p no:env`) don't reach this: conftest.py's module
+# scope always executes regardless of addopts or disabled plugins.
+if os.environ.get("QUAX_DISABLE_RUNTIME_TYPECHECK") != "1":
+    beartype_packages(
+        ("quax",), conf=BeartypeConf(strategy=BeartypeStrategy.On, claw_is_pep526=False)
+    )
 
 
 import equinox.internal as eqxi
