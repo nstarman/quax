@@ -175,6 +175,9 @@ def cond_quax(
     # alive for the rest of the process, tripping `JAX_CHECK_TRACER_LEAKS=1`.
     # Dropping the annotations (not just adding `@no_type_check`) is what actually
     # keeps claw from touching these -- see the Key Pitfalls note in AGENTS.md.
+    # Fixed upstream in beartype/beartype#673 (commit 6c0cec9360c, in
+    # beartype>=0.23.0rc0) -- not yet in a stable release, and excluded by
+    # bearshape's own beartype<0.23 pin. Revert this once both land.
     @no_type_check  # for beartype (re-defined per call)
     def _make_quax_branch(jaxpr, /):
         @no_type_check  # for beartype (re-defined per call)
