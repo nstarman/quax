@@ -1453,7 +1453,7 @@ tests = [
 
 [package.metadata]
 requires-dist = [
-    { name = "equinox", specifier = ">=0.13.2" },
+    { name = "equinox", specifier = ">=0.13.3" },
     { name = "jax", specifier = ">=0.7.2" },
     { name = "jaxtyping", specifier = ">=0.3.3" },
     { name = "packaging", specifier = ">=20.0" },
