@@ -251,48 +251,44 @@ class _QuaxTrace(
     # TODO: add other process_* rules
 
 
-class _HeldTraceContext:
-    """JAX's trace context, entered and exited by hand around a `yield`.
+class _held_trace:  # noqa: N801
+    """Make a new `_QuaxTrace` current, for a block that spans a `yield`.
 
-    The `lu.transformation` generators below must keep the quax trace current while
-    the function they wrap runs -- that is, across a `yield`. `with` blocks cannot
-    express that safely: if the wrapped function raises, JAX drops the generator
-    where it stands rather than throwing the exception into it, so the `with` blocks
-    would instead unwind whenever Python later finalises the generator. By then JAX
-    has moved on, and restoring the stale trace clobbers whatever trace is live,
-    surfacing much later as an `UnexpectedTracerError` in unrelated code.
-
-    So enter and exit explicitly: `exit()` on the paths we control, and nothing at
-    all when the generator is abandoned (`GeneratorExit`), leaving JAX's trace
-    context to its new owner.
+    Equivalent to `take_current_trace()` + `set_current_trace(_QuaxTrace(...))`, with
+    one difference: nothing is restored if the block is left via `GeneratorExit`.
+    The `lu.transformation` generators below keep this trace current while the
+    function they wrap runs -- across a `yield` -- and when that function raises,
+    JAX drops the generator where it stands rather than throwing into it. The block
+    then unwinds whenever Python finalises the generator, by which point JAX has
+    moved on, so restoring the stale trace would clobber whatever trace is live and
+    surface much later as an `UnexpectedTracerError` in unrelated code. On
+    abandonment, leave the trace context to its new owner.
     """
 
-    __slots__ = ("trace", "_set", "_take")
+    __slots__ = ("_set", "_take", "_tag")
 
     def __init__(self, tag: core.TraceTag) -> None:
+        self._tag = tag
+
+    def __enter__(self) -> _QuaxTrace:
         self._take = core.take_current_trace()
-        self.trace = _QuaxTrace(self._take.__enter__(), tag)
-        self._set = core.set_current_trace(self.trace)
-
-    def enter(self) -> None:
-        """Make the quax trace current. Call once the input tracers are built."""
+        trace = _QuaxTrace(self._take.__enter__(), self._tag)
+        self._set = core.set_current_trace(trace)
         self._set.__enter__()
+        return trace
 
-    def exit(self) -> None:
-        """Restore the trace context that was current before `__init__`."""
-        self._set.__exit__(None, None, None)
-        self._take.__exit__(None, None, None)
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        if exc_type is GeneratorExit:
+            return
+        self._set.__exit__(exc_type, exc_value, traceback)
+        self._take.__exit__(exc_type, exc_value, traceback)
 
 
 @lu.transformation_with_aux
 def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
     in_values = jtu.tree_unflatten(in_treedef, in_leaves)
-    held = _HeldTraceContext(tag)
-    trace = held.trace
-    in_tracers = [x if type(x) is SZ else _QuaxTracer(trace, x) for x in in_values]
-    held.enter()
-    abandoned = False
-    try:
+    with _held_trace(tag) as trace:
+        in_tracers = [x if type(x) is SZ else _QuaxTracer(trace, x) for x in in_values]
         out_tracers = yield in_tracers, {}
         # The symbolic zero branch here will actually create a `quax.zero.Zero`!
         out_tracers = [
@@ -300,14 +296,8 @@ def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
             for t in out_tracers
         ]
         out_values = [trace.to_value(t) for t in out_tracers]
-        del out_tracers
-    except GeneratorExit:
-        abandoned = True
-        raise
-    finally:
-        if not abandoned:
-            held.exit()
-    del trace, in_tracers
+        del out_tracers, in_tracers
+    del trace
     out_leaves, out_treedef = jtu.tree_flatten(out_values)
     yield out_leaves, out_treedef
 
@@ -332,15 +322,11 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
     ]
     # Calling `_QuaxTracer` directly here, not using `trace.{pure,lift}` as each `x` is
     # a `Value`, not an array (=> pure) or tracer (=> lift).
-    held = _HeldTraceContext(tag)
-    trace = held.trace
-    in_tracers = [
-        x if type(x) is SZ else _QuaxTracer(trace, x)
-        for x in it.chain(in_primal_values, in_tangent_values)
-    ]
-    held.enter()
-    abandoned = False
-    try:
+    with _held_trace(tag) as trace:
+        in_tracers = [
+            x if type(x) is SZ else _QuaxTracer(trace, x)
+            for x in it.chain(in_primal_values, in_tangent_values)
+        ]
         out_tracers = yield in_tracers, {}
         # The symbolic zero branch here will actually create a `quax.zero.Zero`!
         out_tracers = [
@@ -362,14 +348,8 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
                 tangent = type(tangent).materialise(tangent)
             out_primal_values2.append(primal)
             out_tangent_values2.append(tangent)
-        del out_tracers
-    except GeneratorExit:
-        abandoned = True
-        raise
-    finally:
-        if not abandoned:
-            held.exit()
-    del trace, in_tracers
+        del out_tracers, in_tracers
+    del trace
     out_primals, out_primal_treedef = jtu.tree_flatten(out_primal_values2)
     out_tangents, out_tangent_treedef = jtu.tree_flatten(out_tangent_values2)
     if out_primal_treedef != out_tangent_treedef:
