@@ -43,7 +43,22 @@ class _QuaxTracer(core.Tracer):
         # allocation, ~20 µs) so that jax.jit(value.method) works. That wrapping
         # is pure overhead here — this aval is consumed immediately and never
         # handed to jax.jit. _DenseArrayValue already bypasses __getattribute__.
-        self._cached_aval: core.AbstractValue = type(value).aval(value)
+        self._cached_aval: core.AbstractValue
+        if type(value) is _DenseArrayValue:
+            # Fast path: no user code, no primitives bound, so no need to pay
+            # for the trace-context manager below.
+            self._cached_aval = _DenseArrayValue.aval(value)
+        else:
+            # `aval()` is user code and may bind JAX primitives (e.g.
+            # `lora.LoraArray.aval` calls `lax.stop_gradient`). Tracers are
+            # constructed while the current trace has been taken -- inside
+            # `core.take_current_trace()`, or inside `Primitive.bind` while it
+            # dispatches to `process_primitive` -- and JAX >=0.11 leaves the
+            # current trace as `None` there (it used to be `eval_trace`), so
+            # binding anything would fail. Evaluate the aval under the parent
+            # trace, which is where the value's leaves live.
+            with core.set_current_trace(trace.parent_trace):
+                self._cached_aval = type(value).aval(value)
 
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -236,22 +251,53 @@ class _QuaxTrace(
     # TODO: add other process_* rules
 
 
+class _held_trace:  # noqa: N801
+    """Make a new `_QuaxTrace` current, for a block that spans a `yield`.
+
+    Equivalent to `take_current_trace()` + `set_current_trace(_QuaxTrace(...))`, with
+    one difference: nothing is restored if the block is left via `GeneratorExit`.
+    The `lu.transformation` generators below keep this trace current while the
+    function they wrap runs -- across a `yield` -- and when that function raises,
+    JAX drops the generator where it stands rather than throwing into it. The block
+    then unwinds whenever Python finalises the generator, by which point JAX has
+    moved on, so restoring the stale trace would clobber whatever trace is live and
+    surface much later as an `UnexpectedTracerError` in unrelated code. On
+    abandonment, leave the trace context to its new owner.
+    """
+
+    __slots__ = ("_set", "_take", "_tag")
+
+    def __init__(self, tag: core.TraceTag) -> None:
+        self._tag = tag
+
+    def __enter__(self) -> _QuaxTrace:
+        self._take = core.take_current_trace()
+        trace = _QuaxTrace(self._take.__enter__(), self._tag)
+        self._set = core.set_current_trace(trace)
+        self._set.__enter__()
+        return trace
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        if exc_type is GeneratorExit:
+            return
+        self._set.__exit__(exc_type, exc_value, traceback)
+        self._take.__exit__(exc_type, exc_value, traceback)
+
+
 @lu.transformation_with_aux
 def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
     in_values = jtu.tree_unflatten(in_treedef, in_leaves)
-    with core.take_current_trace() as parent_trace:
-        trace = _QuaxTrace(parent_trace, tag)
+    with _held_trace(tag) as trace:
         in_tracers = [x if type(x) is SZ else _QuaxTracer(trace, x) for x in in_values]
-        with core.set_current_trace(trace):
-            out_tracers = yield in_tracers, {}
-            # The symbolic zero branch here will actually create a `quax.zero.Zero`!
-            out_tracers = [
-                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
-                for t in out_tracers
-            ]
-            out_values = [trace.to_value(t) for t in out_tracers]
-            del out_tracers
-        del trace, in_tracers
+        out_tracers = yield in_tracers, {}
+        # The symbolic zero branch here will actually create a `quax.zero.Zero`!
+        out_tracers = [
+            jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
+            for t in out_tracers
+        ]
+        out_values = [trace.to_value(t) for t in out_tracers]
+        del out_tracers, in_tracers
+    del trace
     out_leaves, out_treedef = jtu.tree_flatten(out_values)
     yield out_leaves, out_treedef
 
@@ -276,38 +322,34 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
     ]
     # Calling `_QuaxTracer` directly here, not using `trace.{pure,lift}` as each `x` is
     # a `Value`, not an array (=> pure) or tracer (=> lift).
-    with core.take_current_trace() as parent_trace:
-        trace = _QuaxTrace(parent_trace, tag)
+    with _held_trace(tag) as trace:
         in_tracers = [
             x if type(x) is SZ else _QuaxTracer(trace, x)
             for x in it.chain(in_primal_values, in_tangent_values)
         ]
-        with core.set_current_trace(trace):
-            out_tracers = yield in_tracers, {}
-            # The symbolic zero branch here will actually create a `quax.zero.Zero`!
-            out_tracers = [
-                jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
-                for t in out_tracers
-            ]
-            out_values = [trace.to_value(t) for t in out_tracers]
-            # Pre-calculate split point
-            out_split = len(out_values) // 2
-            out_primal_values = out_values[:out_split]
-            out_tangent_values = out_values[out_split:]
-            out_primal_values2 = []
-            out_tangent_values2 = []
-            for primal, tangent in zip(
-                out_primal_values, out_tangent_values, strict=True
-            ):
-                if primal.__class__ != tangent.__class__:
-                    # Unbound calls skip equinox's BoundMethod-wrapping
-                    # __getattribute__ (see _QuaxTracer.__init__).
-                    primal = type(primal).materialise(primal)
-                    tangent = type(tangent).materialise(tangent)
-                out_primal_values2.append(primal)
-                out_tangent_values2.append(tangent)
-            del out_tracers
-        del trace, in_tracers
+        out_tracers = yield in_tracers, {}
+        # The symbolic zero branch here will actually create a `quax.zero.Zero`!
+        out_tracers = [
+            jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
+            for t in out_tracers
+        ]
+        out_values = [trace.to_value(t) for t in out_tracers]
+        # Pre-calculate split point
+        out_split = len(out_values) // 2
+        out_primal_values = out_values[:out_split]
+        out_tangent_values = out_values[out_split:]
+        out_primal_values2 = []
+        out_tangent_values2 = []
+        for primal, tangent in zip(out_primal_values, out_tangent_values, strict=True):
+            if primal.__class__ != tangent.__class__:
+                # Unbound calls skip equinox's BoundMethod-wrapping
+                # __getattribute__ (see _QuaxTracer.__init__).
+                primal = type(primal).materialise(primal)
+                tangent = type(tangent).materialise(tangent)
+            out_primal_values2.append(primal)
+            out_tangent_values2.append(tangent)
+        del out_tracers, in_tracers
+    del trace
     out_primals, out_primal_treedef = jtu.tree_flatten(out_primal_values2)
     out_tangents, out_tangent_treedef = jtu.tree_flatten(out_tangent_values2)
     if out_primal_treedef != out_tangent_treedef:

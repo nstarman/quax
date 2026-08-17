@@ -13,9 +13,6 @@ import quax
 import quax.examples.lora as lora
 
 
-pytestmark = pytest.mark.skip(reason="Skipping tests until something is fixed in JAX.")
-
-
 def test_linear(getkey):
     linear = eqx.nn.Linear(10, 12, key=getkey())
     lora_weight = lora.LoraArray(linear.weight, rank=2, key=getkey())
@@ -103,6 +100,13 @@ def test_decorator_stack_runs(getkey):
 
 
 def test_materialise():
+    """`allow_materialise=False` refuses to materialise, and does so mid-trace.
+
+    The `RuntimeError` escapes from inside a quaxified `custom_jvp` function, so this
+    also exercises the abandoned-transformation path: see
+    `tests/unit/test_custom_jvp.py::test_aborted_trace_does_not_clobber_trace_context`
+    for what that used to do to the next test to run.
+    """
     key = jr.key(0)
 
     key, *subkeys = jr.split(key, 3)
@@ -129,9 +133,12 @@ def test_regression_38(getkey):
 
     func = quax.quaxify(f)
 
-    # Error type depends on whether jaxtyping is on. TypeCheckError is raised
-    # when jaxtyping is on. NotFoundLookupError is raised when jaxtyping is off,
-    # which then kicks over to the default process, which can raise a
-    # RuntimeError if allow_materialise is False.
-    with pytest.raises((TypeCheckError, NotFoundLookupError, RuntimeError)):
+    # Binding a raw `LoraArray` must be an error rather than silently doing something
+    # wrong. Which error depends on how far it gets. With stackless tracers, JAX
+    # canonicalises `bind`'s arguments before consulting the current trace, so it
+    # raises TypeError without ever reaching quax's dispatch. Reaching dispatch gives
+    # TypeCheckError when jaxtyping is on, and NotFoundLookupError when it is off --
+    # which kicks over to the default process, itself raising RuntimeError when
+    # `allow_materialise` is False.
+    with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
         _ = func(y)

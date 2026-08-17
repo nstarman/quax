@@ -1,7 +1,11 @@
 """Tests for process_custom_jvp_call."""
 
+import gc
+
 import jax
+import jax._src.core as core
 import jax.numpy as jnp
+import pytest
 from jax.custom_derivatives import SymbolicZero as SZ
 
 import quax
@@ -250,3 +254,40 @@ def test_custom_jvp_symbolic_zero_output_tangent():
         assert jnp.allclose(_raw(got), exp)
     # The symbolic-zero output tangent becomes an exact concrete zero.
     assert jnp.array_equal(_raw(tangent_out[1]), jnp.zeros(()))
+
+
+class NoMaterialise(quax.ArrayValue):
+    """Refuses to materialise, like `lora.LoraArray(allow_materialise=False)`."""
+
+    array: jax.Array
+
+    def materialise(self):
+        raise RuntimeError("refusing to materialise")
+
+    def aval(self):
+        return typeof(self.array)
+
+
+def test_aborted_trace_does_not_clobber_trace_context():
+    """An exception mid-trace must not leave JAX's trace context to be restored later.
+
+    When quaxifying raises part-way through a `custom_jvp` function, JAX abandons the
+    `lu.transformation` generator wrapping it rather than throwing into it. If that
+    generator held the trace context open across its `yield`, Python would restore
+    the stale trace whenever it got around to finalising the generator -- clobbering
+    an unrelated, live trace, and surfacing as an `UnexpectedTracerError` far from
+    the cause.
+    """
+    # `jax.nn.relu` is a custom_jvp function, and there is no rule for this value, so
+    # the default process tries to materialise and the trace aborts part-way through.
+    with pytest.raises(RuntimeError, match="refusing to materialise"):
+        quax.quaxify(jax.nn.relu)(NoMaterialise(jnp.arange(3.0)))
+
+    @jax.jit
+    def f(x):
+        before = core.trace_ctx.trace
+        gc.collect()  # finalise the abandoned generator while this trace is live
+        assert core.trace_ctx.trace is before
+        return x + 1
+
+    f(jnp.arange(3.0))
