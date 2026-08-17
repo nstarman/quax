@@ -99,10 +99,6 @@ def test_decorator_stack_runs(getkey):
     run3(mlp, vector)
 
 
-@pytest.mark.skip(
-    reason="Aborting a quaxified trace leaves JAX's tracing state polluted; "
-    "see tests/usage/test_prng.py::test_where, which then fails."
-)
 def test_materialise():
     """Skipped: the `RuntimeError` below escapes mid-trace, and something in JAX's
     tracing state survives it -- a later, unrelated `jax.jit(quaxify(...))` call then
@@ -125,14 +121,8 @@ def test_materialise():
         _ = quax.quaxify(jax.nn.relu)(x_false)
 
 
-@pytest.mark.skip(reason="Broken by JAX's stackless tracers; see docstring.")
 def test_regression_38(getkey):
-    """Regression test for PR 38 (stackless tracers).
-
-    Currently skipped: since stackless tracers, `Primitive.bind` canonicalizes its
-    arguments before consulting the current trace, so passing a raw `LoraArray`
-    raises `TypeError` from JAX rather than reaching quax's dispatch.
-    """
+    """Regression test for PR 38 (stackless tracers)."""
     x = jnp.arange(4.0).reshape(2, 2)
     y = lora.LoraArray(x, rank=1, key=getkey())
 
@@ -141,9 +131,12 @@ def test_regression_38(getkey):
 
     func = quax.quaxify(f)
 
-    # Error type depends on whether jaxtyping is on. TypeCheckError is raised
-    # when jaxtyping is on. NotFoundLookupError is raised when jaxtyping is off,
-    # which then kicks over to the default process, which can raise a
-    # RuntimeError if allow_materialise is False.
-    with pytest.raises((TypeCheckError, NotFoundLookupError, RuntimeError)):
+    # Binding a raw `LoraArray` must be an error rather than silently doing
+    # something wrong; which error depends on how far it gets. Since stackless
+    # tracers JAX canonicalises `bind`'s arguments before consulting the current
+    # trace, so it never reaches quax's dispatch and raises TypeError. Otherwise:
+    # TypeCheckError when jaxtyping is on, NotFoundLookupError when it is off --
+    # which kicks over to the default process, itself raising RuntimeError when
+    # `allow_materialise` is False.
+    with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
         _ = func(y)
