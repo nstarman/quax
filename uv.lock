@@ -1489,16 +1489,16 @@ docs = [
 ide = [
     { name = "ipykernel" },
 ]
-integration = [
+lint = [
+    { name = "prek" },
+    { name = "ruff" },
+]
+test-integration = [
     { name = "beartype" },
     { name = "diffrax" },
     { name = "jax" },
     { name = "pytest" },
     { name = "pytest-env" },
-]
-lint = [
-    { name = "prek" },
-    { name = "ruff" },
 ]
 tests = [
     { name = "beartype" },
@@ -1547,16 +1547,16 @@ docs = [
     { name = "zensical" },
 ]
 ide = [{ name = "ipykernel", specifier = ">=7.2.0" }]
-integration = [
+lint = [
+    { name = "prek", specifier = ">=0.3.11" },
+    { name = "ruff", specifier = ">=0.15.9" },
+]
+test-integration = [
     { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
     { name = "diffrax", specifier = ">=0.7.2" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },
-]
-lint = [
-    { name = "prek", specifier = ">=0.3.11" },
-    { name = "ruff", specifier = ">=0.15.9" },
 ]
 tests = [
     { name = "beartype", specifier = ">=0.20.2,<0.23.0" },

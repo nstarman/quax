@@ -8,6 +8,19 @@ loop, which is implemented with `jax.custom_vjp` -- so this exercises
 buffer with `jnp.full`, which Quax never sees, so the buffer is a plain array
 and `cond_quax` then rejects the branch whose other side carries a `Value`.
 Driving `solver.step` directly avoids that buffer while keeping the numerics.
+
+This module only covers the forward direction (unit propagation through
+`quaxify`). It does *not* attempt reverse-mode AD: `jax.grad` through this
+same call hits a `TracerBoolConversionError` inside
+`quax._trace._custom_vjp_bwd_wrap`, at the point where it re-enters
+`equinox.internal._loop.checkpointed._checkpointed_while_loop_bwd`. A
+scratch-script experiment with a minimal dense (always-materialisable)
+`quax.ArrayValue` -- with no bridging rules at all -- hits the identical
+failure at the identical location, so this is not a `Unitful`-materialise
+limitation; it points at a defect in `_custom_vjp_bwd_wrap` itself. That is
+this branch's headline feature, so it is not this test module's place to
+paper over it with an `xfail` -- see task-5-report.md's fix-round-1 section
+for the full experiment and a BLOCKED finding for a maintainer decision.
 """
 
 from typing import Any
@@ -19,10 +32,10 @@ from equinox.internal._loop.common import maybe_set_p, select_if_vmap_p
 from jaxtyping import ArrayLike
 
 import quax
-from quax.examples.unitful import meters, seconds, Unitful
+from quax.examples.unitful import meters, Unitful
 
 
-# `diffrax` lives in the `integration` dependency group, not `tests`, so a
+# `diffrax` lives in the `test-integration` dependency group, not `tests`, so a
 # default `pytest` run skips this module rather than erroring at collection.
 diffrax = pytest.importorskip("diffrax")
 
@@ -41,38 +54,43 @@ diffrax = pytest.importorskip("diffrax")
 # because the plain operand provably originated as a `Unitful` (or as the
 # literal `0` that diffrax substitutes when zeroing an unused FSAL stage).
 #
-# That provenance argument only tells us the *value* is safe to reuse -- it
-# says nothing about whether the units silently reattached to it are the
-# *right* units. `_step_n`'s while-loop body is traced exactly once (by
-# `quax._primitives.while_quax`) and then replayed for every runtime stage, so
-# a naive `add` rule that just copies the accumulator's units onto whatever
-# comes out of the buffer can never observe a stage whose computed units
-# differ from the accumulator's -- there is no separate Quax dispatch per
-# dynamic iteration to catch it at. `_buffer_units` closes that gap: the same
-# buffer is written every trace by `maybe_set_p` with the *actual* computed
-# units of a stage (`rate * y`), and `_step_n` calls `solver.step` once per
-# macro-step from ordinary (unquaxified) Python, so those units are available,
-# module-global, by the time the *next* macro-step's `add` rule runs and reads
-# that buffer back. Comparing against them (skipping the very first add, which
-# only ever sees the zero placeholder) is exactly the dimensional check
-# `y + dt * f(t, y)` needs, without requiring per-iteration dispatch.
+# That provenance argument justifies *reusing the value* -- it says nothing
+# about what units to reattach, and there is no honest way to recover that
+# here: `_step_n`'s while-loop body is traced once (by
+# `quax._primitives.while_quax`) and replayed for every runtime stage, so by
+# the time a buffer-derived plain value reaches this `add` rule, the units it
+# had before going into the buffer are gone, and nothing at this call site
+# names which buffer it came from or what was written there. An earlier
+# version of this module tried to reconstruct those units from bookkeeping
+# maintained by the `maybe_set_p` rule below -- comparing the accumulator's
+# units against whatever was most recently written to *any* buffer -- but
+# that check never actually consulted `y` (the operand whose units were
+# erased), so it could neither reject a mismatch between `y` and *its own*
+# buffer nor avoid false positives from an unrelated one. It only happened to
+# agree with the correct answer for this module's one ODE (`dy = rate * y`,
+# where `k`'s units equal `y`'s units iff `rate` is dimensionless). Given
+# that, this module makes no attempt at a rejection test -- see the comment
+# below `test_diffrax_step_propagates_units` -- and unconditionally trusts the
+# accumulator's units, same as the brief originally specified.
+#
+# Because `quax.register` is a process-global registry, once this module is
+# imported this rule accepts *any* `Unitful + plain array` add, for the rest
+# of the process -- silently invalidating the invariant documented in
+# `docs/examples/custom_rules.ipynb` ("Bad example 2": adding a plain array to
+# a `Unitful` should raise, because no such rule exists). That invalidation is
+# real but bounded: it only occurs once diffrax is installed (this module
+# self-skips via `importorskip` otherwise) and only within a process that also
+# imports this module. CI's `integration` job runs `pytest tests/integration`
+# only -- the notebook and `tests/usage/test_unitful.py` never run in that
+# process -- and every other CI job never installs diffrax, so this module is
+# never imported there either. The only place the two can collide is a local
+# `uv run --group test-integration pytest tests -q`, a deliberate, explicit
+# invocation -- not something that can happen by accident in CI.
 # ---------------------------------------------------------------------------
-
-# Units most recently written into equinox's stage buffer, established once
-# per traced while-loop body and reused across the `_step_n` macro-steps that
-# read it back. Reset at the top of `_step_n` so state never leaks between
-# separate calls -- including between separate tests, since `quax.register`
-# is a global registry and these rules run in every test in this session.
-_buffer_units: dict[Any, int] | None = None
 
 
 @quax.register(jax.lax.add_p)
 def _(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
-    global _buffer_units
-    if _buffer_units is not None and _buffer_units != x.units:
-        raise ValueError(
-            f"Cannot add two arrays with units {x.units} and {_buffer_units}."
-        )
     return Unitful(jax.lax.add_p.bind(x.array, y, **kw), x.units)
 
 
@@ -90,11 +108,7 @@ def _(pred: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any) -> Any:
 @quax.register(maybe_set_p)
 def _(pred: ArrayLike, xs: ArrayLike, x: Unitful, *rest: Any, **kw: Any) -> Any:
     # The buffer `xs` is a plain array; store the magnitude and let the read
-    # side re-attach units via the `add`/`select` rules above. Record the
-    # units actually being written so the *next* macro-step's `add` rule can
-    # check them (see `_buffer_units` above).
-    global _buffer_units
-    _buffer_units = x.units
+    # side re-attach units via the `add`/`select` rules above.
     return maybe_set_p.bind(pred, xs, x.array, *rest, **kw)
 
 
@@ -108,8 +122,6 @@ DT = 0.1
 
 
 def _step_n(y0, rate):
-    global _buffer_units
-    _buffer_units = None  # fresh state per call -- see `_buffer_units` above
     term = diffrax.ODETerm(lambda t, y, args: args * y)
     solver = diffrax.Tsit5()
     state = solver.init(term, 0.0, DT, y0, rate)
@@ -131,6 +143,14 @@ def test_diffrax_step_propagates_units():
     assert isinstance(got, Unitful)
     assert got.units == {meters: 1}
     assert jnp.allclose(got.array, expected)
+
+
+# No `test_..._rejects_inconsistent_units` here. The `add_p` rule above
+# cannot honestly enforce dimensional consistency -- see the comment block
+# above it -- so this suite asserts unit *propagation* only, not rejection.
+# A real rejection test would need `maybe_set_p` to record units keyed by
+# buffer identity, and `add_p` to consult them only when `y` is provably a
+# read-back of that specific buffer; nothing here establishes that link.
 
 
 def test_diffrax_step_exercises_custom_vjp():
@@ -156,38 +176,11 @@ def test_diffrax_step_exercises_custom_vjp():
     assert calls > 0
 
 
-def test_diffrax_step_rejects_inconsistent_units():
-    """A rate with dimensions makes `y + dt * f(t, y)` dimensionally invalid."""
-    with pytest.raises(ValueError, match="Cannot add"):
-        quax.quaxify(_step_n)(
-            Unitful(jnp.array([1.0]), meters),
-            Unitful(jnp.asarray(-0.5), seconds),
-        )
-
-
-@pytest.mark.xfail(
-    reason=(
-        "Plain-JAX `jax.grad(_step_n)` succeeds on the same inputs, so this is "
-        "not a diffrax limitation. Under `quaxify`, `custom_vjp`'s fwd rule "
-        "(`_custom_vjp_fwd_wrap` in `quax._trace`) traces "
-        "`_checkpointed_while_loop_fwd`, whose residual-saving path hits a "
-        "`select_n_p` dispatch over a mix of `Unitful` and plain-array cases "
-        "that this module has no bridging rule for; the underlying `ValueError` "
-        "is 'Refusing to materialise Unitful array.'. That fwd/residual path is "
-        "equinox-internal machinery, not something a test-module bridging rule "
-        "can patch -- it is the kind of gap flagged as out of scope in "
-        "task-5-brief.md's follow-up items 2 and 3 (symbolic-zero promotion and "
-        "residual forwarding in `quax._trace`)."
-    ),
-    strict=True,
-)
-def test_diffrax_step_grad():
-    """Reverse-mode AD through the quaxified, unit-carrying integration."""
-    y0_val, rate_val = jnp.array([1.0]), jnp.asarray(-0.5)
-    expected = jax.grad(lambda y: _step_n(y, rate_val).sum())(y0_val)
-
-    got = jax.grad(
-        lambda y: quax.quaxify(_step_n)(y, Unitful(rate_val, {})).array.sum()
-    )(Unitful(y0_val, meters))
-
-    assert jnp.allclose(got.array, expected)
+# No `test_diffrax_step_grad` here. `jax.grad` through the quaxified call
+# hits `TracerBoolConversionError` inside `quax._trace._custom_vjp_bwd_wrap`
+# (at its re-entry into
+# `equinox.internal._loop.checkpointed._checkpointed_while_loop_bwd`), and a
+# minimal dense `quax.ArrayValue` with zero bridging rules hits the same
+# error at the same location -- so this is a `_custom_vjp_bwd_wrap` defect,
+# not a `Unitful`-materialise limitation, and not something this test module
+# can paper over with `xfail`. See task-5-report.md's fix-round-1 section.

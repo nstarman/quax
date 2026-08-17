@@ -50,13 +50,13 @@ docs = [
   "zensical",
 ]
 ide = ["ipykernel>=7.2.0"]
+lint = ["prek>=0.3.11", "ruff>=0.15.9"]
 # Integration tests against downstream JAX libraries (tests/integration). Kept
 # out of `dev`/`tests` so the default suite neither installs nor depends on
 # them; the modules skip themselves when the dependency is missing. Run locally
-# with `uv run --group integration pytest tests/integration`; CI runs them in a
-# dedicated job.
-integration = [{ include-group = "tests" }, "diffrax>=0.7.2"]
-lint = ["prek>=0.3.11", "ruff>=0.15.9"]
+# with `uv run --group test-integration pytest tests/integration`; CI runs them
+# in a dedicated job.
+test-integration = [{ include-group = "tests" }, "diffrax>=0.7.2"]
 tests = [
   # beartype>=0.23.0rc0 breaks plum's method-redefinition detection:
   # https://github.com/beartype/plum/issues/295, fix in https://github.com/beartype/plum/pull/296 (unmerged).

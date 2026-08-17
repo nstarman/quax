@@ -132,7 +132,7 @@ jobs:
           python-version: ${{ needs.setup.outputs.newest-python }}
 
       - name: Install
-        run: uv sync --no-default-groups --group integration --locked
+        run: uv sync --no-default-groups --group test-integration --locked
 
       - name: Test with pytest
         run: uv run --frozen pytest tests/integration
