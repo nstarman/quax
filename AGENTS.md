@@ -72,6 +72,7 @@ Read [pyproject.toml](pyproject.toml) for the full list. Key dependencies includ
 
 ## Further Reading
 
+- [.github/skills/code-review/SKILL.md](.github/skills/code-review/SKILL.md) — what to look for when reviewing a quax change (also picked up by GitHub Copilot code review)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup and workflow
 - [src/quax/examples/README.md](src/quax/examples/README.md) — guide for built-in examples
 - [docs/](docs/) — full documentation (also served at <https://nstarman.github.io/quax>)
