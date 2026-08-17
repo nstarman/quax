@@ -8,7 +8,7 @@ Register a new JAX primitive handler for the `$input` operation.
 
 ## Steps
 
-1. **Identify the primitive** — Find the `jax.lax.*_p` primitive that corresponds to the operation. When unsure, check what primitive JAX uses by running `jax.make_jaxpr(jnp.op)(array)` or searching [src/quax/\_core.py](../../src/quax/_core.py) and the JAX source.
+1. **Identify the primitive** — Find the `jax.lax.*_p` primitive that corresponds to the operation. When unsure, check what primitive JAX uses by running `jax.make_jaxpr(jnp.op)(array)` or searching [src/quax/\_primitives.py](../../src/quax/_primitives.py) and the JAX source.
 
 2. **Determine the type signatures needed** — Consider all combinations of the target `ArrayValue` type with `ArrayLike | quax.ArrayValue` (for mixed-type operations). Common patterns from the codebase:
    - Unary: `(x: MyType) -> MyType`
