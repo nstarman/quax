@@ -13,7 +13,7 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
 
-from ._compat import JAX_GE_0_9_2, typeof
+from ._compat import JAX_GE_0_9_2, to_ct_aval, typeof
 from ._dispatch import (
     _default_process,
     _dispatch_cache,
@@ -504,7 +504,7 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
     for n, ct in zip(_leaf_counts(in_treedef), cts_in, strict=True):
         avals = in_leaf_avals[i : i + n]
         if ct is None or type(ct) in (Zero, SZ):
-            out.extend(Zero(a.to_ct_aval()) for a in avals)
+            out.extend(Zero(to_ct_aval(a)) for a in avals)
         else:
             leaves = jtu.tree_leaves(ct)
             if len(leaves) != n:
