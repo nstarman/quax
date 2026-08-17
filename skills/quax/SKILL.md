@@ -32,8 +32,10 @@ key1, key2, key3 = jr.split(jr.key(0), 3)
 linear = eqx.nn.Linear(10, 12, key=key1)
 vector = jr.normal(key2, (10,))
 
+
 def run(model, x):
     return model(x)
+
 
 run(linear, vector)  # ordinary JAX, works as normal
 
@@ -111,6 +113,7 @@ import jax.numpy as jnp
 from jax import lax
 from jaxtyping import ArrayLike
 
+
 class Meters(quax.ArrayValue):
     array: ArrayLike
 
@@ -120,9 +123,11 @@ class Meters(quax.ArrayValue):
     def materialise(self):
         raise ValueError("Refusing to materialise Meters: it would drop the unit.")
 
+
 @quax.register(lax.add_p)
 def add_meters_meters(x: Meters, y: Meters) -> Meters:
     return Meters(x.array + y.array)
+
 
 quax.quaxify(jnp.add)(Meters(jnp.arange(3.0)), Meters(jnp.ones(3)))
 ```
@@ -148,9 +153,10 @@ tries to trace through the integer, which errors long before staleness matters.
 ```python
 import equinox as eqx
 
+
 class Zeros(quax.ArrayValue):
-    _shape: tuple[int, ...] = eqx.field(static=True)   # REQUIRED
-    _dtype: jnp.dtype = eqx.field(static=True)         # REQUIRED
+    _shape: tuple[int, ...] = eqx.field(static=True)  # REQUIRED
+    _dtype: jnp.dtype = eqx.field(static=True)  # REQUIRED
 
     def aval(self) -> jax.core.ShapedArray:
         return jax.core.ShapedArray(self._shape, self._dtype)
@@ -186,7 +192,7 @@ the primitive and the types it dispatches on — `add_meters_meters`,
 Find the primitive behind a `jnp` function by tracing it:
 
 ```python
-print(jax.make_jaxpr(jnp.square)(jnp.arange(3.0)))   # shows integer_pow
+print(jax.make_jaxpr(jnp.square)(jnp.arange(3.0)))  # shows integer_pow
 ```
 
 Positional arguments are the primitive's operands; keyword arguments are its
@@ -202,6 +208,7 @@ operand you do not own:
 @quax.register(lax.mul_p)
 def mul_meters_array_like(x: Meters, y: ArrayLike, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x.array, y, **kw))
+
 
 @quax.register(lax.mul_p)
 def mul_array_like_meters(x: ArrayLike, y: Meters, /, **kw) -> Meters:
@@ -308,7 +315,8 @@ jaxprs quaxified, and caches them). **Not supported: `jax.custom_vjp`.**
 def f(x):
     return (x * x).sum()
 
-grad_f = quax.quaxify(jax.grad(f))          # correct
+
+grad_f = quax.quaxify(jax.grad(f))  # correct
 # grad_f = quax.quaxify(jax.grad)(f)        # wrong: grad is not a function of arrays
 ```
 

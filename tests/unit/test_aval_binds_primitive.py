@@ -30,7 +30,9 @@ class StopGradArray(quax.ArrayValue):
 
 
 @quax.register(lax.mul_p)
-def _(x: StopGradArray, y: StopGradArray, /, **kw: Any) -> StopGradArray:
+def mul_stop_grad_array_stop_grad_array(
+    x: StopGradArray, y: StopGradArray, /, **kw: Any
+) -> StopGradArray:
     return StopGradArray(lax.mul_p.bind(x.array, y.array, **kw))
 
 

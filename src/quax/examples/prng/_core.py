@@ -168,5 +168,5 @@ def split(key: PRNG_T, num: int = 2) -> Sequence[PRNG_T]:
 
 # Allows for `jnp.where(pred, key1, key2)`.
 @quax.register(lax.select_n_p)
-def _(pred, *cases: PRNG) -> PRNG:
+def select_n_prng(pred, *cases: PRNG) -> PRNG:
     return jtu.tree_map(ft.partial(lax.select_n, pred), *cases)

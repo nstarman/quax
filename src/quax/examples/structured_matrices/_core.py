@@ -75,7 +75,7 @@ def _tridiagonal_matvec(
 
 
 @quax.register(lax.dot_general_p)
-def _(
+def dot_general_tridiagonal_matrix_array_like(
     lhs: TridiagonalMatrix,
     rhs: ArrayLike | quax.ArrayValue,
     *,

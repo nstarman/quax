@@ -223,7 +223,7 @@ def _lora_array_matmul(
 
 
 @quax.register(lax.dot_general_p)
-def _(
+def dot_general_array_like_lora_array(
     lhs: ArrayLike | quax.ArrayValue,
     rhs: LoraArray,
     *,

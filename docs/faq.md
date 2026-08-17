@@ -18,6 +18,7 @@
     # Directly
     jit_fn = jax.jit(quax.quaxify(jax.numpy.add))
 
+
     # Outer function
     @jax.jit
     def some_computation(x, y):
@@ -72,6 +73,7 @@ import jax
 import jax.numpy as jnp
 import quax
 
+
 class MyArray(quax.ArrayValue):
     array: jax.Array
     # shape and dtype are derived from `array`, which is static in the sense
@@ -89,7 +91,7 @@ If you store the shape separately (e.g. to support lazy or symbolic shapes), mar
 ```python
 class MyArray(quax.ArrayValue):
     data: jax.Array
-    _shape: tuple[int, ...] = eqx.field(static=True)   # REQUIRED
+    _shape: tuple[int, ...] = eqx.field(static=True)  # REQUIRED
 
     def aval(self):
         return jax.core.ShapedArray(self._shape, self.data.dtype)

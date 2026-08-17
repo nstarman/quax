@@ -495,7 +495,7 @@ def dynamic_slice_p(operand: MyArray, *args: MyArray | ArrayLike, **kw: Any) -> 
 
 
 @quax.register(lax.dynamic_update_slice_p)
-def _(
+def dynamic_update_slice_my_array_my_array_array_like_array_like(
     arg0: MyArray, arg1: MyArray, arg2: ArrayLike, arg3: ArrayLike, **kw: Any
 ) -> MyArray:
     return MyArray(
@@ -504,19 +504,23 @@ def _(
 
 
 @quax.register(lax.dynamic_update_slice_p)
-def _(
+def dynamic_update_slice_array_like_my_array_array_like_array_like(
     arg0: ArrayLike, arg1: MyArray, arg2: ArrayLike, arg3: ArrayLike, **kw: Any
 ) -> MyArray:
     return MyArray(lax.dynamic_update_slice_p.bind(arg0, arg1.array, arg2, arg3, **kw))
 
 
 @quax.register(lax.dynamic_update_slice_p)
-def _(arg0: ArrayLike, arg1: MyArray, arg2: ArrayLike, **kw: Any) -> MyArray:
+def dynamic_update_slice_array_like_my_array_array_like(
+    arg0: ArrayLike, arg1: MyArray, arg2: ArrayLike, **kw: Any
+) -> MyArray:
     return MyArray(lax.dynamic_update_slice_p.bind(arg0, arg1.array, arg2, **kw))
 
 
 @quax.register(lax.dynamic_update_slice_p)
-def _(arg0: MyArray, arg1: MyArray, arg2: MyArray, **kw: Any) -> MyArray:
+def dynamic_update_slice_my_array_my_array_my_array(
+    arg0: MyArray, arg1: MyArray, arg2: MyArray, **kw: Any
+) -> MyArray:
     return MyArray(
         lax.dynamic_update_slice_p.bind(arg0.array, arg1.array, arg2.array, **kw)
     )
@@ -1145,19 +1149,21 @@ def scan_p_m(arg0: MyArray, /, **kw: Any) -> list[MyArray]:
 
 
 @quax.register(lax.scan_p)
-def _(a0: ArrayLike, a1: int, a2: MyArray, a3: bool, /, **kw: Any) -> list[MyArray]:
+def scan_array_like_int_my_array_bool(
+    a0: ArrayLike, a1: int, a2: MyArray, a3: bool, /, **kw: Any
+) -> list[MyArray]:
     return [MyArray(x) for x in lax.scan_p.bind(a0, a1, a2.array, a3, **kw)]
 
 
 @quax.register(lax.scan_p)
-def _(
+def scan_array_like_array_like_int_my_array_bool(
     a0: ArrayLike, a1: ArrayLike, a2: int, a3: MyArray, a4: bool, /, **kw: Any
 ) -> list[MyArray]:
     return [MyArray(x) for x in lax.scan_p.bind(a0, a1, a2, a3.array, a4, **kw)]
 
 
 @quax.register(lax.scan_p)
-def _(
+def scan_my_array_my_array_array_like_array_like(
     a0: MyArray, a1: MyArray, a2: ArrayLike, a3: ArrayLike, /, **kw: Any
 ) -> list[MyArray]:
     return [MyArray(x) for x in lax.scan_p.bind(a0.array, a1.array, a2, a3, **kw)]
@@ -1220,32 +1226,44 @@ def scatter_mul_p() -> MyArray:
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: ArrayLike, arg1: MyArray, arg2: ArrayLike, /, **kw: Any) -> MyArray:
+def scatter_array_like_my_array_array_like(
+    arg0: ArrayLike, arg1: MyArray, arg2: ArrayLike, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0, arg1.array, arg2, **kw))
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: ArrayLike, arg1: ArrayLike, arg2: MyArray, /, **kw: Any) -> MyArray:
+def scatter_array_like_array_like_my_array(
+    arg0: ArrayLike, arg1: ArrayLike, arg2: MyArray, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0, arg1, arg2.array, **kw))
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: MyArray, arg1: ArrayLike, arg2: ArrayLike, /, **kw: Any) -> MyArray:
+def scatter_my_array_array_like_array_like(
+    arg0: MyArray, arg1: ArrayLike, arg2: ArrayLike, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0.array, arg1, arg2, **kw))
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: MyArray, arg1: MyArray, arg2: ArrayLike, /, **kw: Any) -> MyArray:
+def scatter_my_array_my_array_array_like(
+    arg0: MyArray, arg1: MyArray, arg2: ArrayLike, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0.array, arg1.array, arg2, **kw))
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: ArrayLike, arg1: MyArray, arg2: MyArray, /, **kw: Any) -> MyArray:
+def scatter_array_like_my_array_my_array(
+    arg0: ArrayLike, arg1: MyArray, arg2: MyArray, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0, arg1.array, arg2.array, **kw))
 
 
 @quax.register(lax.scatter_p)
-def _(arg0: MyArray, arg1: ArrayLike, arg2: MyArray, /, **kw: Any) -> MyArray:
+def scatter_my_array_array_like_my_array(
+    arg0: MyArray, arg1: ArrayLike, arg2: MyArray, /, **kw: Any
+) -> MyArray:
     return MyArray(lax.scatter_p.bind(arg0.array, arg1, arg2.array, **kw))
 
 
@@ -1282,27 +1300,37 @@ def select_n_p_m(which: MyArray | ArrayLike, *cases: MyArray) -> MyArray:
 
 
 @quax.register(lax.select_n_p)
-def _(which: ArrayLike, case0: ArrayLike, case1: MyArray) -> MyArray:
+def select_n_array_like_array_like_my_array(
+    which: ArrayLike, case0: ArrayLike, case1: MyArray
+) -> MyArray:
     return MyArray(lax.select_n(which, case0, case1.array))
 
 
 @quax.register(lax.select_n_p)
-def _(which: ArrayLike, case0: MyArray, case1: ArrayLike) -> MyArray:
+def select_n_array_like_my_array_array_like(
+    which: ArrayLike, case0: MyArray, case1: ArrayLike
+) -> MyArray:
     return MyArray(lax.select_n(which, case0.array, case1))
 
 
 @quax.register(lax.select_n_p)
-def _(which: MyArray, case0: MyArray, case1: ArrayLike) -> MyArray:
+def select_n_my_array_my_array_array_like(
+    which: MyArray, case0: MyArray, case1: ArrayLike
+) -> MyArray:
     return MyArray(lax.select_n(which.array, case0.array, case1))
 
 
 @quax.register(lax.select_n_p)
-def _(which: MyArray, case0: ArrayLike, case1: ArrayLike) -> MyArray:
+def select_n_my_array_array_like_array_like(
+    which: MyArray, case0: ArrayLike, case1: ArrayLike
+) -> MyArray:
     return MyArray(lax.select_n(which.array, case0, case1))
 
 
 @quax.register(lax.select_n_p)
-def _(which: MyArray, case0: ArrayLike, case1: MyArray) -> MyArray:
+def select_n_my_array_array_like_my_array(
+    which: MyArray, case0: ArrayLike, case1: MyArray
+) -> MyArray:
     return MyArray(lax.select_n(which.array, case0, case1.array))
 
 

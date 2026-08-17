@@ -23,8 +23,10 @@ import quax.examples.zero as zero
 
 z = zero.Zero((3, 4), jnp.float32)  # shape and dtype
 
+
 def slice_and_multiply(a, b):
-  return a[:, :2] * b
+    return a[:, :2] * b
+
 
 out = quax.quaxify(slice_and_multiply)(z, 3)
 print(out)  # Zero(shape=(3, 2), dtype=dtype('float32'))
