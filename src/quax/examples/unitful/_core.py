@@ -43,7 +43,7 @@ class Unitful(quax.ArrayValue):
 
 
 @quax.register(jax.lax.add_p)
-def _(x: Unitful, y: Unitful):  # function name doesn't matter
+def add_unitful_unitful(x: Unitful, y: Unitful):
     if x.units == y.units:
         return Unitful(x.array + y.array, x.units)
     else:
@@ -51,7 +51,7 @@ def _(x: Unitful, y: Unitful):  # function name doesn't matter
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: Unitful, y: Unitful, /, **kw: Any) -> Unitful:
+def mul_unitful_unitful(x: Unitful, y: Unitful, /, **kw: Any) -> Unitful:
     units = x.units.copy()
     for k, v in y.units.items():
         if k in units:
@@ -62,23 +62,23 @@ def _(x: Unitful, y: Unitful, /, **kw: Any) -> Unitful:
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: ArrayLike, y: Unitful, /, **kw: Any) -> Unitful:
+def mul_arraylike_unitful(x: ArrayLike, y: Unitful, /, **kw: Any) -> Unitful:
     return Unitful(jax.lax.mul_p.bind(x, y.array, **kw), y.units)
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
+def mul_unitful_arraylike(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
     return Unitful(jax.lax.mul_p.bind(x.array, y, **kw), x.units)
 
 
 @quax.register(jax.lax.integer_pow_p)
-def _(x: Unitful, *, y: int):
+def integer_pow_unitful(x: Unitful, *, y: int):
     units = {k: v * y for k, v in x.units.items()}
     return Unitful(jax.lax.integer_pow_p.bind(x.array, y=y), units)
 
 
 @quax.register(jax.lax.lt_p)
-def _(x: Unitful, y: Unitful, **kwargs):
+def lt_unitful_unitful(x: Unitful, y: Unitful, **kwargs):
     if x.units == y.units:
         return jax.lax.lt(x.array, y.array, **kwargs)
     else:
@@ -88,19 +88,19 @@ def _(x: Unitful, y: Unitful, **kwargs):
 
 
 @quax.register(jax.lax.broadcast_in_dim_p)
-def _(operand: Unitful, **kwargs):
+def broadcast_in_dim_unitful(operand: Unitful, **kwargs):
     kwargs.pop("sharding", None)  # TODO: handle sharding
     new_arr = jax.lax.broadcast_in_dim(operand.array, **kwargs)
     return Unitful(new_arr, operand.units)
 
 
 @quax.register(jax.lax.copy_p)
-def _(x: Unitful, **kw: Any) -> Unitful:
+def copy_unitful(x: Unitful, **kw: Any) -> Unitful:
     return Unitful(jax.lax.copy_p.bind(x.array, **kw), x.units)
 
 
 @quax.register(jax.lax.select_n_p)
-def _(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
+def select_n_unitful(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
     units = cases[0].units
     if any(c.units != units for c in cases[1:]):
         raise ValueError(

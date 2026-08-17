@@ -54,6 +54,9 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 
 - **`eqx.field(static=True)` is mandatory** for shapes, dtypes, and bool flags — forget it and JAX will attempt to trace through them.
 - **`materialise()` may intentionally raise** — `MyArray.materialise()` (test fixture) and `LoraArray.materialise()` raise on purpose; do not "fix" them.
+- **Name every registered rule** — `@quax.register` handlers are named after the primitive and the
+  types they dispatch on (`add_unitful_unitful`, `convert_element_type_zero`, `cond_quax`), never
+  `def _`. Dispatch ignores the name; tracebacks, plum's ambiguity errors, and profiles do not.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.

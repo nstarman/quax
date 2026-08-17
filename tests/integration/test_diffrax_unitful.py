@@ -125,12 +125,14 @@ diffrax = pytest.importorskip("diffrax")
 
 
 @quax.register(jax.lax.add_p)
-def _(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
+def add_unitful_arraylike(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
     return Unitful(jax.lax.add_p.bind(x.array, y, **kw), x.units)
 
 
 @quax.register(select_if_vmap_p)
-def _(pred: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any) -> Any:
+def select_if_vmap_unitful(
+    pred: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any
+) -> Any:
     unitful = [c.units for c in cases if isinstance(c, Unitful)]
     if not unitful:
         return select_if_vmap_p.bind(pred, *cases, **kw)
@@ -141,7 +143,9 @@ def _(pred: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any) -> Any:
 
 
 @quax.register(maybe_set_p)
-def _(pred: ArrayLike, xs: ArrayLike, x: Unitful, *rest: Any, **kw: Any) -> Any:
+def maybe_set_unitful(
+    pred: ArrayLike, xs: ArrayLike, x: Unitful, *rest: Any, **kw: Any
+) -> Any:
     # The buffer `xs` is a plain array; store the magnitude and let the read
     # side re-attach units via the `add`/`select` rules above.
     return maybe_set_p.bind(pred, xs, x.array, *rest, **kw)
