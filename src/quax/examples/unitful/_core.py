@@ -92,3 +92,19 @@ def _(operand: Unitful, **kwargs):
     kwargs.pop("sharding", None)  # TODO: handle sharding
     new_arr = jax.lax.broadcast_in_dim(operand.array, **kwargs)
     return Unitful(new_arr, operand.units)
+
+
+@quax.register(jax.lax.copy_p)
+def _(x: Unitful, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.copy_p.bind(x.array, **kw), x.units)
+
+
+@quax.register(jax.lax.select_n_p)
+def _(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
+    units = cases[0].units
+    if any(c.units != units for c in cases[1:]):
+        raise ValueError(
+            f"Cannot select between arrays with units {[c.units for c in cases]}."
+        )
+    arrays = [c.array for c in cases]
+    return Unitful(jax.lax.select_n_p.bind(which, *arrays, **kw), units)
