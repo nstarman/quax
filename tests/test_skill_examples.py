@@ -17,7 +17,9 @@ BLOCK = re.compile(r"^```python\n(.*?)^```", re.DOTALL | re.MULTILINE)
 
 def test_skill_examples_run():
     """Every ```python block in the skill executes without error."""
-    blocks = BLOCK.findall(SKILL.read_text())
+    # Explicit encoding: the skill contains non-ASCII punctuation (µ, —, ≤, ×),
+    # and `read_text()` would otherwise decode it with the platform default.
+    blocks = BLOCK.findall(SKILL.read_text(encoding="utf-8"))
     assert blocks, f"no ```python blocks found in {SKILL} -- has the skill moved?"
 
     namespace: dict[str, object] = {}
