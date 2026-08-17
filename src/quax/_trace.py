@@ -13,7 +13,7 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
 
-from ._compat import JAX_GE_0_9_2, to_ct_aval, typeof
+from ._compat import JAX_GE_0_9_2, JAX_GE_0_11_0, to_ct_aval, typeof
 from ._dispatch import (
     _default_process,
     _dispatch_cache,
@@ -503,9 +503,17 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
             for x in (*res_values, *ct_values)
         ]
         with core.set_current_trace(trace):
+            # JAX 0.11 added `defvjp_with_logs`: the flat bwd rule now returns a
+            # `(cotangents, logs)` pair rather than a bare list of cotangents,
+            # and `ad._custom_lin_transpose` unpacks that pair from us in turn
+            # (`cts_in, logs = bwd.call_wrapped(...)`). `logs` is `None` unless
+            # the rule was registered with `defvjp_with_logs`; pass whatever the
+            # wrapped rule produced straight through.
+            raw = f(*in_tracers)
+            raw, logs = raw if JAX_GE_0_11_0 else (raw, None)
             cts_in = [
                 x if x is None or type(x) in (Zero, SZ) else trace.to_value(x)
-                for x in f(*in_tracers)
+                for x in raw
             ]
         del trace, in_tracers
 
@@ -526,7 +534,8 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
                 raise TypeError(msg)
             out.extend(leaves)
         i += n
-    return out
+    # Mirror the shape JAX expects back (see the `defvjp_with_logs` note above).
+    return (out, logs) if JAX_GE_0_11_0 else out
 
 
 # Any -> Any so overloads carry the public types. mypy can't prove the else
