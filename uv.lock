@@ -1463,7 +1463,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 bench = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-benchmark", specifier = ">=5.1.0" },
@@ -1471,7 +1471,7 @@ bench = [
     { name = "pytest-env", specifier = ">=1.1.5" },
 ]
 dev = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
     { name = "hippogriffe", specifier = "==0.2.2" },
     { name = "jax", extras = ["cpu"] },
     { name = "mkdocstrings", extras = ["python"], specifier = "==1.0.6" },
@@ -1496,7 +1496,7 @@ lint = [
     { name = "ruff", specifier = ">=0.15.9" },
 ]
 tests = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },
