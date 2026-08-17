@@ -100,10 +100,12 @@ def test_decorator_stack_runs(getkey):
 
 
 def test_materialise():
-    """Skipped: the `RuntimeError` below escapes mid-trace, and something in JAX's
-    tracing state survives it -- a later, unrelated `jax.jit(quaxify(...))` call then
-    sees `EvalTrace` as its parent and raises `UnexpectedTracerError`. Pre-existing,
-    and independent of how `aval()` is evaluated.
+    """`allow_materialise=False` refuses to materialise, and does so mid-trace.
+
+    The `RuntimeError` escapes from inside a quaxified `custom_jvp` function, so this
+    also exercises the abandoned-transformation path: see
+    `tests/unit/test_custom_jvp.py::test_aborted_trace_does_not_clobber_trace_context`
+    for what that used to do to the next test to run.
     """
     key = jr.key(0)
 
@@ -131,11 +133,11 @@ def test_regression_38(getkey):
 
     func = quax.quaxify(f)
 
-    # Binding a raw `LoraArray` must be an error rather than silently doing
-    # something wrong; which error depends on how far it gets. Since stackless
-    # tracers JAX canonicalises `bind`'s arguments before consulting the current
-    # trace, so it never reaches quax's dispatch and raises TypeError. Otherwise:
-    # TypeCheckError when jaxtyping is on, NotFoundLookupError when it is off --
+    # Binding a raw `LoraArray` must be an error rather than silently doing something
+    # wrong. Which error depends on how far it gets. With stackless tracers, JAX
+    # canonicalises `bind`'s arguments before consulting the current trace, so it
+    # raises TypeError without ever reaching quax's dispatch. Reaching dispatch gives
+    # TypeCheckError when jaxtyping is on, and NotFoundLookupError when it is off --
     # which kicks over to the default process, itself raising RuntimeError when
     # `allow_materialise` is False.
     with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
