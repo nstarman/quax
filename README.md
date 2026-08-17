@@ -83,13 +83,15 @@ quax.quaxify(run)(lora_linear, vector)
 lora_linear = lora.loraify(linear, rank=2, key=key3)
 ```
 
-## Work in progress!
+## Supported JAX features
 
-Right now, the following are not supported:
+Quax handles `jax.custom_jvp`, `jax.custom_vjp`, `jax.lax.cond_p`,
+`jax.lax.while_p`, and `jax.lax.scan_p`. If you hit a JAX transform or
+primitive that Quax does not understand, open an issue or pull request.
 
-- `jax.custom_vjp`
-
-It should be fairly straightforward to add support for these; open an issue or pull request. (We've already got `jax.custom_jvp`, `jax.lax.cond_p`, `jax.lax.while_p`, and `jax.lax.scan_p`. :) )
+One known limitation: Quax cannot see arrays that a library pre-allocates
+without reference to your `Value` (e.g. a `jnp.zeros` scratch buffer). Values
+written into such a buffer come back out as plain arrays.
 
 ## See also: other libraries in the JAX ecosystem
 
