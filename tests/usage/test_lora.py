@@ -13,9 +13,6 @@ import quax
 import quax.examples.lora as lora
 
 
-pytestmark = pytest.mark.skip(reason="Skipping tests until something is fixed in JAX.")
-
-
 def test_linear(getkey):
     linear = eqx.nn.Linear(10, 12, key=getkey())
     lora_weight = lora.LoraArray(linear.weight, rank=2, key=getkey())
@@ -102,7 +99,16 @@ def test_decorator_stack_runs(getkey):
     run3(mlp, vector)
 
 
+@pytest.mark.skip(
+    reason="Aborting a quaxified trace leaves JAX's tracing state polluted; "
+    "see tests/usage/test_prng.py::test_where, which then fails."
+)
 def test_materialise():
+    """Skipped: the `RuntimeError` below escapes mid-trace, and something in JAX's
+    tracing state survives it -- a later, unrelated `jax.jit(quaxify(...))` call then
+    sees `EvalTrace` as its parent and raises `UnexpectedTracerError`. Pre-existing,
+    and independent of how `aval()` is evaluated.
+    """
     key = jr.key(0)
 
     key, *subkeys = jr.split(key, 3)
@@ -119,8 +125,14 @@ def test_materialise():
         _ = quax.quaxify(jax.nn.relu)(x_false)
 
 
+@pytest.mark.skip(reason="Broken by JAX's stackless tracers; see docstring.")
 def test_regression_38(getkey):
-    """Regression test for PR 38 (stackless tracers)."""
+    """Regression test for PR 38 (stackless tracers).
+
+    Currently skipped: since stackless tracers, `Primitive.bind` canonicalizes its
+    arguments before consulting the current trace, so passing a raw `LoraArray`
+    raises `TypeError` from JAX rather than reaching quax's dispatch.
+    """
     x = jnp.arange(4.0).reshape(2, 2)
     y = lora.LoraArray(x, rank=1, key=getkey())
 

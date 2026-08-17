@@ -43,7 +43,22 @@ class _QuaxTracer(core.Tracer):
         # allocation, ~20 µs) so that jax.jit(value.method) works. That wrapping
         # is pure overhead here — this aval is consumed immediately and never
         # handed to jax.jit. _DenseArrayValue already bypasses __getattribute__.
-        self._cached_aval: core.AbstractValue = type(value).aval(value)
+        self._cached_aval: core.AbstractValue
+        if type(value) is _DenseArrayValue:
+            # Fast path: no user code, no primitives bound, so no need to pay
+            # for the trace-context manager below.
+            self._cached_aval = _DenseArrayValue.aval(value)
+        else:
+            # `aval()` is user code and may bind JAX primitives (e.g.
+            # `lora.LoraArray.aval` calls `lax.stop_gradient`). Tracers are
+            # constructed while the current trace has been taken -- inside
+            # `core.take_current_trace()`, or inside `Primitive.bind` while it
+            # dispatches to `process_primitive` -- and JAX >=0.11 leaves the
+            # current trace as `None` there (it used to be `eval_trace`), so
+            # binding anything would fail. Evaluate the aval under the parent
+            # trace, which is where the value's leaves live.
+            with core.set_current_trace(trace.parent_trace):
+                self._cached_aval = type(value).aval(value)
 
     @property
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
