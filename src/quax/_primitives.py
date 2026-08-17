@@ -152,12 +152,21 @@ def cond_quax(
 
     out_trees: list[Any] = []
 
-    def _make_quax_branch(jaxpr: core.ClosedJaxpr, /) -> core.ClosedJaxpr:
+    def _make_quax_branch(
+        jaxpr: core.ClosedJaxpr, /, *, materialise: bool = False
+    ) -> core.ClosedJaxpr:
         def flat_quax_call(flat_args: list[Any]) -> list[Any]:
             _args = jtu.tree_unflatten(in_tree, flat_args)
-            flat_out, out_tree = jtu.tree_flatten(
-                quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
-            )
+            out = quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
+            if materialise:
+                out = jtu.tree_map(
+                    lambda x: (
+                        type(x).materialise(x) if isinstance(x, ArrayValue) else x
+                    ),
+                    out,
+                    is_leaf=lambda x: isinstance(x, ArrayValue),
+                )
+            flat_out, out_tree = jtu.tree_flatten(out)
             out_trees.append(out_tree)
             return flat_out
 
@@ -166,7 +175,18 @@ def cond_quax(
     quax_branches = tuple(_make_quax_branch(j) for j in branches)
 
     if any(t != out_trees[0] for t in out_trees[1:]):
-        raise TypeError("all branches output must have the same pytree.")
+        # The branches disagree on which outputs are `Value`s -- typically one
+        # returns the carried `Value` while another returns a read of a buffer
+        # the caller pre-allocated without reference to it, which quax never saw
+        # and so cannot lift back into a `Value`. `cond_p` needs a single output
+        # structure, so retrace with every `ArrayValue` materialised: the same
+        # fallback `Value.default` applies to any primitive with no rule. A type
+        # that refuses to materialise raises from there, which reports the lost
+        # information far better than a pytree mismatch would.
+        out_trees.clear()
+        quax_branches = tuple(_make_quax_branch(j, materialise=True) for j in branches)
+        if any(t != out_trees[0] for t in out_trees[1:]):
+            raise TypeError("all branches output must have the same pytree.")
 
     kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:
