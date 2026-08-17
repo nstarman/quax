@@ -16,47 +16,25 @@ uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 
 ## Architecture
 
-Core implementation: [src/quax/_core.py](src/quax/_core.py)
-
-| Symbol | Role |
+| Module | Role |
 |--------|------|
-| `Value` | Base `eqx.Module`; requires `aval()` and `materialise()` |
-| `ArrayValue(Value)` | Array-like base class; exposes `.shape`, `.dtype`, `.ndim` |
-| `quaxify(fn)` | Wraps any JAX function to enable quax dispatch |
-| `register(primitive)` | Decorator to add a plum multiple-dispatch rule for a JAX primitive |
-| `_QuaxTrace` | Internal JAX interpreter; dispatches via plum |
-| `_compat.py` | Version flags (`JAX_GE_0_9_2`, etc.) for JAX API differences |
+| [_values.py](src/quax/_values.py) | `Value` (base `eqx.Module`; requires `aval()` and `materialise()`), `ArrayValue` (exposes `.shape`, `.dtype`, `.ndim`, `.size`), internal `_DenseArrayValue` |
+| [_quaxify.py](src/quax/_quaxify.py) | `quaxify(fn)` and `_Quaxify`; wraps any JAX function to enable quax dispatch |
+| [_dispatch.py](src/quax/_dispatch.py) | `register(primitive)`, the plum rule table, and the dispatch cache |
+| [_primitives.py](src/quax/_primitives.py) | Handlers for `jit_p`, `while_p`, `cond_p`, `scan_p`, and their jaxpr caches |
+| [_trace.py](src/quax/_trace.py) | `_QuaxTrace`/`_QuaxTracer`; the interpreter that dispatches via plum |
+| [_module.py](src/quax/_module.py) | `_FastModuleMeta`; skips equinox per-instance validation on hot paths |
+| [_compat.py](src/quax/_compat.py) | Version flags (`JAX_GE_0_9_2`, etc.) for JAX API differences |
 
-Dispatch resolution for a primitive:
+## Using and extending quax
 
-1. Registered rule matches via plum → use it
-2. Exactly one arg overrides `Value.default` → use that
-3. Zero overrides → materialise all args, call normal JAX
-4. Multiple overrides → runtime error
+The user-facing material — the dispatch resolution ladder, creating a custom
+`ArrayValue`, writing and disambiguating rules, boundary behaviour, and
+troubleshooting — lives in [skills/quax/SKILL.md](skills/quax/SKILL.md). It is
+the single source of truth for that; do not duplicate it here.
 
-## Creating a Custom `ArrayValue`
-
-See [src/quax/examples/zero/_core.py](src/quax/examples/zero/_core.py) (minimal) and [src/quax/examples/lora/_core.py](src/quax/examples/lora/_core.py) (advanced).
-
-```python
-class MyType(quax.ArrayValue):
-    array: jax.Array
-    _shape: tuple[int, ...] = eqx.field(static=True)  # shapes/flags MUST be static
-
-    def aval(self) -> jax.core.ShapedArray:      # REQUIRED
-        return jax.core.ShapedArray(self._shape, jnp.float32)
-
-    def materialise(self) -> jax.Array:           # REQUIRED
-        return self.array                         # raise RuntimeError to forbid fallback
-
-@quax.register(jax.lax.add_p)
-def _(x: MyType, y: MyType) -> MyType:
-    assert x._shape == y._shape
-    array = x.array + y.array
-    return MyType(array, _shape=x._shape)
-```
-
-Use `@quax.register(prim, precedence=1)` to resolve plum ambiguity between overlapping rules.
+Reference implementations: [src/quax/examples/zero/_core.py](src/quax/examples/zero/_core.py)
+(minimal) and [src/quax/examples/lora/_core.py](src/quax/examples/lora/_core.py) (advanced).
 
 ## Testing Patterns
 
@@ -77,10 +55,10 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **`eqx.field(static=True)` is mandatory** for shapes, dtypes, and bool flags — forget it and JAX will attempt to trace through them.
 - **`materialise()` may intentionally raise** — `MyArray.materialise()` (test fixture) and `LoraArray.materialise()` raise on purpose; do not "fix" them.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
-- **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_core.py` has dual branches for JAX API differences across versions.
+- **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
-- **Doctests run** from `README.md`, `docs/`, and `src/` — keep examples in those files valid.
+- **Doctests are not collected.** `testpaths` lists `README` and `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `README.md`, `docs/`, and `src/` docstrings are never run. Verify them by hand when you change them. The one exception is [skills/quax/SKILL.md](skills/quax/SKILL.md), whose `python` blocks are executed by [tests/test_skill_examples.py](tests/test_skill_examples.py).
 
 ## Dependencies
 
