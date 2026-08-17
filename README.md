@@ -98,12 +98,10 @@ written into such a buffer come back out as plain arrays. Where that forces a
 outputs rather than failing -- so a `Value` that refuses to materialise (like
 `quax.examples.unitful`) still stops there, by design.
 
-Another: forward-mode `quaxify` works through `custom_vjp`-based libraries
-(e.g. `diffrax`), and ordinary `custom_vjp` differentiates fine under
-`jax.grad`, but reverse-mode through a library built on
-`equinox.internal.while_loop` (and so `diffrax`) currently runs into the
-buffer limitation above, and a second, independent gap sits behind it -- so
-fixing buffers alone would not be enough to make this differentiate.
+Reverse-mode works through `custom_vjp`-based libraries, including ones built
+on `equinox.internal.while_loop` such as `diffrax`. A `Value` still has to
+survive the buffer limitation above to get there: one that refuses to
+materialise will stop at the buffer rather than at the gradient.
 
 ## See also: other libraries in the JAX ecosystem
 
