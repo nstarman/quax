@@ -31,9 +31,26 @@ reasons, layered:
    run of the same loop proves nothing).
 
 Neither gap is a regression: ordinary `custom_vjp` reverse-mode already
-works (see `tests/unit/test_custom_vjp.py`). See task-5-report.md's
-fix-round-3 section for the full A/B/C configuration matrix (hit counts and
-innermost frames) this account is drawn from.
+works (see `tests/unit/test_custom_vjp.py`).
+
+That account comes from three configurations, each run with a counting
+monkeypatch on `_QuaxTrace.process_custom_vjp_call` and the innermost frame
+read off the traceback:
+
+- bare `eqxi.while_loop(kind="checkpointed")` over plain arrays (not a
+  `Value`), `jax.grad` -> succeeds, **0** dispatches. `quaxify`
+  short-circuits and never installs its trace when no `Value` is present,
+  so this configuration exercises none of the code above. Recorded so that
+  nobody re-runs it, sees green, and concludes the gap is fixed.
+- the same loop over a minimal materialising dense `ArrayValue`, no
+  bridging rules, `jax.grad` -> `TracerBoolConversionError`, **1**
+  dispatch, innermost frame `equinox/internal/_loop/checkpointed.py:766`.
+  This is gap (2), and it needs no `Unitful` and no diffrax to reproduce.
+- this module's own call (`Unitful` plus the bridging rules below),
+  `jax.grad` -> `ValueError: Refusing to materialise Unitful array.`,
+  **1** dispatch, innermost frame `quax/examples/unitful/_core.py:42`,
+  last primitive dispatched `select_n`. This is gap (1); it never reaches
+  equinox at all, which is why it masks gap (2).
 """
 
 from typing import Any
@@ -208,5 +225,5 @@ def test_diffrax_step_exercises_custom_vjp():
 # this test pass. Neither gap is a regression -- ordinary `custom_vjp`
 # reverse-mode already works, see `tests/unit/test_custom_vjp.py`. Landing
 # this forward-only and documenting both gaps is the maintainer-approved
-# plan, not something to paper over with `xfail`. See task-5-report.md's
-# fix-round-3 section for the full configuration matrix.
+# plan, not something to paper over with `xfail`. The module docstring
+# records the three configurations this conclusion rests on.
