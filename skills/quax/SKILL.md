@@ -121,7 +121,7 @@ class Meters(quax.ArrayValue):
         raise ValueError("Refusing to materialise Meters: it would drop the unit.")
 
 @quax.register(lax.add_p)
-def _(x: Meters, y: Meters) -> Meters:
+def add_meters_meters(x: Meters, y: Meters) -> Meters:
     return Meters(x.array + y.array)
 
 quax.quaxify(jnp.add)(Meters(jnp.arange(3.0)), Meters(jnp.ones(3)))
@@ -172,7 +172,16 @@ lists/scalars without writing `__init__`.
 
 `@quax.register(primitive)` takes the `jax.extend.core.Primitive`, and dispatches
 on the **type annotations** — plum reads them, so they are load-bearing, not
-documentation. The function name is irrelevant; `def _(...)` is idiomatic.
+documentation.
+
+**Name the rule; never `def _(...)`.** Dispatch does not read the name, but
+everything you debug with does: tracebacks, `plum` ambiguity and redefinition
+errors, and profiles all identify a rule by its function name, and a module of
+rules all called `_` makes every one of them indistinguishable. Name it after
+the primitive and the types it dispatches on — `add_meters_meters`,
+`mul_meters_array_like`, `select_n_unitful` — matching the existing
+`convert_element_type_zero` in `quax.examples.zero` and `cond_quax` in
+`quax._primitives`.
 
 Find the primitive behind a `jnp` function by tracing it:
 
@@ -191,11 +200,11 @@ operand you do not own:
 
 ```python
 @quax.register(lax.mul_p)
-def _(x: Meters, y: ArrayLike, /, **kw) -> Meters:
+def mul_meters_array_like(x: Meters, y: ArrayLike, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x.array, y, **kw))
 
 @quax.register(lax.mul_p)
-def _(x: ArrayLike, y: Meters, /, **kw) -> Meters:
+def mul_array_like_meters(x: ArrayLike, y: Meters, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x, y.array, **kw))
 ```
 
@@ -214,7 +223,7 @@ raises `AmbiguousLookupError`. Fix it by adding the specific rule with
 
 ```python
 @quax.register(lax.mul_p, precedence=1)
-def _(x: Meters, y: Meters, /, **kw) -> Meters:
+def mul_meters_meters(x: Meters, y: Meters, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x.array, y.array, **kw))
 ```
 

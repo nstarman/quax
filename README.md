@@ -83,13 +83,22 @@ quax.quaxify(run)(lora_linear, vector)
 lora_linear = lora.loraify(linear, rank=2, key=key3)
 ```
 
-## Work in progress!
+## Supported JAX features
 
-Right now, the following are not supported:
+Quax handles `jax.custom_jvp`, `jax.custom_vjp`, `jax.lax.cond_p`,
+`jax.lax.while_p`, and `jax.lax.scan_p`. If you hit a JAX transform or
+primitive that Quax does not understand, open an issue or pull request.
 
-- `jax.custom_vjp`
+One known limitation: Quax cannot see arrays that a library pre-allocates
+without reference to your `Value` (e.g. a `jnp.zeros` scratch buffer). Values
+written into such a buffer come back out as plain arrays.
 
-It should be fairly straightforward to add support for these; open an issue or pull request. (We've already got `jax.custom_jvp`, `jax.lax.cond_p`, `jax.lax.while_p`, and `jax.lax.scan_p`. :) )
+Another: forward-mode `quaxify` works through `custom_vjp`-based libraries
+(e.g. `diffrax`), and ordinary `custom_vjp` differentiates fine under
+`jax.grad`, but reverse-mode through a library built on
+`equinox.internal.while_loop` (and so `diffrax`) currently runs into the
+buffer limitation above, and a second, independent gap sits behind it -- so
+fixing buffers alone would not be enough to make this differentiate.
 
 ## See also: other libraries in the JAX ecosystem
 

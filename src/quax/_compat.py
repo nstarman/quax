@@ -12,6 +12,7 @@ __all__ = (
     "jit_p",
     "is_early_inline",
     "scan_bind_params",
+    "to_ct_aval",
     "typeof",
     "unpack_scan_args",
 )
@@ -158,6 +159,20 @@ if JAX_GE_0_8_2:
     typeof = jax.typeof
 else:
     typeof = jax.core.get_aval  # pyright: ignore[reportAttributeAccessIssue]
+
+
+# `AbstractValue.to_ct_aval` is absent on the `jax>=0.7.2` floor, where only
+# `to_tangent_aval` exists; the two coincide for shaped avals. Probed with
+# `hasattr` because the release that added `to_ct_aval` is unverified.
+_HAS_TO_CT_AVAL: Final = hasattr(
+    jax.core.ShapedArray,  # pyright: ignore[reportAttributeAccessIssue]
+    "to_ct_aval",
+)
+
+
+def to_ct_aval(aval: Any, /) -> Any:
+    """Return `aval`'s cotangent aval, on any supported JAX version."""
+    return aval.to_ct_aval() if _HAS_TO_CT_AVAL else aval.to_tangent_aval()
 
 
 # Mark `jax.Array` as "faithful" for `plum` multiple dispatch.

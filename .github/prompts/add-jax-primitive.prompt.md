@@ -19,11 +19,12 @@ Register a new JAX primitive handler for the `$input` operation.
 
    ```python
    @quax.register(lax.<primitive>_p)
-   def _(x: MyType, ...) -> MyType:
+   def <primitive>_<mytype>(x: MyType, ...) -> MyType:
        # implement using x.array, x.shape, x.dtype, etc.
        ...
    ```
 
+   - Name the function after the primitive and the types it dispatches on (`add_meters_meters`, `mul_meters_array_like`) — never `def _`, which makes every rule indistinguishable in tracebacks and in plum's ambiguity errors
    - Keep keyword-only params as `**kw` if the primitive may pass extra args (e.g. `out_dtype` for `mul_p`)
    - Forward unknown kwargs to the underlying JAX op when doing a materialised fallback
 
@@ -31,7 +32,7 @@ Register a new JAX primitive handler for the `$input` operation.
 
    ```python
    @quax.register(lax.<primitive>_p, precedence=1)
-   def _(x: MyType, y: MyType) -> MyType:
+   def <primitive>_<mytype>_<mytype>(x: MyType, y: MyType) -> MyType:
        ...
    ```
 

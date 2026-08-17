@@ -1,3 +1,4 @@
+import functools as ft
 import itertools as it
 from collections.abc import Sequence
 from typing import Any, overload
@@ -10,8 +11,9 @@ import jax.numpy as jnp
 import jax.tree_util as jtu
 import plum
 from jax.custom_derivatives import SymbolicZero as SZ
+from jax.interpreters.ad import Zero
 
-from ._compat import JAX_GE_0_9_2, typeof
+from ._compat import JAX_GE_0_9_2, JAX_GE_0_11_0, to_ct_aval, typeof
 from ._dispatch import (
     _default_process,
     _dispatch_cache,
@@ -248,6 +250,47 @@ class _QuaxTrace(
             out_values = jtu.tree_unflatten(out_treedef, out_leaves)
             return [_QuaxTracer(self, x) for x in out_values]
 
+    def process_custom_vjp_call(
+        self, primitive, fun, fwd, bwd, tracers, *, out_trees, symbolic_zeros
+    ) -> "list[_QuaxTracer]":
+        # Each `t.value` is a `Value`, and thus a PyTree; flatten the
+        # `Value`-ness away and re-bind the primitive over the leaves.
+        in_values = [self.to_value(t) for t in tracers]
+        in_leaves, in_treedef = jtu.tree_flatten(in_values)
+        in_leaf_avals = tuple(typeof(x) for x in in_leaves)
+
+        fun, fun_aux = _custom_vjp_fun_wrap(fun, self.tag, in_treedef)
+        fwd, fwd_aux = _custom_vjp_fwd_wrap(fwd, self.tag, in_treedef, out_trees)
+        bwd = _custom_vjp_bwd_wrap(bwd, self.tag, in_treedef, in_leaf_avals, fwd_aux)
+
+        def quax_out_trees():
+            # Downstream only reads leaf counts and the forwarding list. Our
+            # `fwd` returns every residual explicitly, so nothing is forwarded.
+            out_treedef, res_treedef = fwd_aux()
+            return out_treedef, res_treedef, [None] * res_treedef.num_leaves
+
+        if JAX_GE_0_9_2:
+            params = dict(
+                subfuns=(fun, fwd, bwd),
+                out_trees=quax_out_trees,
+                symbolic_zeros=symbolic_zeros,
+            )
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace, tuple(in_leaves), in_leaf_avals, params
+            )
+        else:
+            out_leaves = primitive.bind_with_trace(
+                self.parent_trace,
+                (fun, fwd, bwd, *in_leaves),
+                dict(out_trees=quax_out_trees, symbolic_zeros=symbolic_zeros),
+            )
+
+        # Either the primal or the fwd rule ran, depending on the parent trace.
+        fst, aux = lu.merge_linear_aux(fun_aux, fwd_aux)
+        out_treedef = aux if fst else aux[0]
+        out_values = jtu.tree_unflatten(out_treedef, out_leaves)
+        return [_QuaxTracer(self, x) for x in out_values]
+
     # TODO: add other process_* rules
 
 
@@ -357,6 +400,129 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
             "Primals and tangents had the same class, but different flattened results."
         )
     yield out_primals + out_tangents, out_primal_treedef
+
+
+def _leaf_counts(treedef: jtu.PyTreeDef, /) -> list[int]:  # pyright: ignore[reportInvalidTypeForm]
+    """Number of leaves contributed by each element of a flattened list."""
+    return [child.num_leaves for child in treedef.children()]
+
+
+@ft.partial(lu.transformation_with_aux2, use_eq_store=True)
+def _custom_vjp_fun_wrap(f, store, tag, in_treedef, *in_leaves):
+    """Run the primal function on re-inflated `Value`s; store the out treedef."""
+    in_values = jtu.tree_unflatten(in_treedef, in_leaves)
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        in_tracers = [_QuaxTracer(trace, x) for x in in_values]
+        with core.set_current_trace(trace):
+            out_values = [trace.to_value(t) for t in f(*in_tracers)]
+        del trace, in_tracers
+    out_leaves, out_treedef = jtu.tree_flatten(out_values)
+    store.store(out_treedef)
+    return out_leaves
+
+
+@ft.partial(lu.transformation_with_aux2, use_eq_store=True)
+def _custom_vjp_fwd_wrap(f, store, tag, in_treedef, out_trees, *in_leaves_and_nz):
+    """Run the fwd rule on `Value`s, returning `(*residuals, *primal_outs)` as leaves.
+
+    JAX interleaves each argument with a "this argument has a nonzero tangent"
+    flag. Those flags arrive per *leaf*; the wrapped rule wants one per `Value`,
+    so they are OR-ed together over each value's leaves.
+    """
+    leaves = in_leaves_and_nz[::2]
+    nzs = in_leaves_and_nz[1::2]
+    in_values = jtu.tree_unflatten(in_treedef, leaves)
+
+    value_nzs = []
+    i = 0
+    for n in _leaf_counts(in_treedef):
+        value_nzs.append(any(nzs[i : i + n]))
+        i += n
+
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        in_tracers = [_QuaxTracer(trace, x) for x in in_values]
+        interleaved = [x for pair in zip(in_tracers, value_nzs) for x in pair]
+        with core.set_current_trace(trace):
+            res_and_primals_out = f(*interleaved)
+            # JAX prunes residuals that are identical to an input, recording the
+            # index in `input_forwards`; splice them back so we can flatten the
+            # full residual list (see `ad.JVPTrace.process_custom_vjp_call`).
+            _, res_tree, input_forwards = out_trees()
+            n_forwarded = sum(idx is not None for idx in input_forwards)
+            n_res_out = res_tree.num_leaves - n_forwarded
+            res_out = iter(res_and_primals_out[:n_res_out])
+            res = [
+                next(res_out) if idx is None else in_tracers[idx]
+                for idx in input_forwards
+            ]
+            res_values = [trace.to_value(t) for t in res]
+            out_values = [trace.to_value(t) for t in res_and_primals_out[n_res_out:]]
+        del trace, in_tracers
+
+    res_leaves, res_treedef = jtu.tree_flatten(res_values)
+    out_leaves, out_treedef = jtu.tree_flatten(out_values)
+    store.store((out_treedef, res_treedef))
+    return [*res_leaves, *out_leaves]
+
+
+@lu.transformation2
+def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_cts):
+    """Run the bwd rule on `Value`s, returning one cotangent per input *leaf*."""
+    out_treedef, res_treedef = fwd_aux()
+    n_res = res_treedef.num_leaves
+    res_values = jtu.tree_unflatten(res_treedef, res_and_cts[:n_res])
+    ct_values = jtu.tree_unflatten(out_treedef, res_and_cts[n_res:])
+    # A `Value` holding SZ leaves cannot answer `aval()`, so lift a single-leaf
+    # symbolic cotangent back to a value-level SZ (`all(...)` checks the leaf
+    # *is* an SZ). Multi-leaf symbolic cotangents fall through unhandled.
+    ct_values = [
+        # The leaf's aval, not the `Value`'s (`_custom_jvp_jvp_wrap` uses the
+        # latter); they agree for every single-leaf `Value` we know of.
+        SZ(leaves[0].aval)
+        if (leaves := jtu.tree_leaves(c, is_leaf=lambda x: type(x) is SZ))
+        and all(type(x) is SZ for x in leaves)
+        and len(leaves) == 1
+        else c
+        for c in ct_values
+    ]
+
+    with core.take_current_trace() as parent_trace:
+        trace = _QuaxTrace(parent_trace, tag)
+        in_tracers = [
+            x if type(x) is SZ else _QuaxTracer(trace, x)  # pyright: ignore[reportArgumentType]
+            for x in (*res_values, *ct_values)
+        ]
+        with core.set_current_trace(trace):
+            # JAX 0.11's `defvjp_with_logs` made the flat bwd rule return a
+            # `(cotangents, logs)` pair, which our caller unpacks in turn.
+            raw = f(*in_tracers)
+            raw, logs = raw if JAX_GE_0_11_0 else (raw, None)
+            cts_in = [
+                x if x is None or type(x) in (Zero, SZ) else trace.to_value(x)
+                for x in raw
+            ]
+        del trace, in_tracers
+
+    out: list[Any] = []
+    i = 0
+    for n, ct in zip(_leaf_counts(in_treedef), cts_in, strict=True):
+        avals = in_leaf_avals[i : i + n]
+        if ct is None or type(ct) in (Zero, SZ):
+            out.extend(Zero(to_ct_aval(a)) for a in avals)
+        else:
+            leaves = jtu.tree_leaves(ct)
+            if len(leaves) != n:
+                msg = (
+                    "custom_vjp bwd rule returned a cotangent that flattens to "
+                    f"{len(leaves)} leaves for an input that flattens to {n}. "
+                    "The cotangent must have the same structure as the primal."
+                )
+                raise TypeError(msg)
+            out.extend(leaves)
+        i += n
+    return (out, logs) if JAX_GE_0_11_0 else out
 
 
 # Any -> Any so overloads carry the public types. mypy can't prove the else
