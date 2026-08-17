@@ -78,7 +78,9 @@ def _op_sparse_to_dense(x, y, op):
 
 
 @quax.register(lax.broadcast_in_dim_p)
-def _(value: BCOO, *, broadcast_dimensions, shape, sharding=None) -> BCOO:
+def broadcast_in_dim_bcoo(
+    value: BCOO, *, broadcast_dimensions, shape, sharding=None
+) -> BCOO:
     n_extra_batch_dims = len(shape) - value.ndim
     if broadcast_dimensions != tuple(range(n_extra_batch_dims, len(shape))):
         raise NotImplementedError(
@@ -97,7 +99,7 @@ def _(value: BCOO, *, broadcast_dimensions, shape, sharding=None) -> BCOO:
 
 
 @quax.register(lax.squeeze_p)
-def _(x: BCOO, *, dimensions):
+def squeeze_bcoo(x: BCOO, *, dimensions):
     batch_ndim = x.data.ndim - 1
     for i in dimensions:
         assert x.shape[i] == 1
@@ -110,7 +112,7 @@ def _(x: BCOO, *, dimensions):
 
 
 @quax.register(lax.add_p)
-def _(x: BCOO, y: BCOO):
+def add_bcoo_bcoo(x: BCOO, y: BCOO):
     x_n_sparse = x.indices.shape[-1]
     y_n_sparse = y.indices.shape[-1]
     if x_n_sparse != y_n_sparse:
@@ -138,12 +140,12 @@ def _add_bcoo_dense(x: BCOO, y: ArrayLike) -> ArrayLike:
 
 
 @quax.register(lax.add_p)
-def _(x: ArrayLike, y: BCOO) -> ArrayLike:
+def add_array_like_bcoo(x: ArrayLike, y: BCOO) -> ArrayLike:
     return _add_bcoo_dense(y, x)
 
 
 @quax.register(lax.mul_p)
-def _(x: BCOO, y: BCOO, /, **kw: Any) -> BCOO:
+def mul_bcoo_bcoo(x: BCOO, y: BCOO, /, **kw: Any) -> BCOO:
     # This is actually surprisingly hard.
     raise NotImplementedError(
         "elementwise multiplication between two sparse matrices is not implemented"
@@ -168,5 +170,5 @@ def _mul_bcoo_dense(x: BCOO, y: ArrayLike, /, **kw: Any) -> BCOO:
 
 
 @quax.register(lax.mul_p)
-def _(x: ArrayLike, y: BCOO, /, **kw: Any) -> BCOO:
+def mul_array_like_bcoo(x: ArrayLike, y: BCOO, /, **kw: Any) -> BCOO:
     return _mul_bcoo_dense(y, x, **kw)

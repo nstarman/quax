@@ -14,9 +14,12 @@ import quax.examples.prng as prng
 key = prng.ThreeFry(0)
 prng.normal(key)
 
+
 # Some primitives (lax.add_p) are disallowed.
 def f(x, y):
     return x + y
+
+
 quax.quaxify(f)(key, 1)  # TypeError!
 
 # Some primitives (lax.select_n) are allowed.
@@ -24,9 +27,11 @@ quax.quaxify(f)(key, 1)  # TypeError!
 pred = jnp.array(True)
 key2 = prng.ThreeFry(1)
 
+
 @quax.quaxify
 def run(pred, key1, key2):
     return jnp.where(pred, key1, key2)
+
 
 run(pred, key, key2)
 ```
@@ -34,11 +39,11 @@ run(pred, key, key2)
 ## API
 
 ```python
-prng.PRNG      # Any custom PRNG type.
+prng.PRNG  # Any custom PRNG type.
 prng.ThreeFry  # Specifically a ThreeFry PRNG.
-prng.uniform   # Sample from a uniform distribution.
-prng.normal    # Sample from a normal distribution.
-prng.split     # Split a PRNG key into multiple independent keys.
+prng.uniform  # Sample from a uniform distribution.
+prng.normal  # Sample from a normal distribution.
+prng.split  # Split a PRNG key into multiple independent keys.
 ```
 
 In addition, `jnp.where(..., key1, key2)` is supported.

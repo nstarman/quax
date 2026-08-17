@@ -114,19 +114,25 @@ def _register_elementwise_binop(
     bind = quax.quaxify(prim.bind)
 
     @quax.register(prim)
-    def _(x: NamedArray, y: NamedArray, **params: Any) -> NamedArray:
+    def prim_named_array_named_array(
+        x: NamedArray, y: NamedArray, **params: Any
+    ) -> NamedArray:
         axes = _broadcast_axes(x.axes, y.axes)
         return NamedArray(bind(x.array, y.array, **params), axes)
 
     @quax.register(prim)
-    def _(x: ArrayLike | quax.ArrayValue, y: NamedArray, **params: Any) -> NamedArray:
+    def prim_array_like_named_array(
+        x: ArrayLike | quax.ArrayValue, y: NamedArray, **params: Any
+    ) -> NamedArray:
         if quax.quaxify(jnp.shape)(x) == ():
             return NamedArray(bind(x, y.array, **params), y.axes)
         else:
             raise ValueError(f"Cannot apply {op} to non-scalar array and named array.")
 
     @quax.register(prim)
-    def _(x: NamedArray, y: ArrayLike | quax.ArrayValue, **params: Any) -> NamedArray:
+    def prim_named_array_array_like(
+        x: NamedArray, y: ArrayLike | quax.ArrayValue, **params: Any
+    ) -> NamedArray:
         if quax.quaxify(jnp.shape)(y) == ():
             return NamedArray(bind(x.array, y, **params), x.axes)
         else:
@@ -139,7 +145,9 @@ _register_elementwise_binop(lax.sub, lax.sub_p)
 
 
 @quax.register(lax.dot_general_p)
-def _(lhs: NamedArray, rhs: NamedArray, *, dimension_numbers, **kwargs) -> NamedArray:
+def dot_general_named_array_named_array(
+    lhs: NamedArray, rhs: NamedArray, *, dimension_numbers, **kwargs
+) -> NamedArray:
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
     # `dot_general` pairs the contracted (and batched) axes positionally:
     # `lhs_contract[k]` is contracted with `rhs_contract[k]`. Compare the pairs,

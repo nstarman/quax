@@ -28,12 +28,12 @@ class _Pair(quax.ArrayValue):
 
 
 @quax.register(jax.lax.add_p)
-def _(x: _Pair, y: _Pair) -> _Pair:
+def add_pair_pair(x: _Pair, y: _Pair) -> _Pair:
     return _Pair(x.a + y.a, x.b + y.b)
 
 
 @quax.register(jax.lax.mul_p)
-def _(x: _Pair, y: _Pair) -> _Pair:
+def mul_pair_pair(x: _Pair, y: _Pair) -> _Pair:
     return _Pair(x.a * y.a, x.b * y.b)
 
 

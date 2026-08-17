@@ -18,7 +18,9 @@ In = named.Axis(3)
 Out = named.Axis(4)
 named_bias = named.NamedArray(linear.bias, (Out,))
 named_weight = named.NamedArray(linear.weight, (Out, In))
-named_linear = eqx.tree_at(lambda l: (l.bias, l.weight), linear, (named_bias, named_weight))
+named_linear = eqx.tree_at(
+    lambda l: (l.bias, l.weight), linear, (named_bias, named_weight)
+)
 vector = named.NamedArray(jr.normal(jr.PRNGKey(1), (3,)), (In,))
 
 # Wrap function (here using matrix-vector multiplication) with quaxify. Output will be
@@ -31,8 +33,8 @@ print(out)  # NamedArray(array=f32[4], axes=(Axis(size=4),))
 
 ```python
 named.NamedArray  # The star of the show.
-named.Axis        # How each axis is named.
-named.trace       # Trace down two named axes.
+named.Axis  # How each axis is named.
+named.trace  # Trace down two named axes.
 ```
 
 The usual JAX addition, subtraction, multiplication, and contraction (matrix-vector multiplication; matrix-matrix multiplication `jnp.tensordot` etc.) are also supported.

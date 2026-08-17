@@ -43,7 +43,7 @@ class Zero(quax.ArrayValue):
 
 
 @quax.register(lax.broadcast_in_dim_p)
-def _(
+def broadcast_in_dim_array_like(
     value: ArrayLike, *, broadcast_dimensions, shape, sharding=None
 ) -> ArrayLike | quax.ArrayValue:
     return lax.broadcast_in_dim_p.bind(
@@ -55,7 +55,9 @@ def _(
 
 
 @quax.register(lax.broadcast_in_dim_p)
-def _(value: Zero, *, broadcast_dimensions, shape, sharding=None) -> Zero:
+def broadcast_in_dim_zero(
+    value: Zero, *, broadcast_dimensions, shape, sharding=None
+) -> Zero:
     del broadcast_dimensions
     return Zero(shape, value.dtype)
 
@@ -92,49 +94,53 @@ def _shape_dtype(x, y, /, value: T, out_dtype=None) -> T:
 
 
 @quax.register(lax.add_p)
-def _(x: ArrayLike | quax.ArrayValue, y: Zero) -> ArrayLike | quax.ArrayValue:
+def add_array_like_zero(
+    x: ArrayLike | quax.ArrayValue, y: Zero
+) -> ArrayLike | quax.ArrayValue:
     return _shape_dtype(x, y, value=x)
 
 
 @quax.register(lax.add_p)
-def _(x: Zero, y: ArrayLike | quax.ArrayValue) -> ArrayLike | quax.ArrayValue:
+def add_zero_array_like(
+    x: Zero, y: ArrayLike | quax.ArrayValue
+) -> ArrayLike | quax.ArrayValue:
     return _shape_dtype(x, y, value=y)
 
 
 @quax.register(lax.add_p)
-def _(x: Zero, y: Zero) -> Zero:
+def add_zero_zero(x: Zero, y: Zero) -> Zero:
     return _shape_dtype(x, y, value=x)
 
 
 @quax.register(lax.mul_p)
-def _(x: ArrayLike | quax.ArrayValue, y: Zero, /, **kw: Any) -> Zero:
+def mul_array_like_zero(x: ArrayLike | quax.ArrayValue, y: Zero, /, **kw: Any) -> Zero:
     return _shape_dtype(x, y, value=y, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.mul_p)
-def _(x: Zero, y: ArrayLike | quax.ArrayValue, /, **kw: Any) -> Zero:
+def mul_zero_array_like(x: Zero, y: ArrayLike | quax.ArrayValue, /, **kw: Any) -> Zero:
     return _shape_dtype(x, y, value=x, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.mul_p)
-def _(x: Zero, y: Zero, /, **kw: Any) -> Zero:
+def mul_zero_zero(x: Zero, y: Zero, /, **kw: Any) -> Zero:
     return _shape_dtype(x, y, value=x, out_dtype=kw.get("out_dtype"))
 
 
 @quax.register(lax.dynamic_update_slice_p)
-def _(operand: Zero, update: Zero, *indices) -> Zero:
+def dynamic_update_slice_zero_zero(operand: Zero, update: Zero, *indices) -> Zero:
     del update, indices
     return operand
 
 
 @quax.register(lax.dynamic_slice_p)
-def _(operand: Zero, *indices, slice_sizes) -> Zero:
+def dynamic_slice_zero(operand: Zero, *indices, slice_sizes) -> Zero:
     del indices
     return Zero(slice_sizes, operand.dtype)
 
 
 @quax.register(lax.slice_p)
-def _(operand: Zero, *, start_indices, limit_indices, strides) -> Zero:
+def slice_zero(operand: Zero, *, start_indices, limit_indices, strides) -> Zero:
     if strides is None:
         strides = [1 for _ in start_indices]
     # `len(range(...))` gives the strided-slice output length exactly, matching
@@ -156,17 +162,21 @@ def _zero_matmul(lhs, rhs, kwargs) -> Zero:
 
 
 @quax.register(lax.dot_general_p)
-def _(lhs: Zero, rhs: ArrayLike | quax.ArrayValue, **kwargs) -> Zero:
+def dot_general_zero_array_like(
+    lhs: Zero, rhs: ArrayLike | quax.ArrayValue, **kwargs
+) -> Zero:
     return _zero_matmul(lhs, rhs, kwargs)
 
 
 @quax.register(lax.dot_general_p)
-def _(lhs: ArrayLike | quax.ArrayValue, rhs: Zero, **kwargs) -> Zero:
+def dot_general_array_like_zero(
+    lhs: ArrayLike | quax.ArrayValue, rhs: Zero, **kwargs
+) -> Zero:
     return _zero_matmul(lhs, rhs, kwargs)
 
 
 @quax.register(lax.dot_general_p)
-def _(lhs: Zero, rhs: Zero, **kwargs) -> Zero:
+def dot_general_zero_zero(lhs: Zero, rhs: Zero, **kwargs) -> Zero:
     return _zero_matmul(lhs, rhs, kwargs)
 
 
