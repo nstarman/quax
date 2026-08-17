@@ -18,7 +18,7 @@ import pytest
 from jax import lax
 
 import quax
-from quax.examples import lora, zero
+from quax.examples import lora, unitful, zero
 
 from ..unit.myarray import MyArray
 
@@ -31,11 +31,21 @@ _ym = MyArray(jnp.arange(8.0) + 2)
 _z = zero.Zero((8,), jnp.float32)
 _arr = jnp.arange(8.0)
 
+# A `Value` whose rules do non-trivial Python work per primitive (dict compare /
+# merge of the units), rather than just rewrapping arrays.
+_u = unitful.Unitful(jnp.arange(8.0) + 1, unitful.meters)
+
 # LoRA: a low-rank array times a dense matrix (heavy dispatch — the matmul
 # expands to several primitives, several of which are inlined pjits).
 _lora = lora.LoraArray(jax.random.normal(_key, (32, 16)), rank=4, key=_key)
 _rhs = jax.random.normal(_key, (16, 8))
 _dot_dn = (((1,), (0,)), ((), ()))
+
+# The same LoRA array, but materialisable: `sin` has no LoRA rule, so it falls
+# through to `_default_process` -> `Value.default` -> `materialise`.
+_lora_mat = lora.LoraArray(
+    jax.random.normal(_key, (32, 16)), rank=4, key=_key, allow_materialise=True
+)
 
 
 # An inner `@jax.jit` that quax does *not* inline, so its `pjit` takes the cached
@@ -74,6 +84,21 @@ def test_mul_myarray(benchmark):
 def test_add_zero(benchmark):
     """`quaxify(add)(Zero, array)` — the symbolic-zero fast rule."""
     _bench(benchmark, lambda a, b: a + b, _z, _arr)
+
+
+@pytest.mark.benchmark(group="dispatch")
+def test_mul_unitful(benchmark):
+    """`quaxify(mul)(Unitful, Unitful)` — a rule that does real Python work
+    (merging the unit dicts) on top of the array op."""
+    _bench(benchmark, lambda a, b: a * b, _u, _u)
+
+
+@pytest.mark.benchmark(group="dispatch")
+def test_materialise_fallback(benchmark):
+    """`quaxify(sin)(LoraArray)` — no rule for this (primitive, type), so the
+    cached `_DISPATCH_MISS` sends it to `_default_process`, which materialises
+    every `Value` operand and binds the primitive on plain arrays."""
+    _bench(benchmark, jnp.sin, _lora_mat)
 
 
 @pytest.mark.benchmark(group="dispatch")
