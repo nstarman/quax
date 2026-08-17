@@ -62,12 +62,12 @@ def mul_unitful_unitful(x: Unitful, y: Unitful, /, **kw: Any) -> Unitful:
 
 
 @quax.register(jax.lax.mul_p)
-def mul_arraylike_unitful(x: ArrayLike, y: Unitful, /, **kw: Any) -> Unitful:
+def mul_array_like_unitful(x: ArrayLike, y: Unitful, /, **kw: Any) -> Unitful:
     return Unitful(jax.lax.mul_p.bind(x, y.array, **kw), y.units)
 
 
 @quax.register(jax.lax.mul_p)
-def mul_unitful_arraylike(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
+def mul_unitful_array_like(x: Unitful, y: ArrayLike, /, **kw: Any) -> Unitful:
     return Unitful(jax.lax.mul_p.bind(x.array, y, **kw), x.units)
 
 

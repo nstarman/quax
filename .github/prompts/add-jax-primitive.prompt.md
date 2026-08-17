@@ -24,7 +24,7 @@ Register a new JAX primitive handler for the `$input` operation.
        ...
    ```
 
-   - Name the function after the primitive and the types it dispatches on (`add_meters_meters`, `mul_meters_arraylike`) — never `def _`, which makes every rule indistinguishable in tracebacks and in plum's ambiguity errors
+   - Name the function after the primitive and the types it dispatches on (`add_meters_meters`, `mul_meters_array_like`) — never `def _`, which makes every rule indistinguishable in tracebacks and in plum's ambiguity errors
    - Keep keyword-only params as `**kw` if the primitive may pass extra args (e.g. `out_dtype` for `mul_p`)
    - Forward unknown kwargs to the underlying JAX op when doing a materialised fallback
 

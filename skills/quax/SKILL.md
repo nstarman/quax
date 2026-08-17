@@ -179,7 +179,7 @@ everything you debug with does: tracebacks, `plum` ambiguity and redefinition
 errors, and profiles all identify a rule by its function name, and a module of
 rules all called `_` makes every one of them indistinguishable. Name it after
 the primitive and the types it dispatches on — `add_meters_meters`,
-`mul_meters_arraylike`, `select_n_unitful` — matching the existing
+`mul_meters_array_like`, `select_n_unitful` — matching the existing
 `convert_element_type_zero` in `quax.examples.zero` and `cond_quax` in
 `quax._primitives`.
 
@@ -200,11 +200,11 @@ operand you do not own:
 
 ```python
 @quax.register(lax.mul_p)
-def mul_meters_arraylike(x: Meters, y: ArrayLike, /, **kw) -> Meters:
+def mul_meters_array_like(x: Meters, y: ArrayLike, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x.array, y, **kw))
 
 @quax.register(lax.mul_p)
-def mul_arraylike_meters(x: ArrayLike, y: Meters, /, **kw) -> Meters:
+def mul_array_like_meters(x: ArrayLike, y: Meters, /, **kw) -> Meters:
     return Meters(lax.mul_p.bind(x, y.array, **kw))
 ```
 

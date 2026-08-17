@@ -57,7 +57,7 @@ diffrax = pytest.importorskip("diffrax")
 
 
 @quax.register(jax.lax.add_p)
-def add_unitful_arraylike(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
+def add_unitful_array_like(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
     return Unitful(jax.lax.add_p.bind(x.array, y, **kw), x.units)
 
 
