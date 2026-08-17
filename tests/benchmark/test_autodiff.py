@@ -1,13 +1,17 @@
 """Benchmarks for the autodiff path through a quax trace.
 
-``_QuaxTrace.process_custom_jvp_call`` and its two ``lu.transformation_with_aux``
-wrappers (``_custom_jvp_fun_wrap`` / ``_custom_jvp_jvp_wrap``) are the only
-``process_*`` override besides ``process_primitive``, and had no benchmark
-coverage at all. They do noticeably more per call than plain dispatch --
+``_QuaxTrace.process_custom_jvp_call`` and ``process_custom_vjp_call``, with
+their ``lu.transformation`` wrappers, are the ``process_*`` overrides besides
+``process_primitive``. They do noticeably more per call than plain dispatch --
 flatten/unflatten of every `Value` through a treedef, the `SymbolicZero`
-promotion scan over the tangents, and the primal/tangent `materialise` fallback
-when the two come back as different classes -- so a regression there is invisible
-to the ``test_dispatch`` benchmarks.
+promotion scan, and the primal/tangent `materialise` fallback when the two come
+back as different classes -- so a regression there is invisible to the
+``test_dispatch`` benchmarks.
+
+The vjp side adds a third wrapper: ``_custom_vjp_fwd_wrap`` re-splices residuals
+that JAX pruned as forwarded inputs, and ``_custom_vjp_bwd_wrap`` expands each
+cotangent back to one entry per input *leaf*. Both are per-call work that only
+the grad benchmark reaches.
 
 `test_lora_mlp_grad` is the end-to-end version: `filter_grad` over a loraified
 MLP under `jax.jit`, i.e. the workload quax's flagship example actually exists
@@ -57,6 +61,41 @@ def test_custom_jvp_grad(benchmark):
     `_custom_jvp_jvp_wrap`: the tangent `SymbolicZero` scan and the
     primal/tangent class reconciliation."""
     qfn = quax.quaxify(eqx.filter_grad(lambda a: jnp.sum(_custom_jvp_fn(a))))
+    qfn(_xm)
+    benchmark(lambda: qfn(_xm))
+
+
+@jax.custom_vjp
+def _custom_vjp_fn(x):
+    return jnp.sin(x)
+
+
+def _custom_vjp_fn_fwd(x):
+    return jnp.sin(x), jnp.cos(x)
+
+
+def _custom_vjp_fn_bwd(res, ct):
+    return (res * ct,)
+
+
+_custom_vjp_fn.defvjp(_custom_vjp_fn_fwd, _custom_vjp_fn_bwd)
+
+
+@pytest.mark.benchmark(group="autodiff")
+def test_custom_vjp_forward(benchmark):
+    """`quaxify` over a `custom_vjp` function — `process_custom_vjp_call` +
+    `_custom_vjp_fun_wrap` (forward only; fwd/bwd are never entered)."""
+    qfn = quax.quaxify(_custom_vjp_fn)
+    qfn(_xm)  # warm the dispatch cache
+    benchmark(lambda: qfn(_xm))
+
+
+@pytest.mark.benchmark(group="autodiff")
+def test_custom_vjp_grad(benchmark):
+    """`quaxify(grad(custom_vjp fn))` — additionally exercises
+    `_custom_vjp_fwd_wrap` (residual re-splicing, the substituted `out_trees`
+    thunk) and `_custom_vjp_bwd_wrap` (per-leaf cotangent expansion)."""
+    qfn = quax.quaxify(eqx.filter_grad(lambda a: jnp.sum(_custom_vjp_fn(a))))
     qfn(_xm)
     benchmark(lambda: qfn(_xm))
 
