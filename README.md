@@ -95,9 +95,10 @@ written into such a buffer come back out as plain arrays.
 
 Another: forward-mode `quaxify` works through `custom_vjp`-based libraries
 (e.g. `diffrax`), and ordinary `custom_vjp` differentiates fine under
-`jax.grad`, but reverse-mode through Equinox's `filter_custom_vjp` -- which
-`equinox.internal.while_loop` (and so `diffrax`) is built on -- is not yet
-supported.
+`jax.grad`, but reverse-mode through a library built on
+`equinox.internal.while_loop` (and so `diffrax`) currently runs into the
+buffer limitation above, and a second, independent gap sits behind it -- so
+fixing buffers alone would not be enough to make this differentiate.
 
 ## See also: other libraries in the JAX ecosystem
 

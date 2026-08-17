@@ -475,9 +475,19 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
     res_values = jtu.tree_unflatten(res_treedef, res_and_cts[:n_res])
     ct_values = jtu.tree_unflatten(out_treedef, res_and_cts[n_res:])
     # With `symbolic_zeros=True` JAX hands us SymbolicZero leaves. A `Value`
-    # holding SZ leaves cannot answer `aval()`, so lift a fully-symbolic
-    # cotangent back to a value-level SZ, matching `_custom_jvp_jvp_wrap`.
+    # holding SZ leaves cannot answer `aval()`, so when a cotangent flattens
+    # to exactly one leaf and that leaf is an SZ, lift it back to a
+    # value-level SZ, matching `_custom_jvp_jvp_wrap`. `all(...)` is what
+    # confirms the one leaf actually *is* an SZ (not just that there's one
+    # of them) -- dropping it would wrongly promote every single-leaf
+    # cotangent, symbolic or not. A multi-leaf `Value` whose cotangent is
+    # fully symbolic isn't handled here and falls through with its SZ leaves
+    # embedded (see plan follow-up item 2).
     ct_values = [
+        # Uses the *leaf's* aval, unlike `_custom_jvp_jvp_wrap`'s
+        # `SZ(type(p).aval(p))` (the *Value*'s aval) -- assumes they agree
+        # for any single-leaf `Value`. No current example type violates
+        # that; if one did, its bwd rule would see a wrongly-shaped SZ.
         SZ(leaves[0].aval)
         if (leaves := jtu.tree_leaves(c, is_leaf=lambda x: type(x) is SZ))
         and all(type(x) is SZ for x in leaves)
