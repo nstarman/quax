@@ -161,13 +161,9 @@ else:
     typeof = jax.core.get_aval  # pyright: ignore[reportAttributeAccessIssue]
 
 
-# `AbstractValue.to_ct_aval` (the cotangent aval, used to build `Zero`s for
-# custom_vjp bwd rules -- see `jax._src.custom_derivatives._flatten_bwd`) is
-# not present on the `jax>=0.7.2` floor; only `to_tangent_aval` is. For every
-# shaped aval the two coincide (a cotangent lives in the tangent space), so
-# `to_tangent_aval` is a faithful stand-in on old JAX. Probed via `hasattr`
-# rather than a version flag: the exact release that added `to_ct_aval` has
-# not been verified, and a probe stays correct regardless.
+# `AbstractValue.to_ct_aval` is absent on the `jax>=0.7.2` floor, where only
+# `to_tangent_aval` exists; the two coincide for shaped avals. Probed with
+# `hasattr` because the release that added `to_ct_aval` is unverified.
 _HAS_TO_CT_AVAL: Final = hasattr(
     jax.core.ShapedArray,  # pyright: ignore[reportAttributeAccessIssue]
     "to_ct_aval",

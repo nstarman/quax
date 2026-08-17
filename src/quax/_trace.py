@@ -474,20 +474,12 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
     n_res = res_treedef.num_leaves
     res_values = jtu.tree_unflatten(res_treedef, res_and_cts[:n_res])
     ct_values = jtu.tree_unflatten(out_treedef, res_and_cts[n_res:])
-    # With `symbolic_zeros=True` JAX hands us SymbolicZero leaves. A `Value`
-    # holding SZ leaves cannot answer `aval()`, so when a cotangent flattens
-    # to exactly one leaf and that leaf is an SZ, lift it back to a
-    # value-level SZ, matching `_custom_jvp_jvp_wrap`. `all(...)` is what
-    # confirms the one leaf actually *is* an SZ (not just that there's one
-    # of them) -- dropping it would wrongly promote every single-leaf
-    # cotangent, symbolic or not. A multi-leaf `Value` whose cotangent is
-    # fully symbolic isn't handled here and falls through with its SZ leaves
-    # embedded (see plan follow-up item 2).
+    # A `Value` holding SZ leaves cannot answer `aval()`, so lift a single-leaf
+    # symbolic cotangent back to a value-level SZ (`all(...)` checks the leaf
+    # *is* an SZ). Multi-leaf symbolic cotangents fall through unhandled.
     ct_values = [
-        # Uses the *leaf's* aval, unlike `_custom_jvp_jvp_wrap`'s
-        # `SZ(type(p).aval(p))` (the *Value*'s aval) -- assumes they agree
-        # for any single-leaf `Value`. No current example type violates
-        # that; if one did, its bwd rule would see a wrongly-shaped SZ.
+        # The leaf's aval, not the `Value`'s (`_custom_jvp_jvp_wrap` uses the
+        # latter); they agree for every single-leaf `Value` we know of.
         SZ(leaves[0].aval)
         if (leaves := jtu.tree_leaves(c, is_leaf=lambda x: type(x) is SZ))
         and all(type(x) is SZ for x in leaves)
@@ -503,12 +495,8 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
             for x in (*res_values, *ct_values)
         ]
         with core.set_current_trace(trace):
-            # JAX 0.11 added `defvjp_with_logs`: the flat bwd rule now returns a
-            # `(cotangents, logs)` pair rather than a bare list of cotangents,
-            # and `ad._custom_lin_transpose` unpacks that pair from us in turn
-            # (`cts_in, logs = bwd.call_wrapped(...)`). `logs` is `None` unless
-            # the rule was registered with `defvjp_with_logs`; pass whatever the
-            # wrapped rule produced straight through.
+            # JAX 0.11's `defvjp_with_logs` made the flat bwd rule return a
+            # `(cotangents, logs)` pair, which our caller unpacks in turn.
             raw = f(*in_tracers)
             raw, logs = raw if JAX_GE_0_11_0 else (raw, None)
             cts_in = [
@@ -534,7 +522,6 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
                 raise TypeError(msg)
             out.extend(leaves)
         i += n
-    # Mirror the shape JAX expects back (see the `defvjp_with_logs` note above).
     return (out, logs) if JAX_GE_0_11_0 else out
 
 
