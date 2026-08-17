@@ -10,17 +10,17 @@ and `cond_quax` then rejects the branch whose other side carries a `Value`.
 Driving `solver.step` directly avoids that buffer while keeping the numerics.
 
 This module only covers the forward direction (unit propagation through
-`quaxify`). It does *not* attempt reverse-mode AD: `jax.grad` through this
-same call hits a `TracerBoolConversionError` inside
-`quax._trace._custom_vjp_bwd_wrap`, at the point where it re-enters
-`equinox.internal._loop.checkpointed._checkpointed_while_loop_bwd`. A
-scratch-script experiment with a minimal dense (always-materialisable)
-`quax.ArrayValue` -- with no bridging rules at all -- hits the identical
-failure at the identical location, so this is not a `Unitful`-materialise
-limitation; it points at a defect in `_custom_vjp_bwd_wrap` itself. That is
-this branch's headline feature, so it is not this test module's place to
-paper over it with an `xfail` -- see task-5-report.md's fix-round-1 section
-for the full experiment and a BLOCKED finding for a maintainer decision.
+`quaxify`). It does *not* attempt reverse-mode AD: quax's `custom_vjp`
+support does not round-trip equinox's `filter_custom_vjp` perturbation
+metadata, so a flag equinox expects to be a static Python `bool` arrives
+traced, and `jax.grad` through this call raises `TracerBoolConversionError`
+inside equinox itself, at `equinox/internal/_loop/checkpointed.py:766`
+(reached via `_checkpointed_while_loop_bwd`). This reproduces with a bare
+`eqxi.while_loop(kind="checkpointed")` under `quaxify` -- no diffrax and no
+`Unitful` required -- and is not a regression: ordinary `custom_vjp`
+reverse-mode already works (see `tests/unit/test_custom_vjp.py`); this gap
+is specific to `filter_custom_vjp`. See task-5-report.md's fix-round-2
+section for the full writeup.
 """
 
 from typing import Any
@@ -176,11 +176,15 @@ def test_diffrax_step_exercises_custom_vjp():
     assert calls > 0
 
 
-# No `test_diffrax_step_grad` here. `jax.grad` through the quaxified call
-# hits `TracerBoolConversionError` inside `quax._trace._custom_vjp_bwd_wrap`
-# (at its re-entry into
-# `equinox.internal._loop.checkpointed._checkpointed_while_loop_bwd`), and a
-# minimal dense `quax.ArrayValue` with zero bridging rules hits the same
-# error at the same location -- so this is a `_custom_vjp_bwd_wrap` defect,
-# not a `Unitful`-materialise limitation, and not something this test module
-# can paper over with `xfail`. See task-5-report.md's fix-round-1 section.
+# No `test_diffrax_step_grad` here. quax's `custom_vjp` support does not
+# round-trip equinox's `filter_custom_vjp` perturbation metadata: a flag
+# equinox expects to be a static Python `bool` arrives traced, and
+# `jax.grad` through this call raises `TracerBoolConversionError` inside
+# equinox itself, at `equinox/internal/_loop/checkpointed.py:766` (reached
+# via `_checkpointed_while_loop_bwd`) -- no quax frame appears in the
+# failing path. It reproduces with a bare `eqxi.while_loop(kind=
+# "checkpointed")` under `quaxify`, no diffrax or `Unitful` required, and
+# is not a regression (ordinary `custom_vjp` reverse-mode already works,
+# see `tests/unit/test_custom_vjp.py`). Landing this forward-only and
+# documenting the gap is the maintainer-approved plan -- not something to
+# paper over with `xfail`. See task-5-report.md's fix-round-2 section.

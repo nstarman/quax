@@ -93,6 +93,12 @@ One known limitation: Quax cannot see arrays that a library pre-allocates
 without reference to your `Value` (e.g. a `jnp.zeros` scratch buffer). Values
 written into such a buffer come back out as plain arrays.
 
+Another: forward-mode `quaxify` works through `custom_vjp`-based libraries
+(e.g. `diffrax`), and ordinary `custom_vjp` differentiates fine under
+`jax.grad`, but reverse-mode through Equinox's `filter_custom_vjp` -- which
+`equinox.internal.while_loop` (and so `diffrax`) is built on -- is not yet
+supported.
+
 ## See also: other libraries in the JAX ecosystem
 
 **Always useful**  
