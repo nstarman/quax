@@ -11,12 +11,11 @@ point of it. Driving `solver.step` keeps the numerics without the buffer.
 `test_diffrax_dense.py` runs the full `diffeqsolve` with a type that does
 materialise.
 
-Forward direction only. `jax.grad` is blocked twice over: for `Unitful` it
-fails first at a `select_n` over mixed plain/`Unitful` operands (the same
-buffer erasure the `add_p` rules below work around), and behind that, even a
-freely-materialising `ArrayValue` hits `TracerBoolConversionError` inside
-equinox at `_loop/checkpointed.py:766`. Fixing the first would not fix the
-second. Ordinary `custom_vjp` reverse-mode is unaffected; see
+Forward direction only, and for one reason: `jax.grad` reaches a `select_n`
+over mixed plain/`Unitful` operands -- the same buffer erasure the `add_p`
+rules below work around -- where `Unitful` refuses to materialise, which is
+what it is for. Reverse-mode itself is fine, including through
+`equinox.internal.while_loop`; see `test_diffrax_dense.py` and
 `tests/unit/test_custom_vjp.py`.
 """
 
