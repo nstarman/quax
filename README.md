@@ -85,24 +85,6 @@ quax.quaxify(run)(lora_linear, vector)
 lora_linear = lora.loraify(linear, rank=2, key=key3)
 ```
 
-## Supported JAX features
-
-Quax handles `jax.custom_jvp`, `jax.custom_vjp`, `jax.lax.cond_p`,
-`jax.lax.while_p`, and `jax.lax.scan_p`. If you hit a JAX transform or
-primitive that Quax does not understand, open an issue or pull request.
-
-One known limitation: Quax cannot see arrays that a library pre-allocates
-without reference to your `Value` (e.g. a `jnp.zeros` scratch buffer). Values
-written into such a buffer come back out as plain arrays. Where that forces a
-`lax.cond` branch to disagree with its siblings, Quax materialises the branch
-outputs rather than failing -- so a `Value` that refuses to materialise (like
-`quax.examples.unitful`) still stops there, by design.
-
-Reverse-mode works through `custom_vjp`-based libraries, including ones built
-on `equinox.internal.while_loop` such as `diffrax`. A `Value` still has to
-survive the buffer limitation above to get there: one that refuses to
-materialise will stop at the buffer rather than at the gradient.
-
 ## See also: other libraries in the JAX ecosystem
 
 **Always useful**  
