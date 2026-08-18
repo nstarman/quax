@@ -5,6 +5,8 @@ import pytest
 import quax
 from quax.examples.unitful import kilograms, meters, Unitful
 
+from ..unit.myarray import DenseArray
+
 
 def _outer_fn(a: jax.Array, b: jax.Array, c: jax.Array, pred: bool | jax.Array):
     def _true_fn(a: jax.Array):
@@ -153,3 +155,31 @@ def test_cond_grad_closure():
     assert p.units == {meters: 1}
     assert t.array == 1
     assert t.units == {meters: 1}
+
+
+def _mixed_branches(x, pred):
+    """One branch carries the `Value`, the other a plain array."""
+    return jax.lax.cond(pred, lambda: x, lambda: jnp.zeros(3))
+
+
+def test_cond_mismatched_branches_materialise():
+    """Branches disagreeing on `Value`-ness fall back to `materialise`.
+
+    This is the documented behaviour of `quax.Value.default` for any primitive
+    with no applicable rule; `cond_p` should not be an exception to it.
+    """
+    x = jnp.arange(3.0)
+
+    for pred in (True, False):
+        got = quax.quaxify(_mixed_branches)(DenseArray(x), jnp.array(pred))
+
+        assert not isinstance(got, quax.ArrayValue)
+        assert jnp.array_equal(got, _mixed_branches(x, jnp.array(pred)))
+
+
+def test_cond_mismatched_branches_reports_refusal():
+    """A type that refuses to materialise says so, rather than "same pytree"."""
+    x = Unitful(jnp.arange(3.0), meters)
+
+    with pytest.raises(ValueError, match="Refusing to materialise"):
+        quax.quaxify(_mixed_branches)(x, jnp.array(True))

@@ -4,10 +4,12 @@
 loop, which is built on `jax.custom_vjp` -- so this exercises
 `quax._trace._QuaxTrace.process_custom_vjp_call`.
 
-`diffrax.diffeqsolve` is not used: it allocates its `SaveAt` buffer with
-`jnp.full`, which Quax never sees, so a later `lax.cond` puts a plain buffer
-slice opposite a `Value` and `cond_quax` rejects it. Driving `solver.step`
-keeps the numerics without the buffer.
+`diffrax.diffeqsolve` is not used *here*: it allocates its `SaveAt` buffer
+with `jnp.full`, which Quax never sees, so `Unitful` comes back out of it
+dimensionless -- and `Unitful` refuses to materialise, which is the whole
+point of it. Driving `solver.step` keeps the numerics without the buffer.
+`test_diffrax_dense.py` runs the full `diffeqsolve` with a type that does
+materialise.
 
 Forward direction only. `jax.grad` is blocked twice over: for `Unitful` it
 fails first at a `select_n` over mixed plain/`Unitful` operands (the same

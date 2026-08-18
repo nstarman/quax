@@ -14,7 +14,7 @@ from jaxtyping import ArrayLike
 from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
 from ._dispatch import register
 from ._quaxify import _Quaxify, quaxify
-from ._values import _make_cache_finalizer, ArrayValue
+from ._values import _is_value, _make_cache_finalizer, ArrayValue
 
 
 # Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_wref, jitted_fn).
@@ -152,21 +152,35 @@ def cond_quax(
 
     out_trees: list[Any] = []
 
-    def _make_quax_branch(jaxpr: core.ClosedJaxpr, /) -> core.ClosedJaxpr:
+    def _make_quax_branch(
+        jaxpr: core.ClosedJaxpr, /, *, materialise: bool
+    ) -> core.ClosedJaxpr:
         def flat_quax_call(flat_args: list[Any]) -> list[Any]:
             _args = jtu.tree_unflatten(in_tree, flat_args)
-            flat_out, out_tree = jtu.tree_flatten(
-                quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
-            )
+            out = quaxify(jexc.jaxpr_as_fun(jaxpr))(*_args)
+            if materialise:
+                out = jtu.tree_map(
+                    lambda x: type(x).materialise(x) if _is_value(x) else x,
+                    out,
+                    is_leaf=_is_value,
+                )
+            flat_out, out_tree = jtu.tree_flatten(out)
             out_trees.append(out_tree)
             return flat_out
 
         return jax.make_jaxpr(flat_quax_call)(flat_args)
 
-    quax_branches = tuple(_make_quax_branch(j) for j in branches)
+    quax_branches = tuple(_make_quax_branch(j, materialise=False) for j in branches)
 
     if any(t != out_trees[0] for t in out_trees[1:]):
-        raise TypeError("all branches output must have the same pytree.")
+        # The branches disagree on which outputs are `Value`s, and `cond_p`
+        # needs one structure. Retrace with every `Value` materialised --
+        # the fallback `Value.default` already applies to any primitive with no
+        # rule. A type that refuses to materialise raises from there instead.
+        out_trees.clear()
+        quax_branches = tuple(_make_quax_branch(j, materialise=True) for j in branches)
+        if any(t != out_trees[0] for t in out_trees[1:]):
+            raise TypeError("all branches output must have the same pytree.")
 
     kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:

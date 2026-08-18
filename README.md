@@ -93,7 +93,10 @@ primitive that Quax does not understand, open an issue or pull request.
 
 One known limitation: Quax cannot see arrays that a library pre-allocates
 without reference to your `Value` (e.g. a `jnp.zeros` scratch buffer). Values
-written into such a buffer come back out as plain arrays.
+written into such a buffer come back out as plain arrays. Where that forces a
+`lax.cond` branch to disagree with its siblings, Quax materialises the branch
+outputs rather than failing -- so a `Value` that refuses to materialise (like
+`quax.examples.unitful`) still stops there, by design.
 
 Another: forward-mode `quaxify` works through `custom_vjp`-based libraries
 (e.g. `diffrax`), and ordinary `custom_vjp` differentiates fine under
