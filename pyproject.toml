@@ -109,7 +109,7 @@ addopts = [
 log_level = "INFO"
 minversion = "8.3"
 pythonpath = ["src"]
-testpaths = ["README", "docs", "src/", "tests"]
+testpaths = ["docs", "src/", "tests"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1

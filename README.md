@@ -42,7 +42,62 @@ pip install quax
 
 ## Documentation
 
-Available at <https://nstarman.github.io/quax>.
+Available at <https://nstarman.github.io/quax>. A taste of what that buys you:
+
+**Physical units, through code that never heard of them.** `kinetic_energy` is
+ordinary JAX. Quax carries the units through it and derives the result's:
+
+```python
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import kilograms, meters, seconds, Unitful
+
+def kinetic_energy(m, v):
+    return 0.5 * m * v**2
+
+mass = Unitful(jnp.asarray(2.0), kilograms)
+velocity = Unitful(jnp.asarray(3.0), {meters: 1, seconds: -1})
+
+energy = quax.quaxify(kinetic_energy)(mass, velocity)
+print(energy.array, energy.units)  # 9.0 {kg: 1, m: 2, s: -2}
+```
+
+Dimensional mistakes stop being silent:
+
+```python
+try:
+    quax.quaxify(jnp.add)(
+        Unitful(jnp.asarray(1.0), meters), Unitful(jnp.asarray(1.0), seconds)
+    )
+except ValueError as e:
+    print(e)  # Cannot add two arrays with units {m: 1} and {s: 1}.
+```
+
+**Other people's libraries, unmodified.** [Diffrax](https://github.com/patrick-kidger/diffrax)
+knows nothing about units, but its solvers still carry them:
+
+<!-- test: requires diffrax -->
+```python
+import diffrax
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import meters, Unitful
+
+term = diffrax.ODETerm(lambda t, y, args: -0.5 * y)
+solver = diffrax.Euler()
+
+def step(y0):
+    state = solver.init(term, 0.0, 0.1, y0, None)
+    y1, _, _, _, _ = solver.step(term, 0.0, 0.1, y0, None, state, made_jump=False)
+    return y1
+
+y1 = quax.quaxify(step)(Unitful(jnp.asarray([1.0]), meters))
+print(y1.array, y1.units)  # [0.95] {m: 1}
+```
+
+Not every boundary preserves the type -- a library that pre-allocates its own
+buffers hands back plain arrays. See
+[Sharp bits](https://nstarman.github.io/quax/sharp-bits/) before you debug one.
 
 ## Example: LoRA
 
@@ -102,7 +157,6 @@ lora_linear = lora.loraify(linear, rank=2, key=key3)
 [Lineax](https://github.com/patrick-kidger/lineax): linear solvers.  
 [BlackJAX](https://github.com/blackjax-devs/blackjax): probabilistic+Bayesian sampling.  
 [sympy2jax](https://github.com/patrick-kidger/sympy2jax): SymPy<->JAX conversion; train symbolic expressions via gradient descent.  
-[PySR](https://github.com/milesCranmer/PySR): symbolic regression. (Non-JAX honourable mention!)  
 
 **Built on Quax**  
 [Quaxed](https://github.com/GalacticDynamics/quaxed): a namespace of already-wrapped `quaxify(jnp.foo)` operations.  
