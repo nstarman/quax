@@ -12,6 +12,7 @@ import pytest
 from jax import lax
 
 import quax
+from quax._compat import typeof
 from quax.examples.unitful import meters, Unitful
 
 
@@ -64,7 +65,7 @@ def test_stable_carry_metadata_still_runs(fn):
 def test_materialising_carry_is_not_an_error():
     """A body that materialises its carry has fallen back, not changed metadata.
 
-    `MyArrayLike` has no registered rules, so `c + x` materialises it to a plain
+    `Plainish` has no registered rules, so `c + x` materialises it to a plain
     array. The result is honestly plain rather than a mislabelled `Value`, which
     is the documented fallback -- not the failure this check is for.
     """
@@ -77,7 +78,7 @@ def test_materialising_carry_is_not_an_error():
             return self.array
 
         def aval(self) -> jax.core.ShapedArray:
-            return jax.typeof(self.array)
+            return typeof(self.array)
 
     def f(carry, xs):
         return lax.scan(lambda c, x: (c + x, None), carry, xs)[0]

@@ -121,10 +121,10 @@ def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
             f"    {b_treedef}\n"
             f"and returned\n"
             f"    {a_treedef}\n"
-            "A loop carry must keep the same structure every iteration, and for "
-            "a `quax.Value` that includes metadata such as units. Quax traces "
-            "the body once, so a change here cannot be represented and would "
-            "otherwise be silently discarded -- see "
+            "A loop carry must keep the same structure every iteration. For a "
+            "`quax.Value`, that structure includes metadata such as units. "
+            "Quax traces the body once, so a change here cannot be represented "
+            "and would otherwise be silently discarded -- see "
             "https://nstarman.github.io/quax/sharp-bits/"
         )
         raise TypeError(msg)
