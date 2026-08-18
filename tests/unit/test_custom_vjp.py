@@ -1,11 +1,12 @@
 """Tests for process_custom_vjp_call."""
 
+import equinox.internal as eqxi
 import jax
 import jax.numpy as jnp
 
 import quax
 
-from .myarray import MyArray
+from .myarray import DenseArray, MyArray
 
 
 @jax.custom_vjp
@@ -189,3 +190,63 @@ def test_custom_vjp_fwd_forwards_input_as_residual():
 
     assert isinstance(got, MyArray)
     assert jnp.allclose(got.array, 3.0 * x_val)
+
+
+@jax.custom_vjp
+def k_custom_vjp(x: jax.Array) -> jax.Array:
+    return jnp.sin(x)
+
+
+def k_custom_vjp_fwd(x: jax.Array):
+    return jnp.sin(x), (jnp.cos(x), True)
+
+
+def k_custom_vjp_bwd(res, ct):
+    cos_x, flag = res
+    if flag:  # a Python `bool`, not a traced array
+        return (7.0 * cos_x * ct,)
+    return (cos_x * ct,)
+
+
+k_custom_vjp.defvjp(k_custom_vjp_fwd, k_custom_vjp_bwd)
+
+
+def test_custom_vjp_python_scalar_residual_stays_static():
+    """A Python scalar residual reaches the bwd rule as a Python scalar.
+
+    Densifying it into a traced array would make the `if` in the bwd rule raise
+    `TracerBoolConversionError`, and the `7.0` branch proves which path ran.
+    """
+    x_val = jnp.arange(1.0, 4.0)
+
+    got = jax.grad(lambda a: quax.quaxify(k_custom_vjp)(a).array.sum())(MyArray(x_val))
+
+    assert jnp.allclose(got.array, 7.0 * jnp.cos(x_val))
+
+
+def _checkpointed_loop(y0):
+    """`equinox.internal.while_loop`, which is built on `jax.custom_vjp`."""
+
+    def cond(carry):
+        return carry[0] < 3
+
+    def body(carry):
+        i, y = carry
+        return i + 1, y * 0.5
+
+    return eqxi.while_loop(cond, body, (0, y0), max_steps=4, kind="checkpointed")[1]
+
+
+def test_custom_vjp_grad_through_equinox_checkpointed_loop():
+    """Reverse-mode works through a real `custom_vjp`-based library."""
+    y0 = jnp.array([1.0])
+    expected = jax.grad(lambda y: _checkpointed_loop(y).sum())(y0)
+
+    def _sum(y):
+        # the loop's output materialises on the way out of the buffer
+        out = quax.quaxify(_checkpointed_loop)(y)
+        return (out.array if isinstance(out, quax.ArrayValue) else out).sum()
+
+    got = jax.grad(_sum)(DenseArray(y0))
+
+    assert jnp.allclose(got.array, expected)
