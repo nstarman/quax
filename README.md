@@ -42,11 +42,10 @@ pip install quax
 
 ## What that looks like
 
-Three examples, each widening the claim: your own code, then your own rules,
-then code you did not write.
+A few examples of `quax` propagating physical units through JAX code.
 
-**Your code does not change.** `kinetic_energy` is ordinary JAX with no notion
-of units. Quax carries them through it and works out the result's:
+**Your code doesn't change.** `kinetic_energy` is ordinary JAX with no notion
+of units. Quax tracks them through it and works out the result's units:
 
 ```python
 import jax.numpy as jnp
@@ -63,9 +62,9 @@ energy = quax.quaxify(kinetic_energy)(mass, velocity)
 print(energy.array, energy.units)  # 9.0 {kg: 1, m: 2, s: -2}
 ```
 
-**Your rules are enforced, not just carried along.** A `Unitful` knows that
-adding metres to seconds is meaningless, so it says so instead of returning a
-number you would go on to trust:
+**Units are checked, not just carried along.** A `Unitful` knows that adding
+metres to seconds is meaningless, and raises instead of silently returning a
+wrong number:
 
 ```python
 try:
@@ -76,10 +75,10 @@ except ValueError as e:
     print(e)  # Cannot add two arrays with units {m: 1} and {s: 1}.
 ```
 
-**The code does not have to be yours.**
+**It also works on code you didn't write.**
 [Diffrax](https://github.com/patrick-kidger/diffrax) was written years before
-this, knows nothing about units, and is not modified here — its solver carries
-them anyway:
+Quax existed and knows nothing about units, but its solver carries them
+through anyway — unmodified:
 
 <!--- skip: next if(not have_diffrax, 'diffrax not installed') -->
 ```python
@@ -100,11 +99,10 @@ y1 = quax.quaxify(step)(Unitful(jnp.asarray([1.0]), meters))
 print(y1.array, y1.units)  # [0.95] {m: 1}
 ```
 
-Where the third example stops working is worth knowing before you meet it: a
-library that allocates its own buffers hands back plain arrays, because Quax
-never saw the allocation. [Sharp
-bits](https://nstarman.github.io/quax/sharp-bits/) covers that and the other
-boundaries.
+The one place this breaks down: if a library allocates its own buffers
+internally, Quax never sees the allocation and you get plain arrays back.
+[Sharp bits](https://nstarman.github.io/quax/sharp-bits/) covers that and the
+other boundaries.
 
 ## Documentation
 
@@ -117,47 +115,6 @@ boundaries.
   being transparent, and why
 - [FAQ](https://nstarman.github.io/quax/faq/) — `jit`, `vmap`, and writing
   `aval()`
-
-## Example: LoRA
-
-This example demonstrates everything you need to use the built-in `quax.examples.lora` library.
-
-```python
-import equinox as eqx
-import jax.random as jr
-import quax
-import quax.examples.lora as lora
-
-#
-# Start off with any JAX program: here, the forward pass through a linear layer.
-#
-
-key1, key2, key3 = jr.split(jr.PRNGKey(0), 3)
-linear = eqx.nn.Linear(10, 12, key=key1)
-vector = jr.normal(key2, (10,))
-
-
-def run(model, x):
-    return model(x)
-
-
-run(linear, vector)  # can call this as normal
-
-#
-# Now let's Lora-ify it.
-#
-
-# Step 1: make the weight be a LoraArray.
-lora_weight = lora.LoraArray(linear.weight, rank=2, key=key3)
-lora_linear = eqx.tree_at(lambda l: l.weight, linear, lora_weight)
-# Step 2: quaxify and call the original function. The transform will call the
-# original function, whilst looking up any multiple dispatch rules registered.
-# (In this case for doing matmuls against LoraArrays.)
-quax.quaxify(run)(lora_linear, vector)
-# Appendix: Quax includes a helper to automatically apply Step 1 to all
-# `eqx.nn.Linear` layers in a model.
-lora_linear = lora.loraify(linear, rank=2, key=key3)
-```
 
 ## See also: other libraries in the JAX ecosystem
 
