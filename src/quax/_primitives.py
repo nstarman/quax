@@ -153,7 +153,7 @@ def cond_quax(
     out_trees: list[Any] = []
 
     def _make_quax_branch(
-        jaxpr: core.ClosedJaxpr, /, *, materialise: bool = False
+        jaxpr: core.ClosedJaxpr, /, *, materialise: bool
     ) -> core.ClosedJaxpr:
         def flat_quax_call(flat_args: list[Any]) -> list[Any]:
             _args = jtu.tree_unflatten(in_tree, flat_args)
@@ -170,7 +170,7 @@ def cond_quax(
 
         return jax.make_jaxpr(flat_quax_call)(flat_args)
 
-    quax_branches = tuple(_make_quax_branch(j) for j in branches)
+    quax_branches = tuple(_make_quax_branch(j, materialise=False) for j in branches)
 
     if any(t != out_trees[0] for t in out_trees[1:]):
         # The branches disagree on which outputs are `Value`s, and `cond_p`
