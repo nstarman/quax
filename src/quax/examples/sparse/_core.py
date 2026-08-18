@@ -158,13 +158,7 @@ def _mul_bcoo_dense(x: BCOO, y: ArrayLike, /, **kw: Any) -> BCOO:
     assert isinstance(x, BCOO)
     assert isinstance(y, get_args(ArrayLike))
     y = jnp.asarray(y)
-    indices = tuple(jnp.moveaxis(x.indices, -1, 0))
-    # TODO: unify with _sparse_to_dense, above?
-    getindex = lambda a, b: a[b]
-    for _ in range(x.data.ndim - 1):
-        getindex = jax.vmap(getindex)
-    # ~
-    y_data = getindex(y, indices)
+    y_data = _op_sparse_to_dense(x, y, lambda a, b, _data: a[b])
     data = lax.mul_p.bind(x.data, y_data, **kw)
     return BCOO(data, x.indices, x.shape, x.allow_materialise)
 

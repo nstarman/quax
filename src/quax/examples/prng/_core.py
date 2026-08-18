@@ -24,8 +24,6 @@ else:
 
 
 RealArray: TypeAlias = ArrayLike
-DTypeLikeFloat: TypeAlias = Any
-DTypeLikeInexact: TypeAlias = Any
 
 PRNG_T = TypeVar("PRNG_T", bound="PRNG")
 
@@ -79,7 +77,7 @@ ThreeFry.__init__.__doc__ = """**Arguments:**
 def uniform(
     key: PRNG,
     shape: tuple[int, ...] = (),
-    dtype: DTypeLikeFloat = jnp.float_,
+    dtype: Any = jnp.float_,
     minval: RealArray = 0.0,
     maxval: RealArray = 1.0,
 ) -> Float[Array, "..."]:
@@ -127,7 +125,7 @@ def uniform(
 
 
 def normal(
-    key: PRNG, shape: tuple[int, ...] = (), dtype: DTypeLikeInexact = jnp.float_
+    key: PRNG, shape: tuple[int, ...] = (), dtype: Any = jnp.float_
 ) -> Inexact[Array, "..."]:
     """Samples from a normal distribution.
 
