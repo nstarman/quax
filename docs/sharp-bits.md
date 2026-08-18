@@ -50,31 +50,34 @@ the information was lost.
 If you want a type that survives these boundaries, implement `materialise` to
 return the dense array. If you want the boundary flagged, raise.
 
-## 🔪 A loop carry silently keeps the metadata it started with
+## 🔪 A loop carry cannot change its metadata
 
 A `Value`'s Python-level metadata — units, a sparsity pattern, anything held in
 an `eqx.field(static=True)` — is invisible to JAX's type system. JAX enforces
 that a loop carry is type-stable, but it cannot see static metadata, so a body
-that *changes* it passes the check and the change is thrown away:
+that *changes* it slips past that check:
 
 ```python
 def square_thrice(x):
     return lax.fori_loop(0, 3, lambda i, c: c * c, x)
 
-out = quax.quaxify(square_thrice)(Unitful(jnp.asarray([2.0]), meters))
-print(out.array)  # [256.] -- right
-print(out.units)  # {m: 2}  -- wrong; three squarings is {m: 8}
+quax.quaxify(square_thrice)(Unitful(jnp.asarray([2.0]), meters))
+# TypeError: `lax.scan` carry changed structure ...
 ```
 
-The array is correct. The metadata describes one pass through the body, because
-that is how many times Quax traced it. `lax.while_loop` and `lax.scan` do the
-same thing, keeping a different pass; `lax.cond` does not, because its branches
-are traced separately and compared.
+Squaring three times should give `{m: 8}`, but Quax traces the body once, so
+only one pass is ever represented. Rather than hand back an array wearing the
+metadata of a single iteration, Quax compares the body's output structure
+against its input and refuses.
 
-This is the one failure on this page that is silently *wrong* rather than
-merely lossy, so it is worth knowing the shape of it: a loop body that changes
-your type's metadata is not something Quax can express, and it will not tell
-you so.
+`lax.while_loop` and `lax.scan` both check this; `lax.fori_loop` reports as
+whichever it lowered to. `lax.cond` never needed it — its branches are traced
+separately and compared already.
+
+The check does not fire when the body *materialises* its carry away. That is
+the ordinary fallback for a value with no matching rule: the result is honestly
+a plain array rather than a `Value` wearing the wrong metadata, so there is
+nothing to warn about.
 
 Keep loop carries metadata-stable. If the metadata must change, do that outside
 the loop, or hoist it into the value itself where JAX can see it — an exponent
