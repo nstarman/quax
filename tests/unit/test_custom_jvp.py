@@ -14,6 +14,21 @@ from quax._compat import typeof
 from .myarray import MyArray
 
 
+@pytest.fixture
+def x_val():
+    return jnp.array(1.0)
+
+
+@pytest.fixture
+def x2_val():
+    return jnp.array(2.0)
+
+
+@pytest.fixture
+def y2_val():
+    return jnp.array(3.0)
+
+
 # A simple function decorated with @jax.custom_jvp for testing
 @jax.custom_jvp
 def f_custom_jvp(x: jax.Array) -> jax.Array:
@@ -40,9 +55,8 @@ def g_custom_jvp_jvp(primals, tangents):
     return x * y, x * y_dot + y * x_dot
 
 
-def test_custom_jvp_forward():
+def test_custom_jvp_forward(x_val):
     """Forward pass through quaxified function with custom_jvp and MyArray input."""
-    x_val = jnp.array(1.0)
     expected = f_custom_jvp(x_val)
 
     x = MyArray(x_val)
@@ -52,23 +66,20 @@ def test_custom_jvp_forward():
     assert jnp.allclose(got.array, expected)
 
 
-def test_custom_jvp_forward_two_args():
+def test_custom_jvp_forward_two_args(x2_val, y2_val):
     """Forward pass with two MyArray args through custom_jvp."""
-    x_val = jnp.array(2.0)
-    y_val = jnp.array(3.0)
-    expected = g_custom_jvp(x_val, y_val)
+    expected = g_custom_jvp(x2_val, y2_val)
 
-    x = MyArray(x_val)
-    y = MyArray(y_val)
+    x = MyArray(x2_val)
+    y = MyArray(y2_val)
     got = quax.quaxify(g_custom_jvp)(x, y)
 
     assert isinstance(got, MyArray)
     assert jnp.allclose(got.array, expected)
 
 
-def test_custom_jvp_jvp():
+def test_custom_jvp_jvp(x_val):
     """jax.jvp through quaxified custom_jvp function with MyArray."""
-    x_val = jnp.array(1.0)
     t_val = jnp.array(1.0)
 
     expected_p, expected_t = jax.jvp(f_custom_jvp, (x_val,), (t_val,))
@@ -84,9 +95,8 @@ def test_custom_jvp_jvp():
     assert jnp.allclose(tangent_out.array, expected_t)
 
 
-def test_custom_jvp_grad():
+def test_custom_jvp_grad(x_val):
     """jax.grad through quaxified custom_jvp function with MyArray."""
-    x_val = jnp.array(1.0)
     expected_grad = jax.grad(f_custom_jvp)(x_val)
 
     def scalar_fn(x: MyArray) -> jax.Array:
@@ -145,17 +155,14 @@ def test_custom_jvp_symbolic_zeros_jvp():
     assert jnp.allclose(tangent_out.array, expected_t)
 
 
-def test_custom_jvp_symbolic_zeros_grad():
+def test_custom_jvp_symbolic_zeros_grad(x2_val, y2_val):
     """jax.grad through quaxified symbolic_zeros custom_jvp (SZ for y tangent)."""
-    x_val = jnp.array(2.0)
-    y_val = jnp.array(3.0)
-
-    expected_grad = jax.grad(lambda x: h_sym(x, y_val))(x_val)
+    expected_grad = jax.grad(lambda x: h_sym(x, y2_val))(x2_val)
 
     def fn(x: MyArray) -> jax.Array:
-        return quax.quaxify(h_sym)(x, MyArray(y_val)).array
+        return quax.quaxify(h_sym)(x, MyArray(y2_val)).array
 
-    got_grad = jax.grad(fn)(MyArray(x_val))
+    got_grad = jax.grad(fn)(MyArray(x2_val))
 
     assert isinstance(got_grad, MyArray)
     assert jnp.allclose(got_grad.array, expected_grad)
@@ -166,33 +173,29 @@ def test_custom_jvp_symbolic_zeros_grad():
 # ---------------------------------------------------------------------------
 
 
-def test_custom_jvp_mixed_value_and_array():
+def test_custom_jvp_mixed_value_and_array(x2_val, y2_val):
     """One MyArray operand and one plain array still dispatches through the
     custom_jvp rule (only the all-plain case short-circuits, see #58)."""
-    x_val = jnp.array(2.0)
-    y_val = jnp.array(3.0)
-    expected = g_custom_jvp(x_val, y_val)
+    expected = g_custom_jvp(x2_val, y2_val)
 
-    got = quax.quaxify(g_custom_jvp)(MyArray(x_val), y_val)
+    got = quax.quaxify(g_custom_jvp)(MyArray(x2_val), y2_val)
 
     assert isinstance(got, MyArray)
     assert jnp.allclose(got.array, expected)
 
 
-def test_custom_jvp_grad_both_argnums():
+def test_custom_jvp_grad_both_argnums(x2_val, y2_val):
     """jax.grad w.r.t. both arguments of a two-argument custom_jvp."""
-    x_val = jnp.array(2.0)
-    y_val = jnp.array(3.0)
 
     def fn(x: MyArray, y: MyArray) -> jax.Array:
         return quax.quaxify(g_custom_jvp)(x, y).array
 
-    gx, gy = jax.grad(fn, argnums=(0, 1))(MyArray(x_val), MyArray(y_val))
+    gx, gy = jax.grad(fn, argnums=(0, 1))(MyArray(x2_val), MyArray(y2_val))
 
     # d(x*y)/dx = y, d(x*y)/dy = x
     assert isinstance(gx, MyArray) and isinstance(gy, MyArray)
-    assert jnp.allclose(gx.array, y_val)
-    assert jnp.allclose(gy.array, x_val)
+    assert jnp.allclose(gx.array, y2_val)
+    assert jnp.allclose(gy.array, x2_val)
 
 
 def test_custom_jvp_vmap():

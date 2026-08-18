@@ -20,6 +20,11 @@ already-parsed positional paths (``config.args``) inside ``pytest_ignore_collect
 
 from pathlib import Path
 
+import jax
+import pytest
+
+import quax
+
 
 _HERE = Path(__file__).parent.resolve()
 
@@ -65,3 +70,17 @@ def pytest_ignore_collect(collection_path, config):
         return True  # no benchmark plugin -> never collect benchmarks
 
     return None if _explicitly_targeted(config) else True
+
+
+@pytest.fixture()
+def bench(benchmark):
+    """Warm ``quax.quaxify(fn, **kwargs)(*args)`` once, then hand the steady-state
+    call to ``benchmark``. Pass ``jit=True`` to ``jax.jit``-wrap ``fn`` before
+    quaxifying it, for benchmarks that need the compiled steady-state path."""
+
+    def _bench(fn, *args, jit=False, **kwargs):
+        qfn = quax.quaxify(jax.jit(fn) if jit else fn, **kwargs)
+        qfn(*args)  # warm up
+        benchmark(lambda: qfn(*args))
+
+    return _bench

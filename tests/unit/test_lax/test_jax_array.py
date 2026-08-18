@@ -7,8 +7,8 @@ from jax import lax
 
 import quax
 
+from .._markers import mark_todo
 
-mark_todo = pytest.mark.skip(reason="TODO")
 
 x = jnp.array([[1, 2], [3, 4]], dtype=float)
 y = jnp.array([[5, 6], [7, 8]], dtype=float)
@@ -20,6 +20,17 @@ xround = jnp.array([[1.1, 2.2], [3.3, 4.4]])
 conv_kernel = jnp.array([[[[1.0, 0.0], [0.0, -1.0]]]], dtype=float)
 xcomp = jnp.array([[5, 2], [7, 2]], dtype=float)
 xconv = jnp.arange(1, 17, dtype=float).reshape((1, 1, 4, 4))
+
+
+def _run_and_compare(module, func_name, args, kw):
+    func = getattr(module, func_name)
+    exp = func(*args, **kw)
+    exp = exp if isinstance(exp, tuple | list) else (exp,)
+
+    got = quax.quaxify(func)(*args, **kw)
+    got = got if isinstance(got, tuple | list) else (got,)
+
+    assert jtu.all(jtu.map(jnp.array_equal, got, exp))
 
 
 @pytest.mark.parametrize(
@@ -216,10 +227,7 @@ xconv = jnp.arange(1, 17, dtype=float).reshape((1, 1, 4, 4))
 )
 def test_lax_functions(func_name, args, kw):
     """Test lax vs qlax functions."""
-    func = getattr(lax, func_name)
-    exp = func(*args, **kw)
-    got = quax.quaxify(func)(*args, **kw)
-    assert jnp.array_equal(got, exp)
+    _run_and_compare(lax, func_name, args, kw)
 
 
 ###############################################################################
@@ -251,13 +259,4 @@ x1225 = jnp.array([[1, 2], [2, 5]], dtype=float)
 )
 def test_lax_linalg_functions(func_name, args, kw):
     """Test lax vs qlax functions."""
-    # JAX
-    func = getattr(lax.linalg, func_name)
-    exp = func(*args, **kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed
-    got = quax.quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-
-    assert jtu.all(jtu.map(jnp.array_equal, got, exp))
+    _run_and_compare(lax.linalg, func_name, args, kw)

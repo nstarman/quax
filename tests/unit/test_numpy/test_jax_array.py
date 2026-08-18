@@ -4,33 +4,27 @@ import jax.numpy as jnp
 import jax.tree as jtu
 import numpy as np
 import pytest
-from packaging.version import Version
 
 from quax import quaxify
-from quax._compat import JAX_VERSION
 
+from .._markers import mark_todo, skip_removed_jax_0_10_0, xfail_deprecated_jax_0_9_0
 
-mark_todo = pytest.mark.skip("TODO")
-skip_removed_jax_0_10_0 = pytest.mark.skipif(
-    JAX_VERSION >= Version("0.10"),
-    reason="removed in JAX v0.10.0",
-)
-xfail_deprecated_jax_0_9_0 = (
-    pytest.mark.xfail(
-        Version("0.9") <= JAX_VERSION < Version("0.10"),
-        raises=DeprecationWarning,
-        reason="deprecated in JAX v0.9.0",
-        strict=True,
-    ),
-    # Promote DeprecationWarning to an error so the xfail `raises` check works;
-    # warnings.warn() alone won't trigger raises= without this.
-    pytest.mark.filterwarnings("error::DeprecationWarning"),
-)
 
 x = jnp.array([[1, 2], [3, 4]], dtype=float)
 y = jnp.array([[5, 6], [7, 8]], dtype=float)
 xtrig = jnp.array([[0.1, 0.2], [0.3, 0.4]], dtype=float)
 xbool = jnp.array([True, False, True], dtype=bool)
+
+
+def _run_and_compare(module, func_name, args, kw):
+    func = getattr(module, func_name)
+    exp = func(*args, **kw)
+    exp = exp if isinstance(exp, tuple | list) else (exp,)
+
+    got = quaxify(func)(*args, **kw)
+    got = got if isinstance(got, tuple | list) else (got,)
+
+    assert jtu.all(jtu.map(jnp.allclose, got, exp))
 
 
 @pytest.mark.parametrize(
@@ -446,16 +440,7 @@ xbool = jnp.array([True, False, True], dtype=bool)
 )
 def test_numpy_functions(func_name, args, kw):
     """Test lax vs qlax functions."""
-    func = getattr(jnp, func_name)
-    # Jax
-    exp = func(*args, **kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed
-    got = quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-
-    assert jtu.all(jtu.map(jnp.allclose, got, exp))
+    _run_and_compare(jnp, func_name, args, kw)
 
 
 ###############################################################################
@@ -511,13 +496,4 @@ xN3 = jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=float)
 )
 def test_linalg_functions(func_name, args, kw):
     """Test lax vs qlax functions."""
-    func = getattr(jnp.linalg, func_name)
-    # Jax
-    exp = func(*args, **kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed
-    got = quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-
-    assert jtu.all(jtu.map(jnp.allclose, got, exp))
+    _run_and_compare(jnp.linalg, func_name, args, kw)

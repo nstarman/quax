@@ -47,22 +47,18 @@ _xm = MyArray(jnp.arange(8.0) + 1)
 
 
 @pytest.mark.benchmark(group="autodiff")
-def test_custom_jvp_forward(benchmark):
+def test_custom_jvp_forward(bench):
     """`quaxify` over a `custom_jvp` function — `process_custom_jvp_call` +
     `_custom_jvp_fun_wrap` (forward only; the jvp rule is never entered)."""
-    qfn = quax.quaxify(_custom_jvp_fn)
-    qfn(_xm)  # warm the dispatch cache
-    benchmark(lambda: qfn(_xm))
+    bench(_custom_jvp_fn, _xm)
 
 
 @pytest.mark.benchmark(group="autodiff")
-def test_custom_jvp_grad(benchmark):
+def test_custom_jvp_grad(bench):
     """`quaxify(grad(custom_jvp fn))` — additionally exercises
     `_custom_jvp_jvp_wrap`: the tangent `SymbolicZero` scan and the
     primal/tangent class reconciliation."""
-    qfn = quax.quaxify(eqx.filter_grad(lambda a: jnp.sum(_custom_jvp_fn(a))))
-    qfn(_xm)
-    benchmark(lambda: qfn(_xm))
+    bench(eqx.filter_grad(lambda a: jnp.sum(_custom_jvp_fn(a))), _xm)
 
 
 @jax.custom_vjp
@@ -82,22 +78,18 @@ _custom_vjp_fn.defvjp(_custom_vjp_fn_fwd, _custom_vjp_fn_bwd)
 
 
 @pytest.mark.benchmark(group="autodiff")
-def test_custom_vjp_forward(benchmark):
+def test_custom_vjp_forward(bench):
     """`quaxify` over a `custom_vjp` function — `process_custom_vjp_call` +
     `_custom_vjp_fun_wrap` (forward only; fwd/bwd are never entered)."""
-    qfn = quax.quaxify(_custom_vjp_fn)
-    qfn(_xm)  # warm the dispatch cache
-    benchmark(lambda: qfn(_xm))
+    bench(_custom_vjp_fn, _xm)
 
 
 @pytest.mark.benchmark(group="autodiff")
-def test_custom_vjp_grad(benchmark):
+def test_custom_vjp_grad(bench):
     """`quaxify(grad(custom_vjp fn))` — additionally exercises
     `_custom_vjp_fwd_wrap` (residual re-splicing, the substituted `out_trees`
     thunk) and `_custom_vjp_bwd_wrap` (per-leaf cotangent expansion)."""
-    qfn = quax.quaxify(eqx.filter_grad(lambda a: jnp.sum(_custom_vjp_fn(a))))
-    qfn(_xm)
-    benchmark(lambda: qfn(_xm))
+    bench(eqx.filter_grad(lambda a: jnp.sum(_custom_vjp_fn(a))), _xm)
 
 
 _key = jr.PRNGKey(0)

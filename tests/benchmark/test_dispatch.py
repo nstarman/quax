@@ -61,44 +61,37 @@ def _calls_inner_jit(a):
     return _inner_jit(a)
 
 
-def _bench(benchmark, fn, *args):
-    """Warm the dispatch cache, then benchmark eager ``quaxify(fn)(*args)``."""
-    qfn = quax.quaxify(fn)
-    qfn(*args)  # warm plum resolution + the dispatch cache
-    benchmark(lambda: qfn(*args))
-
-
 @pytest.mark.benchmark(group="dispatch")
-def test_add_myarray(benchmark):
+def test_add_myarray(bench):
     """`quaxify(add)(MyArray, MyArray)` — the core single-primitive dispatch."""
-    _bench(benchmark, lambda a, b: a + b, _xm, _ym)
+    bench(lambda a, b: a + b, _xm, _ym)
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_mul_myarray(benchmark):
+def test_mul_myarray(bench):
     """`quaxify(mul)(MyArray, MyArray)`."""
-    _bench(benchmark, lambda a, b: a * b, _xm, _ym)
+    bench(lambda a, b: a * b, _xm, _ym)
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_add_zero(benchmark):
+def test_add_zero(bench):
     """`quaxify(add)(Zero, array)` — the symbolic-zero fast rule."""
-    _bench(benchmark, lambda a, b: a + b, _z, _arr)
+    bench(lambda a, b: a + b, _z, _arr)
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_mul_unitful(benchmark):
+def test_mul_unitful(bench):
     """`quaxify(mul)(Unitful, Unitful)` — a rule that does real Python work
     (merging the unit dicts) on top of the array op."""
-    _bench(benchmark, lambda a, b: a * b, _u, _u)
+    bench(lambda a, b: a * b, _u, _u)
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_materialise_fallback(benchmark):
+def test_materialise_fallback(bench):
     """`quaxify(sin)(LoraArray)` — no rule for this (primitive, type), so the
     cached `_DISPATCH_MISS` sends it to `_default_process`, which materialises
     every `Value` operand and binds the primitive on plain arrays."""
-    _bench(benchmark, jnp.sin, _lora_mat)
+    bench(jnp.sin, _lora_mat)
 
 
 @pytest.mark.benchmark(group="dispatch")
@@ -110,14 +103,14 @@ def test_nested_quaxify_add(benchmark):
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_matmul_lora(benchmark):
+def test_matmul_lora(bench):
     """`quaxify(dot_general)(LoraArray, array)` — LoRA matmul (many primitives,
     inlined pjits)."""
-    _bench(benchmark, lax.dot_general, _lora, _rhs, _dot_dn)
+    bench(lax.dot_general, _lora, _rhs, _dot_dn)
 
 
 @pytest.mark.benchmark(group="dispatch")
-def test_jit_cache_hit(benchmark):
+def test_jit_cache_hit(bench):
     """`quaxify` over a function calling an inner `@jax.jit` — the cached
     (non-inlined) `jit_quax` path, hitting `_jit_quax_cache`."""
-    _bench(benchmark, _calls_inner_jit, _xm)
+    bench(_calls_inner_jit, _xm)

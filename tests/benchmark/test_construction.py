@@ -48,27 +48,24 @@ class _CustomInit(quax.ArrayValue):
 
 
 @pytest.mark.benchmark(group="construction")
-def test_construct_dense_factory(benchmark):
-    """Internal fast-path allocation (``_dense``) — bypasses the metaclass."""
-    benchmark(_dense, _arr)
+@pytest.mark.parametrize(
+    "ctor",
+    [_dense, _DenseArrayValue, MyArray, _CustomInit],
+    ids=["dense_factory", "dense_value", "user_dataclass_init", "user_custom_init"],
+)
+def test_construct(benchmark, ctor):
+    """Construct each Value flavor from the same array.
 
-
-@pytest.mark.benchmark(group="construction")
-def test_construct_dense_value(benchmark):
-    """Direct ``_DenseArrayValue(...)`` construction (through the metaclass)."""
-    benchmark(_DenseArrayValue, _arr)
-
-
-@pytest.mark.benchmark(group="construction")
-def test_construct_user_dataclass_init(benchmark):
-    """User ``Value`` with a converter and dataclass-generated ``__init__``."""
-    benchmark(MyArray, _arr)
-
-
-@pytest.mark.benchmark(group="construction")
-def test_construct_user_custom_init(benchmark):
-    """User ``Value`` with a custom ``__init__`` and ``__check_init__``."""
-    benchmark(_CustomInit, _arr)
+    - ``dense_factory``: internal fast-path allocation (``_dense``) — bypasses
+      the metaclass.
+    - ``dense_value``: direct ``_DenseArrayValue(...)`` construction (through
+      the metaclass).
+    - ``user_dataclass_init``: user ``Value`` with a converter and
+      dataclass-generated ``__init__``.
+    - ``user_custom_init``: user ``Value`` with a custom ``__init__`` and
+      ``__check_init__``.
+    """
+    benchmark(ctor, _arr)
 
 
 # =============================================================================

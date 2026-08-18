@@ -4,38 +4,42 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree as jtu
 import pytest
-from packaging.version import Version
 
 import quax
-from quax._compat import JAX_VERSION
 
+from .._markers import (
+    mark_nomd,
+    mark_todo,
+    skip_removed_jax_0_10_0,
+    xfail_deprecated_jax_0_9_0,
+    xfail_quax58,
+)
 from ..myarray import is_myarray, MyArray, unwrap
 from ..test_lax.test_myarray import _unwrap_myarray
 
-
-xfail_quax58 = pytest.mark.xfail(
-    reason="https://github.com/patrick-kidger/quax/issues/58"
-)
-mark_todo = pytest.mark.skip("TODO")
-mark_nomd = pytest.mark.xfail(reason="Can't be supported with MD on primitives")
-skip_removed_jax_0_10_0 = pytest.mark.skipif(
-    JAX_VERSION >= Version("0.10"),
-    reason="removed in JAX v0.10.0",
-)
-xfail_deprecated_jax_0_9_0 = (
-    pytest.mark.xfail(
-        Version("0.9") <= JAX_VERSION < Version("0.10"),
-        raises=DeprecationWarning,
-        reason="deprecated in JAX v0.9.0",
-        strict=True,
-    ),
-    pytest.mark.filterwarnings("error::DeprecationWarning"),
-)
 
 x = MyArray(jnp.array([[1, 2], [3, 4]], dtype=float))
 y = MyArray(jnp.array([[5, 6], [7, 8]], dtype=float))
 xtrig = MyArray(jnp.array([[0.1, 0.2], [0.3, 0.4]], dtype=float))
 xbool = MyArray(jnp.array([True, False, True], dtype=bool))
+
+
+def _run_and_compare(module, func_name, args, kw, expect_myarray=None):
+    # Jax
+    func = getattr(module, func_name)
+    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
+    exp = func(*jax_args, **jax_kw)
+    exp = exp if isinstance(exp, tuple | list) else (exp,)
+
+    # Quaxed
+    got = quax.quaxify(func)(*args, **kw)
+    got = got if isinstance(got, tuple | list) else (got,)
+    if expect_myarray is None:
+        got = jtu.map(unwrap, got, is_leaf=is_myarray)
+    else:
+        got = _unwrap_myarray(got, expect_myarray)
+
+    assert jtu.all(jtu.map(jnp.allclose, got, exp))
 
 
 @pytest.mark.parametrize(
@@ -502,18 +506,7 @@ xbool = MyArray(jnp.array([True, False, True], dtype=bool))
 )
 def test_numpy_functions(func_name, args, kw, expect_myarray):
     """Test lax vs qlax functions."""
-    # Jax
-    func = getattr(jnp, func_name)
-    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
-    exp = func(*jax_args, **jax_kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed
-    got = quax.quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-    got = _unwrap_myarray(got, expect_myarray)
-
-    assert jtu.all(jtu.map(jnp.allclose, got, exp))
+    _run_and_compare(jnp, func_name, args, kw, expect_myarray)
 
 
 # ###############################################################################
@@ -587,15 +580,4 @@ xN3 = MyArray(jnp.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=float))
 )
 def test_linalg_functions(func_name, args, kw):
     """Test lax vs qlax functions."""
-    # Jax
-    func = getattr(jnp.linalg, func_name)
-    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
-    exp = func(*jax_args, **jax_kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed
-    got = quax.quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-    got = jtu.map(unwrap, got, is_leaf=is_myarray)
-
-    assert jtu.all(jtu.map(jnp.allclose, got, exp))
+    _run_and_compare(jnp.linalg, func_name, args, kw)

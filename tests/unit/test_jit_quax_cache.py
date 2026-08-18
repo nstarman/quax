@@ -37,6 +37,18 @@ from .myarray import MyArray
 _v = MyArray
 
 
+@pytest.fixture
+def inner_add_one():
+    """A fresh `@jax.jit` function of `x + 1.0`, with the cache cleared first."""
+    _jit_quax_cache.clear()
+
+    @jax.jit
+    def inner(x):
+        return x + 1.0
+
+    return inner
+
+
 def _extract_jit_jaxpr(closed_jaxpr: Any) -> Any:
     """Return the ClosedJaxpr param from the first jit_p equation, or None."""
     for eqn in closed_jaxpr.jaxpr.eqns:
@@ -98,34 +110,22 @@ def test_jaxpr_id_differs_for_different_avals():
     )
 
 
-def test_jit_quax_cache_populates_on_first_call():
+def test_jit_quax_cache_populates_on_first_call(inner_add_one):
     """The first quaxify call involving an inner @jax.jit function adds an
     entry to _jit_quax_cache."""
-    _jit_quax_cache.clear()
-
-    @jax.jit
-    def inner(x):
-        return x + 1.0
-
-    quax.quaxify(inner)(_v(jnp.array(0.0)))
+    quax.quaxify(inner_add_one)(_v(jnp.array(0.0)))
     assert len(_jit_quax_cache) > 0, "Cache was not populated on first call."
 
 
-def test_jit_quax_cache_hit_same_avals():
+def test_jit_quax_cache_hit_same_avals(inner_add_one):
     """A second quaxify call with the same argument avals hits the existing
     cache entry and does not add a new one."""
-    _jit_quax_cache.clear()
-
-    @jax.jit
-    def inner(x):
-        return x + 1.0
-
     x = _v(jnp.array(0.0))
-    quax.quaxify(inner)(x)
+    quax.quaxify(inner_add_one)(x)
     size_after_first = len(_jit_quax_cache)
     assert size_after_first > 0
 
-    quax.quaxify(inner)(x)
+    quax.quaxify(inner_add_one)(x)
     assert len(_jit_quax_cache) == size_after_first, (
         "Cache grew on the second call with identical avals — expected a hit."
     )
@@ -211,21 +211,16 @@ def test_jit_quax_cache_stable_while_jaxpr_alive():
 # ---------------------------------------------------------------------------
 
 
-def test_jit_inside_jit_populates_cache():
+def test_jit_inside_jit_populates_cache(inner_add_one):
     """A quaxified outer @jax.jit that calls an inner @jax.jit produces at
     least two _jit_quax_cache entries — one for the outer jit_p equation and
     one for the inner jit_p equation encountered while tracing the outer body.
     This exercises the JIT-inside-JIT population path described in the module
     docstring, which is distinct from the single-level cache-hit tests above."""
-    _jit_quax_cache.clear()
-
-    @jax.jit
-    def inner(x):
-        return x + 1.0
 
     @jax.jit
     def outer(x):
-        return inner(x)
+        return inner_add_one(x)
 
     result = quax.quaxify(outer)(_v(jnp.array(0.0)))
     assert float(result.array) == 1.0  # correct answer
@@ -241,20 +236,15 @@ def test_jit_inside_jit_populates_cache():
 # ---------------------------------------------------------------------------
 
 
-def test_inline_true_bypasses_cache():
+def test_inline_true_bypasses_cache(inner_add_one):
     """jit_p with inline=True takes the early-return path in jit_quax and
     must not read from or write to _jit_quax_cache.  We call jit_quax
     directly with inline=True to avoid any JAX-version sensitivity around
     when jax.jit(inline=True) produces a jit_p equation vs. inlines at
     trace time."""
-    _jit_quax_cache.clear()
-
-    @jax.jit
-    def inner(x):
-        return x + 1.0
 
     def outer(x):
-        return inner(x)
+        return inner_add_one(x)
 
     # Extract the ClosedJaxpr that jit_p carries for inner — same object
     # _QuaxTrace would pass to jit_quax via process_primitive.
@@ -288,20 +278,15 @@ def test_inline_true_bypasses_cache():
         ("AUTO", False),
     ],
 )
-def test_inline_enum_members(member, inlines):
+def test_inline_enum_members(member, inlines, inner_add_one):
     """From JAX 0.11.0 `inline` is a `jax.Inline` enum rather than a bool.
     Only `JAX_EARLY` (the old `True`) takes the early-return path; every other
     member keeps the call in the jaxpr and so must populate the cache, like the
     old `False` did.  Enum members are all truthy, so a plain `if inline:`
     would wrongly inline every one of them."""
-    _jit_quax_cache.clear()
-
-    @jax.jit
-    def inner(x):
-        return x + 1.0
 
     def outer(x):
-        return inner(x)
+        return inner_add_one(x)
 
     closed_outer = jax.make_jaxpr(outer)(jnp.array(0.0))
     inner_jaxpr = _extract_jit_jaxpr(closed_outer)

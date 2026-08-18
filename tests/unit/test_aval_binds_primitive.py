@@ -11,6 +11,7 @@ import jax
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
+import pytest
 from jaxtyping import Array
 
 import quax
@@ -36,24 +37,26 @@ def mul_stop_grad_array_stop_grad_array(
     return StopGradArray(lax.mul_p.bind(x.array, y.array, **kw))
 
 
-def test_wrapped_as_input():
+@pytest.fixture
+def x():
+    return StopGradArray(jnp.arange(3.0))
+
+
+def test_wrapped_as_input(x):
     """The input wrapping in `_Quaxify.__call__` computes `aval()`."""
-    x = StopGradArray(jnp.arange(3.0))
     out = quax.quaxify(lambda a: a + 1)(x)
     assert jnp.array_equal(out, jnp.arange(3.0) + 1)
 
 
-def test_returned_from_rule():
+def test_returned_from_rule(x):
     """Wrapping a rule's output back into a tracer computes `aval()` too."""
-    x = StopGradArray(jnp.arange(3.0))
     out = quax.quaxify(lambda a: a * a)(x)
     assert isinstance(out, StopGradArray)
     assert jnp.array_equal(out.array, jnp.arange(3.0) ** 2)
 
 
-def test_under_jit():
+def test_under_jit(x):
     """Same, with a non-trivial parent trace."""
-    x = StopGradArray(jnp.arange(3.0))
     out = jax.jit(quax.quaxify(lambda a: a * a))(x)
     assert isinstance(out, StopGradArray)
     assert jnp.array_equal(out.array, jnp.arange(3.0) ** 2)
