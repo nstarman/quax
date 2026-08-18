@@ -162,7 +162,7 @@ else:
 
 
 # `AbstractValue.to_ct_aval` is absent on the `jax>=0.7.2` floor, where only
-# `to_tangent_aval` exists; the two coincide for shaped avals. Probed with
+# `to_tangent_aval` exists; they coincide on that floor. Probed with
 # `hasattr` because the release that added `to_ct_aval` is unverified.
 _HAS_TO_CT_AVAL: Final = hasattr(
     jax.core.ShapedArray,  # pyright: ignore[reportAttributeAccessIssue]

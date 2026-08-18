@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -57,3 +58,30 @@ def test_select_n_requires_matching_units():
     bad = Unitful(jnp.array([4.0, 5.0]), seconds)
     with pytest.raises(ValueError, match="units"):
         quax.quaxify(jnp.where)(pred, x, bad)
+
+
+def test_select_n_single_case_is_a_no_op():
+    """`select_n` with one case has nothing to disagree with, and passes through."""
+    x = Unitful(jnp.array([2.0, 3.0]), meters)
+
+    out = quax.quaxify(lambda w, a: jax.lax.select_n(w, a))(jnp.array(0), x)
+
+    assert isinstance(out, Unitful)
+    assert out.units == {meters: 1}
+    assert jnp.array_equal(out.array, jnp.array([2.0, 3.0]))
+
+
+def test_select_n_three_cases_checks_every_pair():
+    """A mismatch in the *third* case is caught, not just the second."""
+    a = Unitful(jnp.array([1.0]), meters)
+    b = Unitful(jnp.array([2.0]), meters)
+    bad = Unitful(jnp.array([3.0]), seconds)
+
+    which = jnp.array(0)
+    out = quax.quaxify(jax.lax.select_n)(which, a, b, Unitful(jnp.array([4.0]), meters))
+    assert isinstance(out, Unitful)
+    assert out.units == {meters: 1}
+
+    # the message names the two mismatching unit dicts, as `add_p`'s does
+    with pytest.raises(ValueError, match=r"units \{m: 1\} and \{s: 1\}"):
+        quax.quaxify(jax.lax.select_n)(which, a, b, bad)
