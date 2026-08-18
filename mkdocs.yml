@@ -87,6 +87,8 @@ plugins:
 nav:
     - 'index.md'
     - 'faq.md'
+    - 'autodiff.md'
+    - 'control-flow.md'
     - 'sharp-bits.md'
     - API:
         - 'api/quax.md'
