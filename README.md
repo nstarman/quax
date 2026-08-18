@@ -40,12 +40,13 @@ _(Just like how `jax.vmap` takes a program, but reinterprets each operation as i
 pip install quax
 ```
 
-## Documentation
+## What that looks like
 
-Available at <https://nstarman.github.io/quax>. A taste of what that buys you:
+Three examples, each widening the claim: your own code, then your own rules,
+then code you did not write.
 
-**Physical units, through code that never heard of them.** `kinetic_energy` is
-ordinary JAX. Quax carries the units through it and derives the result's:
+**Your code does not change.** `kinetic_energy` is ordinary JAX with no notion
+of units. Quax carries them through it and works out the result's:
 
 ```python
 import jax.numpy as jnp
@@ -62,7 +63,9 @@ energy = quax.quaxify(kinetic_energy)(mass, velocity)
 print(energy.array, energy.units)  # 9.0 {kg: 1, m: 2, s: -2}
 ```
 
-Dimensional mistakes stop being silent:
+**Your rules are enforced, not just carried along.** A `Unitful` knows that
+adding metres to seconds is meaningless, so it says so instead of returning a
+number you would go on to trust:
 
 ```python
 try:
@@ -73,8 +76,10 @@ except ValueError as e:
     print(e)  # Cannot add two arrays with units {m: 1} and {s: 1}.
 ```
 
-**Other people's libraries, unmodified.** [Diffrax](https://github.com/patrick-kidger/diffrax)
-knows nothing about units, but its solvers still carry them:
+**The code does not have to be yours.**
+[Diffrax](https://github.com/patrick-kidger/diffrax) was written years before
+this, knows nothing about units, and is not modified here — its solver carries
+them anyway:
 
 <!--- skip: next if(not have_diffrax, 'diffrax not installed') -->
 ```python
@@ -95,9 +100,23 @@ y1 = quax.quaxify(step)(Unitful(jnp.asarray([1.0]), meters))
 print(y1.array, y1.units)  # [0.95] {m: 1}
 ```
 
-Not every boundary preserves the type -- a library that pre-allocates its own
-buffers hands back plain arrays. See
-[Sharp bits](https://nstarman.github.io/quax/sharp-bits/) before you debug one.
+Where the third example stops working is worth knowing before you meet it: a
+library that allocates its own buffers hands back plain arrays, because Quax
+never saw the allocation. [Sharp
+bits](https://nstarman.github.io/quax/sharp-bits/) covers that and the other
+boundaries.
+
+## Documentation
+
+<https://nstarman.github.io/quax>
+
+- [Custom rules](https://nstarman.github.io/quax/examples/custom_rules/) —
+  build your own array-ish type, start to finish
+- [API reference](https://nstarman.github.io/quax/api/quax/)
+- [Sharp bits](https://nstarman.github.io/quax/sharp-bits/) — where Quax stops
+  being transparent, and why
+- [FAQ](https://nstarman.github.io/quax/faq/) — `jit`, `vmap`, and writing
+  `aval()`
 
 ## Example: LoRA
 
