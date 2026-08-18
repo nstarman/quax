@@ -250,3 +250,19 @@ def test_custom_vjp_grad_through_equinox_checkpointed_loop():
     got = jax.grad(_sum)(DenseArray(y0))
 
     assert jnp.allclose(got.array, expected)
+
+
+def test_custom_vjp_vmap_grad_with_forwarded_residual():
+    """Batching and input-forwarding compose.
+
+    `batching.process_custom_vjp_call` rebuilds the bwd rule's input dimensions
+    from `out_trees()`'s forwarding list, so the splice in
+    `_custom_vjp_fwd_wrap` has to line up under `vmap` too.
+    """
+    xs_val = jnp.arange(1.0, 4.0)
+
+    got = jax.vmap(jax.grad(lambda a: quax.quaxify(i_custom_vjp)(a).array.sum()))(
+        MyArray(xs_val)
+    )
+
+    assert jnp.allclose(got.array, 3.0 * xs_val)

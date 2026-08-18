@@ -102,9 +102,10 @@ def copy_unitful(x: Unitful, **kw: Any) -> Unitful:
 @quax.register(jax.lax.select_n_p)
 def select_n_unitful(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
     units = cases[0].units
-    if any(c.units != units for c in cases[1:]):
-        raise ValueError(
-            f"Cannot select between arrays with units {[c.units for c in cases]}."
-        )
+    for case in cases[1:]:
+        if case.units != units:
+            raise ValueError(
+                f"Cannot select between arrays with units {units} and {case.units}."
+            )
     arrays = [c.array for c in cases]
     return Unitful(jax.lax.select_n_p.bind(which, *arrays, **kw), units)
