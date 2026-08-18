@@ -1,10 +1,11 @@
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
 
 import quax
 from quax.examples.unitful import kilograms, meters, Unitful
+
+from ..unit.myarray import DenseArray
 
 
 def _outer_fn(a: jax.Array, b: jax.Array, c: jax.Array, pred: bool | jax.Array):
@@ -156,42 +157,24 @@ def test_cond_grad_closure():
     assert t.units == {meters: 1}
 
 
-class _Dense(quax.ArrayValue):
-    """An `ArrayValue` that materialises freely, as most real ones do."""
-
-    array: jax.Array = eqx.field(converter=jnp.asarray)
-
-    def materialise(self) -> jax.Array:
-        return self.array
-
-    def aval(self) -> jax.core.ShapedArray:
-        return jax.typeof(self.array)
-
-
 def _mixed_branches(x, pred):
-    """One branch carries the `Value`, the other a plain array.
-
-    Libraries hit this whenever they pre-allocate a buffer without reference to
-    the value going into it — a `jnp.zeros` scratch array read back in one
-    branch, the carried `Value` in the other.
-    """
+    """One branch carries the `Value`, the other a plain array."""
     return jax.lax.cond(pred, lambda: x, lambda: jnp.zeros(3))
 
 
-@pytest.mark.parametrize("pred", [True, False])
-def test_cond_mismatched_branches_materialise(pred):
+def test_cond_mismatched_branches_materialise():
     """Branches disagreeing on `Value`-ness fall back to `materialise`.
 
     This is the documented behaviour of `quax.Value.default` for any primitive
     with no applicable rule; `cond_p` should not be an exception to it.
     """
     x = jnp.arange(3.0)
-    expected = _mixed_branches(x, jnp.array(pred))
 
-    got = quax.quaxify(_mixed_branches)(_Dense(x), jnp.array(pred))
+    for pred in (True, False):
+        got = quax.quaxify(_mixed_branches)(DenseArray(x), jnp.array(pred))
 
-    assert not isinstance(got, quax.ArrayValue)
-    assert jnp.array_equal(got, expected)
+        assert not isinstance(got, quax.ArrayValue)
+        assert jnp.array_equal(got, _mixed_branches(x, jnp.array(pred)))
 
 
 def test_cond_mismatched_branches_reports_refusal():
