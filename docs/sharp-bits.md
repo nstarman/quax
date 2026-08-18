@@ -1,9 +1,9 @@
-# Sharp bits
+# 🔪 Quax - The Sharp Bits 🔪
 
 Quax runs on existing JAX programs unchanged. These are the places where that
 stops being true, what they look like when you hit them, and what to do.
 
-## A `Value` went in and a plain array came out
+## 🔪 A `Value` went in and a plain array came out
 
 Quax dispatches on **operations**. It sees `lax.mul_p(x, y)` and can pick a rule
 for your type. It cannot see an array a library allocates from nothing:
@@ -24,7 +24,7 @@ type from an array — Quax cannot invent the units, the sparsity pattern, or th
 LoRA factors. If you control the library, allocate from an operation on the
 value (`jnp.broadcast_to(y0, ...)`) rather than from its shape.
 
-## A branch mismatch materialises instead of failing
+## 🔪 A branch mismatch materialises instead of failing
 
 The buffer above often surfaces at a `lax.cond`: one branch returns your
 `Value`, another returns a slice of the plain buffer, and the two disagree on
@@ -34,7 +34,7 @@ outputs — the same fallback that applies to any primitive with no matching rul
 You get a plain array rather than an error. If you would rather know, give your
 type a `materialise` that raises.
 
-## A type that refuses to materialise stops there
+## 🔪 A type that refuses to materialise stops there
 
 `quax.examples.unitful` does exactly that:
 
@@ -50,7 +50,7 @@ the information was lost.
 If you want a type that survives these boundaries, implement `materialise` to
 return the dense array. If you want the boundary flagged, raise.
 
-## Implementing `aval()` correctly
+## 🔪 Implementing `aval()` correctly
 
 `aval()` must be a **pure method**: called on the same instance it must always return the same `jax.core.AbstractValue`. Quax caches the result at tracer-construction time for performance — if `aval()` could return different values over time, the cached result would become stale.
 
