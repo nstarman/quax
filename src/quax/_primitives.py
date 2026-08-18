@@ -88,6 +88,38 @@ def jit_quax(
 _while_quax_cache: dict[tuple, tuple] = {}
 
 
+def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
+    """Reject a loop body that changes its carry's structure.
+
+    JAX already enforces a stable carry, but only over what its type system can
+    see. A `Value`'s Python-level metadata -- units, a sparsity pattern, any
+    `eqx.field(static=True)` -- is part of its pytree *structure* rather than
+    its aval, so a body that changes it looks stable to JAX and the change is
+    silently dropped on the way out. Compare the structures ourselves.
+    """
+    before_treedef = jtu.tree_structure(list(before))
+    after_treedef = jtu.tree_structure(list(after))
+    if before_treedef == after_treedef:
+        return
+    # A body that materialised its carry away is not this bug: that is the
+    # documented fallback for a value with no matching rule, and the result is
+    # honestly a plain array rather than a `Value` wearing the wrong metadata.
+    if not any(_is_value(x) for x in jtu.tree_leaves(after, is_leaf=_is_value)):
+        return
+    msg = (
+        f"`{primitive}` carry changed structure: the body was given\n"
+        f"    {before_treedef}\n"
+        f"and returned\n"
+        f"    {after_treedef}\n"
+        "A loop carry must keep the same structure every iteration, and for a "
+        "`quax.Value` that includes static metadata such as units. Quax traces "
+        "the body once, so a change here cannot be represented and would "
+        "otherwise be silently discarded -- see "
+        "https://nstarman.github.io/quax/sharp-bits/"
+    )
+    raise TypeError(msg)
+
+
 @register(jax.lax.while_p)
 def while_quax(
     *args: ArrayValue | ArrayLike,
@@ -111,7 +143,10 @@ def while_quax(
         quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
         quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *init_vals)
         quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
-        quax_body_jaxpr = jax.make_jaxpr(quax_body_fn)(*body_consts, *init_vals)
+        quax_body_jaxpr, body_out = jax.make_jaxpr(quax_body_fn, return_shape=True)(
+            *body_consts, *init_vals
+        )
+        _check_carry_stable(init_vals, body_out, "lax.while_loop")
         fin = _make_cache_finalizer(_while_quax_cache, key)
         entry = (
             weakref.ref(cond_jaxpr, fin),
@@ -238,7 +273,9 @@ def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
             consts = jtu.tree_unflatten(c_tree, flat[:nc])
             carry = jtu.tree_unflatten(v_tree, flat[nc : nc + nv])
             xs = jtu.tree_unflatten(x_tree, flat[nc + nv :])
-            return quaxify(fn)(*consts, *carry, *xs)
+            out = quaxify(fn)(*consts, *carry, *xs)
+            _check_carry_stable(carry, out[: len(carry)], "lax.scan")
+            return out
 
         quax_jaxpr, out_shape = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
         out_tree = jtu.tree_structure(out_shape)
