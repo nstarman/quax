@@ -192,11 +192,6 @@ def test_custom_vjp_fwd_forwards_input_as_residual():
     assert jnp.allclose(got.array, 3.0 * x_val)
 
 
-# A `custom_vjp` whose fwd rule stashes a Python `bool` among its residuals and
-# whose bwd rule branches on it with `if`. Libraries do this to carry structural
-# decisions from fwd to bwd -- `equinox.internal.while_loop` records per-leaf
-# perturbation flags this way. Densifying the flag into a traced `bool[]` makes
-# the `if` raise `TracerBoolConversionError`.
 @jax.custom_vjp
 def k_custom_vjp(x: jax.Array) -> jax.Array:
     return jnp.sin(x)
@@ -243,12 +238,7 @@ def _checkpointed_loop(y0):
 
 
 def test_custom_vjp_grad_through_equinox_checkpointed_loop():
-    """Reverse-mode works through a real `custom_vjp`-based library.
-
-    `equinox.internal.while_loop` carries per-leaf perturbation flags as Python
-    bools through its residuals and branches on them in its bwd rule; this is
-    the workload that motivated keeping such residuals static.
-    """
+    """Reverse-mode works through a real `custom_vjp`-based library."""
     y0 = jnp.array([1.0])
     expected = jax.grad(lambda y: _checkpointed_loop(y).sum())(y0)
 

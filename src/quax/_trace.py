@@ -24,9 +24,6 @@ from ._dispatch import (
 from ._values import _dense, _DenseArrayValue, _is_value, T, Value
 
 
-# Hoisted: `isinstance(x, (bool, int, float, complex))` rebuilds the tuple on
-# every call -- the builtins are rebindable globals, so CPython cannot fold it --
-# and these checks run per residual and per cotangent leaf.
 _PY_SCALARS: Final = (bool, int, float, complex)
 
 
