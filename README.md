@@ -40,9 +40,83 @@ _(Just like how `jax.vmap` takes a program, but reinterprets each operation as i
 pip install quax
 ```
 
+## What that looks like
+
+Three examples, each widening the claim: your own code, then your own rules,
+then code you did not write.
+
+**Your code does not change.** `kinetic_energy` is ordinary JAX with no notion
+of units. Quax carries them through it and works out the result's:
+
+```python
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import kilograms, meters, seconds, Unitful
+
+def kinetic_energy(m, v):
+    return 0.5 * m * v**2
+
+mass = Unitful(jnp.asarray(2.0), kilograms)
+velocity = Unitful(jnp.asarray(3.0), {meters: 1, seconds: -1})
+
+energy = quax.quaxify(kinetic_energy)(mass, velocity)
+print(energy.array, energy.units)  # 9.0 {kg: 1, m: 2, s: -2}
+```
+
+**Your rules are enforced, not just carried along.** A `Unitful` knows that
+adding metres to seconds is meaningless, so it says so instead of returning a
+number you would go on to trust:
+
+```python
+try:
+    quax.quaxify(jnp.add)(
+        Unitful(jnp.asarray(1.0), meters), Unitful(jnp.asarray(1.0), seconds)
+    )
+except ValueError as e:
+    print(e)  # Cannot add two arrays with units {m: 1} and {s: 1}.
+```
+
+**The code does not have to be yours.**
+[Diffrax](https://github.com/patrick-kidger/diffrax) was written years before
+this, knows nothing about units, and is not modified here — its solver carries
+them anyway:
+
+<!--- skip: next if(not have_diffrax, 'diffrax not installed') -->
+```python
+import diffrax
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import meters, Unitful
+
+term = diffrax.ODETerm(lambda t, y, args: -0.5 * y)
+solver = diffrax.Euler()
+
+def step(y0):
+    state = solver.init(term, 0.0, 0.1, y0, None)
+    y1, _, _, _, _ = solver.step(term, 0.0, 0.1, y0, None, state, made_jump=False)
+    return y1
+
+y1 = quax.quaxify(step)(Unitful(jnp.asarray([1.0]), meters))
+print(y1.array, y1.units)  # [0.95] {m: 1}
+```
+
+Where the third example stops working is worth knowing before you meet it: a
+library that allocates its own buffers hands back plain arrays, because Quax
+never saw the allocation. [Sharp
+bits](https://nstarman.github.io/quax/sharp-bits/) covers that and the other
+boundaries.
+
 ## Documentation
 
-Available at <https://nstarman.github.io/quax>.
+<https://nstarman.github.io/quax>
+
+- [Custom rules](https://nstarman.github.io/quax/examples/custom_rules/) —
+  build your own array-ish type, start to finish
+- [API reference](https://nstarman.github.io/quax/api/quax/)
+- [Sharp bits](https://nstarman.github.io/quax/sharp-bits/) — where Quax stops
+  being transparent, and why
+- [FAQ](https://nstarman.github.io/quax/faq/) — `jit`, `vmap`, and writing
+  `aval()`
 
 ## Example: LoRA
 
@@ -102,7 +176,6 @@ lora_linear = lora.loraify(linear, rank=2, key=key3)
 [Lineax](https://github.com/patrick-kidger/lineax): linear solvers.  
 [BlackJAX](https://github.com/blackjax-devs/blackjax): probabilistic+Bayesian sampling.  
 [sympy2jax](https://github.com/patrick-kidger/sympy2jax): SymPy<->JAX conversion; train symbolic expressions via gradient descent.  
-[PySR](https://github.com/milesCranmer/PySR): symbolic regression. (Non-JAX honourable mention!)  
 
 **Built on Quax**  
 [Quaxed](https://github.com/GalacticDynamics/quaxed): a namespace of already-wrapped `quaxify(jnp.foo)` operations.  

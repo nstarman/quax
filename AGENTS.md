@@ -61,7 +61,7 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
-- **Doctests are not collected.** `testpaths` lists `README` and `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `README.md`, `docs/`, and `src/` docstrings are never run. Verify them by hand when you change them. The one exception is [skills/quax/SKILL.md](skills/quax/SKILL.md), whose `python` blocks are executed by [tests/test_skill_examples.py](tests/test_skill_examples.py).
+- **Doctests are not collected.** `testpaths` lists `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `docs/` and `src/` docstrings are never run. Verify them by hand when you change them. The exceptions are [README.md](README.md) and [skills/quax/SKILL.md](skills/quax/SKILL.md), whose `python` blocks are executed as individual tests by Sybil, wired up in [conftest.py](conftest.py).
 
 ## Dependencies
 

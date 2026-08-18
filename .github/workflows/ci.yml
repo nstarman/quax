@@ -135,7 +135,7 @@ jobs:
         run: uv sync --no-default-groups --group test-integration --locked
 
       - name: Test with pytest
-        run: uv run --frozen pytest tests/integration
+        run: uv run --frozen pytest tests/integration README.md
 
   ci-pass:
     name: CI Pass
