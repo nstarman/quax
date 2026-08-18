@@ -31,7 +31,7 @@ def register(
         Used as decorator, and requires type annotations to perform multiple dispatch:
         ```python
         @quax.register(jax.lax.add_p)
-        def _(x: SomeValue, y: SomeValue):
+        def add_somevalue_somevalue(x: SomeValue, y: SomeValue):
             return ...  # some implementation
         ```
 
