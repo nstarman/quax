@@ -100,16 +100,8 @@ def test_add_sparse(getkey):
 
 
 def test_mul(getkey):
-    data = jr.normal(getkey(), (2, 4))
-    indices0 = jnp.array([2, 0, 3])
-    indices1 = jnp.array([0, 0, 3])
-    indices2 = jnp.array([1, 0, 0])
-    indices3 = jnp.array([2, 0, 1])
-    indices_batch0 = jnp.stack([indices0, indices1, indices2, indices3])
-    indices_batch1 = jnp.stack([indices1, indices0, indices3, indices3])
-    indices = jnp.stack([indices_batch0, indices_batch1])
-    shape = (2, 5, 1, 4)
-    x = sparse.BCOO(data, indices, shape)
+    x = _make_sparse_example(getkey)
+    data, indices, shape = x.data, x.indices, x.shape
     y0 = 3
     y1 = jr.normal(getkey(), (5, 1, 4))
     y2 = jr.normal(getkey(), (2, 5, 1, 4))

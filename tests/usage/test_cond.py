@@ -19,16 +19,17 @@ def _outer_fn(a: jax.Array, b: jax.Array, c: jax.Array, pred: bool | jax.Array):
     return res
 
 
-def test_cond_basic():
+@pytest.mark.parametrize("wrap", [lambda f: f, jax.jit], ids=["eager", "jit"])
+def test_cond_basic(wrap):
     a = Unitful(jnp.asarray(1.0), {meters: 1})
     b = Unitful(jnp.asarray(2.0), {meters: 1})
     c = Unitful(jnp.asarray(10.0), {meters: 1})
 
-    res = quax.quaxify(_outer_fn)(a, b, c, False)
+    res = quax.quaxify(wrap(_outer_fn))(a, b, c, False)
     assert res.array == 11
     assert res.units == {meters: 1}
 
-    res = quax.quaxify(_outer_fn)(a, b, c, True)
+    res = quax.quaxify(wrap(_outer_fn))(a, b, c, True)
     assert res.array == 3
     assert res.units == {meters: 1}
 
@@ -89,20 +90,6 @@ def test_cond_switch():
 
     res = quax.quaxify(_outer_fn)(2, a, b, c)
     assert res.array == 13
-    assert res.units == {meters: 1}
-
-
-def test_cond_jit():
-    a = Unitful(jnp.asarray(1.0), {meters: 1})
-    b = Unitful(jnp.asarray(2.0), {meters: 1})
-    c = Unitful(jnp.asarray(10.0), {meters: 1})
-
-    res = quax.quaxify(jax.jit(_outer_fn))(a, b, c, False)
-    assert res.array == 11
-    assert res.units == {meters: 1}
-
-    res = quax.quaxify(jax.jit(_outer_fn))(a, b, c, True)
-    assert res.array == 3
     assert res.units == {meters: 1}
 
 

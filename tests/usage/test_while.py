@@ -23,11 +23,12 @@ def _outer_fn(a: jax.Array, b: jax.Array, c: jax.Array):
     return res
 
 
-def test_while_basic():
+@pytest.mark.parametrize("wrap", [lambda f: f, jax.jit], ids=["eager", "jit"])
+def test_while_basic(wrap):
     a = Unitful(jnp.asarray(1.0), {meters: 1})
     b = Unitful(jnp.asarray(2.0), {meters: 1})
     c = Unitful(jnp.asarray(10.0), {meters: 1})
-    res = quax.quaxify(_outer_fn)(a, b, c)
+    res = quax.quaxify(wrap(_outer_fn))(a, b, c)
     assert res.array == 11
     assert res.units == {meters: 1}
 
@@ -38,15 +39,6 @@ def test_while_different_units():
     c = Unitful(jnp.asarray([10.0]), {kilograms: 1})
     with pytest.raises(Exception):
         quax.quaxify(_outer_fn)(a, b, c)
-
-
-def test_while_jit():
-    a = Unitful(jnp.asarray(1.0), {meters: 1})
-    b = Unitful(jnp.asarray(2.0), {meters: 1})
-    c = Unitful(jnp.asarray(10.0), {meters: 1})
-    res = quax.quaxify(jax.jit(_outer_fn))(a, b, c)
-    assert res.array == 11
-    assert res.units == {meters: 1}
 
 
 def test_while_vmap():

@@ -7,10 +7,9 @@ from jax import lax
 
 import quax
 
+from .._markers import mark_todo
 from ..myarray import is_myarray, MyArray, unwrap
 
-
-mark_todo = pytest.mark.skip(reason="TODO")
 
 x = MyArray(jnp.array([[1, 2], [3, 4]], dtype=float))
 y = MyArray(jnp.array([[5, 6], [7, 8]], dtype=float))
@@ -57,6 +56,21 @@ def _unwrap_myarray(
     ]
     got = jtu.unflatten(tree_def, got_flat)
     return got
+
+
+def _run_and_compare(module, func_name, args, kw, expect_myarray, *, cmp=jnp.allclose):
+    # Jax version
+    func = getattr(module, func_name)
+    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
+    exp = func(*jax_args, **jax_kw)
+    exp = exp if isinstance(exp, tuple | list) else (exp,)
+
+    # Quaxed version
+    got = quax.quaxify(func)(*args, **kw)
+    got = got if isinstance(got, tuple | list) else (got,)
+    got_ = _unwrap_myarray(got, expect_myarray)
+
+    assert jtu.all(jtu.map(cmp, got_, exp))
 
 
 @pytest.mark.parametrize(
@@ -281,18 +295,7 @@ def _unwrap_myarray(
 )
 def test_lax_functions(func_name, args, kw, expect_myarray):
     """Test lax vs qlax functions."""
-    # Jax version
-    func = getattr(lax, func_name)
-    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
-    exp = func(*jax_args, **jax_kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed version
-    got = quax.quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-    got_ = _unwrap_myarray(got, expect_myarray)
-
-    assert jtu.all(jtu.map(jnp.allclose, got_, exp))
+    _run_and_compare(lax, func_name, args, kw, expect_myarray)
 
 
 def test_cond() -> None:
@@ -336,15 +339,6 @@ def test_map() -> None:
 )
 def test_lax_linalg_functions(func_name, args, kw, expect_myarray):
     """Test lax vs qlax functions."""
-    # Jax version
-    func = getattr(lax.linalg, func_name)
-    jax_args, jax_kw = jtu.map(unwrap, (args, kw), is_leaf=is_myarray)
-    exp = func(*jax_args, **jax_kw)
-    exp = exp if isinstance(exp, tuple | list) else (exp,)
-
-    # Quaxed version
-    got = quax.quaxify(func)(*args, **kw)
-    got = got if isinstance(got, tuple | list) else (got,)
-    got_ = _unwrap_myarray(got, expect_myarray)
-
-    assert all(jnp.array_equal(g, e) for g, e in zip(got_, exp, strict=False))
+    _run_and_compare(
+        lax.linalg, func_name, args, kw, expect_myarray, cmp=jnp.array_equal
+    )

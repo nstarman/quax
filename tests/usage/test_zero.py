@@ -40,54 +40,62 @@ def test_materialise():
     assert jnp.array_equal(out, jnp.zeros((3, 4), jnp.float32))
 
 
-def test_add():
+@pytest.mark.parametrize(
+    "add",
+    [quax.quaxify(lambda x, y: x + y), quax.quaxify(jnp.add)],
+    ids=["lambda", "jnp_add"],
+)
+def test_add(add):
     scalar_zero = zero.Zero((), jnp.float32)
     vector_zero = zero.Zero((2,), jnp.bool_)
     tensor_zero = zero.Zero((3, 3, 3), jnp.int32)
 
-    for add in (quax.quaxify(lambda x, y: x + y), quax.quaxify(jnp.add)):
-        assert tree_allclose(add(scalar_zero, 1), jnp.array(1.0))
-        assert eqx.tree_equal(add(scalar_zero, jnp.array(1)), jnp.array(1.0))
-        assert tree_allclose(add(1, scalar_zero), jnp.array(1.0))
-        assert eqx.tree_equal(add(jnp.array(1), scalar_zero), jnp.array(1.0))
+    assert tree_allclose(add(scalar_zero, 1), jnp.array(1.0))
+    assert eqx.tree_equal(add(scalar_zero, jnp.array(1)), jnp.array(1.0))
+    assert tree_allclose(add(1, scalar_zero), jnp.array(1.0))
+    assert eqx.tree_equal(add(jnp.array(1), scalar_zero), jnp.array(1.0))
 
-        assert tree_allclose(add(vector_zero, 1), jnp.array([1, 1]))
-        assert eqx.tree_equal(add(vector_zero, jnp.array(1)), jnp.array([1, 1]))
-        assert tree_allclose(add(1, vector_zero), jnp.array([1, 1]))
-        assert eqx.tree_equal(add(jnp.array(1), vector_zero), jnp.array([1, 1]))
+    assert tree_allclose(add(vector_zero, 1), jnp.array([1, 1]))
+    assert eqx.tree_equal(add(vector_zero, jnp.array(1)), jnp.array([1, 1]))
+    assert tree_allclose(add(1, vector_zero), jnp.array([1, 1]))
+    assert eqx.tree_equal(add(jnp.array(1), vector_zero), jnp.array([1, 1]))
 
-        assert tree_allclose(add(tensor_zero, 1), jnp.ones((3, 3, 3), jnp.int32))
-        assert eqx.tree_equal(
-            add(tensor_zero, jnp.array(1)), jnp.ones((3, 3, 3), jnp.int32)
-        )
-        assert tree_allclose(add(1, tensor_zero), jnp.ones((3, 3, 3), jnp.int32))
-        assert eqx.tree_equal(
-            add(jnp.array(1), tensor_zero), jnp.ones((3, 3, 3), jnp.int32)
-        )
+    assert tree_allclose(add(tensor_zero, 1), jnp.ones((3, 3, 3), jnp.int32))
+    assert eqx.tree_equal(
+        add(tensor_zero, jnp.array(1)), jnp.ones((3, 3, 3), jnp.int32)
+    )
+    assert tree_allclose(add(1, tensor_zero), jnp.ones((3, 3, 3), jnp.int32))
+    assert eqx.tree_equal(
+        add(jnp.array(1), tensor_zero), jnp.ones((3, 3, 3), jnp.int32)
+    )
 
 
-def test_mul():
+@pytest.mark.parametrize(
+    "mul",
+    [quax.quaxify(lambda x, y: x * y), quax.quaxify(jnp.multiply)],
+    ids=["lambda", "jnp_multiply"],
+)
+def test_mul(mul):
     # TODO: revisit this once we support weak types.
     scalar_zero = zero.Zero((), jnp.float32)
     in_vector_zero = zero.Zero((2,), jnp.bool_)
     out_vector_zero = zero.Zero((2,), jnp.int32)
     tensor_zero = zero.Zero((3, 3, 3), jnp.int32)
 
-    for mul in (quax.quaxify(lambda x, y: x * y), quax.quaxify(jnp.multiply)):
-        assert tree_allclose(mul(scalar_zero, 1), scalar_zero)
-        assert eqx.tree_equal(mul(scalar_zero, jnp.array(1)), scalar_zero)
-        assert tree_allclose(mul(1, scalar_zero), scalar_zero)
-        assert eqx.tree_equal(mul(jnp.array(1), scalar_zero), scalar_zero)
+    assert tree_allclose(mul(scalar_zero, 1), scalar_zero)
+    assert eqx.tree_equal(mul(scalar_zero, jnp.array(1)), scalar_zero)
+    assert tree_allclose(mul(1, scalar_zero), scalar_zero)
+    assert eqx.tree_equal(mul(jnp.array(1), scalar_zero), scalar_zero)
 
-        assert tree_allclose(mul(in_vector_zero, 1), out_vector_zero)
-        assert eqx.tree_equal(mul(in_vector_zero, jnp.array(1)), out_vector_zero)
-        assert tree_allclose(mul(1, in_vector_zero), out_vector_zero)
-        assert eqx.tree_equal(mul(jnp.array(1), in_vector_zero), out_vector_zero)
+    assert tree_allclose(mul(in_vector_zero, 1), out_vector_zero)
+    assert eqx.tree_equal(mul(in_vector_zero, jnp.array(1)), out_vector_zero)
+    assert tree_allclose(mul(1, in_vector_zero), out_vector_zero)
+    assert eqx.tree_equal(mul(jnp.array(1), in_vector_zero), out_vector_zero)
 
-        assert tree_allclose(mul(tensor_zero, 1), tensor_zero)
-        assert eqx.tree_equal(mul(tensor_zero, jnp.array(1)), tensor_zero)
-        assert tree_allclose(mul(1, tensor_zero), tensor_zero)
-        assert eqx.tree_equal(mul(jnp.array(1), tensor_zero), tensor_zero)
+    assert tree_allclose(mul(tensor_zero, 1), tensor_zero)
+    assert eqx.tree_equal(mul(tensor_zero, jnp.array(1)), tensor_zero)
+    assert tree_allclose(mul(1, tensor_zero), tensor_zero)
+    assert eqx.tree_equal(mul(jnp.array(1), tensor_zero), tensor_zero)
 
 
 @pytest.mark.skipif(not JAX_GE_0_10_0, reason="out_dtype kwarg requires JAX >= 0.10.0")
@@ -118,19 +126,19 @@ def test_mul_out_dtype():
     assert result.shape == (2,)
 
 
-def test_matmul(getkey):
-    for use_bias in (False, True):
-        linear = eqx.nn.Linear(2, 3, key=getkey(), use_bias=use_bias)
-        linear = eqx.tree_at(
-            lambda x: x.weight,
-            linear,
-            zero.Zero(linear.weight.shape, linear.weight.dtype),
-        )
-        out = quax.quaxify(linear)(jnp.ones(2))
-        if use_bias:
-            assert jnp.array_equal(out, linear.bias)
-        else:
-            assert eqx.tree_equal(out, zero.Zero((3,), jnp.float32))
+@pytest.mark.parametrize("use_bias", [False, True])
+def test_matmul(getkey, use_bias):
+    linear = eqx.nn.Linear(2, 3, key=getkey(), use_bias=use_bias)
+    linear = eqx.tree_at(
+        lambda x: x.weight,
+        linear,
+        zero.Zero(linear.weight.shape, linear.weight.dtype),
+    )
+    out = quax.quaxify(linear)(jnp.ones(2))
+    if use_bias:
+        assert jnp.array_equal(out, linear.bias)
+    else:
+        assert eqx.tree_equal(out, zero.Zero((3,), jnp.float32))
 
 
 def test_dynamic_update_slice(getkey):

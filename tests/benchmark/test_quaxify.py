@@ -32,32 +32,26 @@ _ym = MyArray(_arr + 1)
 
 
 @pytest.mark.benchmark(group="quaxify")
-def test_no_value_shortcut(benchmark):
+def test_no_value_shortcut(bench):
     """`quaxify(f)(array)` with no `Value` anywhere — the short-circuit that
     skips the trace entirely, leaving only the `tree_leaves` scan."""
-    qfn = quax.quaxify(lambda a, b: a + b)
-    qfn(_arr, _arr)
-    benchmark(lambda: qfn(_arr, _arr))
+    bench(lambda a, b: a + b, _arr, _arr)
 
 
 @pytest.mark.benchmark(group="quaxify")
-def test_filter_spec_partition(benchmark):
+def test_filter_spec_partition(bench):
     """`quaxify(..., filter_spec=False)` — `_partition_and_wrap`'s general
     branch (`eqx.partition` + `eqx.combine`), passing the `Value`s through to a
     nested `quaxify` (the redispatch pattern)."""
     inner = quax.quaxify(lambda a, b: a + b)
-    outer = quax.quaxify(lambda a, b: inner(a, b), filter_spec=False)
-    outer(_xm, _ym)
-    benchmark(lambda: outer(_xm, _ym))
+    bench(lambda a, b: inner(a, b), _xm, _ym, filter_spec=False)
 
 
 _tree = [MyArray(_arr) for _ in range(32)]
 
 
 @pytest.mark.benchmark(group="quaxify")
-def test_wide_pytree(benchmark):
+def test_wide_pytree(bench):
     """32 `Value`s in one argument pytree — the `tree_map` wrap/unwrap passes,
     plus 32 primitives' worth of dispatch."""
-    qfn = quax.quaxify(lambda ts: [a + a for a in ts])
-    qfn(_tree)
-    benchmark(lambda: qfn(_tree))
+    bench(lambda ts: [a + a for a in ts], _tree)
