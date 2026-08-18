@@ -1,7 +1,7 @@
 import functools as ft
 import itertools as it
 from collections.abc import Sequence
-from typing import Any, overload
+from typing import Any, Final, overload
 
 import equinox as eqx
 import jax._src.core as core
@@ -22,6 +22,12 @@ from ._dispatch import (
     _wrap_if_array,
 )
 from ._values import _dense, _DenseArrayValue, _is_value, T, Value
+
+
+# Hoisted: `isinstance(x, (bool, int, float, complex))` rebuilds the tuple on
+# every call -- the builtins are rebindable globals, so CPython cannot fold it --
+# and these checks run per residual and per cotangent leaf.
+_PY_SCALARS: Final = (bool, int, float, complex)
 
 
 class _QuaxTracer(core.Tracer):
@@ -404,7 +410,7 @@ def _custom_jvp_jvp_wrap(tag, in_treedef, *in_primals_and_tangents):
 
 def _keep_static(trace: "_QuaxTrace", x: Any) -> Any:
     """Leave Python scalars alone; densifying them would erase their staticness."""
-    return x if isinstance(x, (bool, int, float, complex)) else trace.to_value(x)
+    return x if isinstance(x, _PY_SCALARS) else trace.to_value(x)
 
 
 def _leaf_counts(treedef: jtu.PyTreeDef, /) -> list[int]:  # pyright: ignore[reportInvalidTypeForm]
@@ -496,9 +502,7 @@ def _custom_vjp_bwd_wrap(f, tag, in_treedef, in_leaf_avals, fwd_aux, *res_and_ct
     with core.take_current_trace() as parent_trace:
         trace = _QuaxTrace(parent_trace, tag)
         in_tracers = [
-            x
-            if type(x) is SZ or isinstance(x, (bool, int, float, complex))
-            else _QuaxTracer(trace, x)  # pyright: ignore[reportArgumentType]
+            x if type(x) is SZ or isinstance(x, _PY_SCALARS) else _QuaxTracer(trace, x)  # pyright: ignore[reportArgumentType]
             for x in (*res_values, *ct_values)
         ]
         with core.set_current_trace(trace):
