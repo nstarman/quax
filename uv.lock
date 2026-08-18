@@ -1465,6 +1465,7 @@ bench = [
     { name = "pytest-benchmark" },
     { name = "pytest-codspeed" },
     { name = "pytest-env" },
+    { name = "sybil" },
 ]
 dev = [
     { name = "beartype" },
@@ -1477,6 +1478,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-env" },
     { name = "ruff" },
+    { name = "sybil" },
     { name = "zensical" },
 ]
 docs = [
@@ -1499,12 +1501,14 @@ test-integration = [
     { name = "jax" },
     { name = "pytest" },
     { name = "pytest-env" },
+    { name = "sybil" },
 ]
 tests = [
     { name = "beartype" },
     { name = "jax" },
     { name = "pytest" },
     { name = "pytest-env" },
+    { name = "sybil" },
 ]
 
 [package.metadata]
@@ -1525,6 +1529,7 @@ bench = [
     { name = "pytest-benchmark", specifier = ">=5.1.0" },
     { name = "pytest-codspeed", specifier = ">=3.1.0" },
     { name = "pytest-env", specifier = ">=1.1.5" },
+    { name = "sybil", specifier = ">=9" },
 ]
 dev = [
     { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
@@ -1537,6 +1542,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },
     { name = "ruff", specifier = ">=0.15.9" },
+    { name = "sybil", specifier = ">=9" },
     { name = "zensical" },
 ]
 docs = [
@@ -1557,12 +1563,14 @@ test-integration = [
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },
+    { name = "sybil", specifier = ">=9" },
 ]
 tests = [
     { name = "beartype", specifier = ">=0.20.2,<0.23.0" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },
+    { name = "sybil", specifier = ">=9" },
 ]
 
 [[package]]
@@ -1826,6 +1834,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707, upload-time = "2023-09-30T13:58:05.479Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521, upload-time = "2023-09-30T13:58:03.53Z" },
+]
+
+[[package]]
+name = "sybil"
+version = "10.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/03/50135b55ba14509654b2f624eaf7e318d654182ebe9f712fb74e98e418d0/sybil-10.1.0.tar.gz", hash = "sha256:062249c8886a0ab19e45d1c3afd5631ec806e7a95cf5153c96560f5e47756cbd", size = 82376, upload-time = "2026-06-13T09:40:44.584Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/fe/4094754188b52f8333ba24b377192918936597769a574a9dd8446f69e1f1/sybil-10.1.0-py3-none-any.whl", hash = "sha256:b3015f7e0ca3fe197ae67117c440710b62ea500078d4414ebd0ab804d12c9897", size = 40930, upload-time = "2026-06-13T09:40:43.139Z" },
 ]
 
 [[package]]

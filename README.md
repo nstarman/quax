@@ -76,7 +76,7 @@ except ValueError as e:
 **Other people's libraries, unmodified.** [Diffrax](https://github.com/patrick-kidger/diffrax)
 knows nothing about units, but its solvers still carry them:
 
-<!-- test: requires diffrax -->
+<!--- skip: next if(not have_diffrax, 'diffrax not installed') -->
 ```python
 import diffrax
 import jax.numpy as jnp

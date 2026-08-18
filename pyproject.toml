@@ -63,6 +63,7 @@ tests = [
   "beartype>=0.20.2,<0.23.0",
   "pytest>=8.3.5",
   "pytest-env>=1.1.5",
+  "sybil>=9",
   "jax[cpu]",
 ]
 # Performance benchmarks. Kept out of `dev`/`tests` so the default suite never
@@ -109,7 +110,7 @@ addopts = [
 log_level = "INFO"
 minversion = "8.3"
 pythonpath = ["src"]
-testpaths = ["docs", "src/", "tests"]
+testpaths = ["README.md", "skills", "docs", "src/", "tests"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1

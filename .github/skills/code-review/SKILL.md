@@ -176,10 +176,11 @@ checked.** What it cannot check, and what review must:
   unreviewed.
 - **Doctests are not collected.** Examples in `README.md`, `docs/`, and `src/`
   docstrings never run — a PR changing one has not tested it, and the diff needs
-  reading on that basis. The exception is
+  reading on that basis. The exceptions are
+  [README.md](../../../README.md) and
   [skills/quax/SKILL.md](../../../skills/quax/SKILL.md), whose `python` blocks
-  are executed by
-  [tests/test_skill_examples.py](../../../tests/test_skill_examples.py).
+  are executed as individual tests by Sybil, wired up in
+  [conftest.py](../../../conftest.py).
 
 ## Further reading
 
