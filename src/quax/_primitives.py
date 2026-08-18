@@ -89,35 +89,45 @@ _while_quax_cache: dict[tuple, tuple] = {}
 
 
 def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
-    """Reject a loop body that changes its carry's structure.
+    """Reject a loop body that changes a carried `Value`'s metadata.
 
     JAX already enforces a stable carry, but only over what its type system can
-    see. A `Value`'s Python-level metadata -- units, a sparsity pattern, any
-    `eqx.field(static=True)` -- is part of its pytree *structure* rather than
-    its aval, so a body that changes it looks stable to JAX and the change is
-    silently dropped on the way out. Compare the structures ourselves.
+    see. A `Value`'s metadata -- units, a sparsity pattern, any
+    `eqx.field(static=True)` -- lives in its pytree *structure* rather than its
+    aval, so a body that changes it looks stable to JAX and the change is
+    silently dropped on the way out.
+
+    Only that case is an error. A slot that gains or loses its `Value` wrapper
+    entirely -- materialised away by a rule that does not handle it, or promoted
+    when a plain buffer is first written to -- is ordinary lossy behaviour, and
+    the result is honestly a plain array rather than one wearing the wrong
+    metadata. Compare slot by slot, and complain only where both sides carry a
+    `Value`.
     """
-    before_treedef = jtu.tree_structure(list(before))
-    after_treedef = jtu.tree_structure(list(after))
-    if before_treedef == after_treedef:
+    before_leaves = jtu.tree_leaves(list(before), is_leaf=_is_value)
+    after_leaves = jtu.tree_leaves(list(after), is_leaf=_is_value)
+    if len(before_leaves) != len(after_leaves):
+        # A different count is a shape-level change; leave it to JAX to report.
         return
-    # A body that materialised its carry away is not this bug: that is the
-    # documented fallback for a value with no matching rule, and the result is
-    # honestly a plain array rather than a `Value` wearing the wrong metadata.
-    if not any(_is_value(x) for x in jtu.tree_leaves(after, is_leaf=_is_value)):
-        return
-    msg = (
-        f"`{primitive}` carry changed structure: the body was given\n"
-        f"    {before_treedef}\n"
-        f"and returned\n"
-        f"    {after_treedef}\n"
-        "A loop carry must keep the same structure every iteration, and for a "
-        "`quax.Value` that includes static metadata such as units. Quax traces "
-        "the body once, so a change here cannot be represented and would "
-        "otherwise be silently discarded -- see "
-        "https://nstarman.github.io/quax/sharp-bits/"
-    )
-    raise TypeError(msg)
+    for b, a in zip(before_leaves, after_leaves):
+        if not (_is_value(b) and _is_value(a)):
+            continue
+        b_treedef = jtu.tree_structure(b)
+        a_treedef = jtu.tree_structure(a)
+        if b_treedef == a_treedef:
+            continue
+        msg = (
+            f"`{primitive}` carry changed structure: the body was given\n"
+            f"    {b_treedef}\n"
+            f"and returned\n"
+            f"    {a_treedef}\n"
+            "A loop carry must keep the same structure every iteration, and for "
+            "a `quax.Value` that includes metadata such as units. Quax traces "
+            "the body once, so a change here cannot be represented and would "
+            "otherwise be silently discarded -- see "
+            "https://nstarman.github.io/quax/sharp-bits/"
+        )
+        raise TypeError(msg)
 
 
 @register(jax.lax.while_p)
