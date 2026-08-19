@@ -32,7 +32,13 @@ def setup(namespace):
 
 pytest_collect_file = Sybil(
     parsers=[PythonCodeBlockParser(), SkipParser()],
-    patterns=["README.md", "SKILL.md", "autodiff.md", "control-flow.md"],
+    patterns=[
+        "README.md",
+        "SKILL.md",
+        "autodiff.md",
+        "control-flow.md",
+        "how-to/*.md",
+    ],
     excludes=["examples/*/README.md"],
     setup=setup,
 ).pytest()

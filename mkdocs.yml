@@ -90,6 +90,9 @@ nav:
     - 'autodiff.md'
     - 'control-flow.md'
     - 'sharp-bits.md'
+    - How-to:
+        - 'how-to/resolve-an-ambiguous-rule.md'
+        - 'how-to/quaxify-part-of-a-function.md'
     - API:
         - 'api/quax.md'
         - 'api/lora.md'
