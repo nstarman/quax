@@ -129,15 +129,7 @@ trace installed before its operations can dispatch — outside one, the operator
 have nothing to hook into:
 
 ```python
-class WithMethod(quax.ArrayValue):
-    array: jax.Array = eqx.field(converter=jnp.asarray)
-
-    def materialise(self):
-        return self.array
-
-    def aval(self):
-        return jax.typeof(self.array)
-
+class WithMethod(Tracked):
     def doubled(self):
         return self * 2.0
 
