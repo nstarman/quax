@@ -16,6 +16,26 @@ from quax._compat import JAX_GE_0_10_1, JAX_GE_0_11_0, JAX_VERSION, typeof
 
 
 @final
+class DenseArray(quax.ArrayValue):
+    """A :class:`quax.ArrayValue` that materialises freely.
+
+    :class:`MyArray` refuses to materialise, so it cannot exercise any path
+    that falls back to it. This one can, and behaves like most real
+    ``ArrayValue`` types in that respect.
+    """
+
+    array: jax.Array = eqx.field(converter=jnp.asarray)
+
+    def materialise(self) -> jax.Array:
+        """Convert to a JAX array."""
+        return self.array
+
+    def aval(self) -> jax.core.ShapedArray:
+        """Return the ShapedArray."""
+        return typeof(self.array)
+
+
+@final
 class MyArray(quax.ArrayValue):
     """A :class:`quax.ArrayValue` that is dense.
 
