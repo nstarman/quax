@@ -38,6 +38,7 @@ pytest_collect_file = Sybil(
         "autodiff.md",
         "control-flow.md",
         "how-to/*.md",
+        "faq.md",
     ],
     excludes=["examples/*/README.md"],
     setup=setup,
