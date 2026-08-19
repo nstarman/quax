@@ -69,10 +69,8 @@ print(type(grad).__name__, grad.units)  # Unitful {m: 1, s: -1}
 ```
 
 The gradient came back as a `Unitful` rather than a bare array, so your type
-survives the backward pass. Its units are the velocity's — a cotangent mirrors
-the primal it belongs to, which is not the same thing as carrying the
-derivative's units. [Autodiff](../autodiff.md) explains what that does and does
-not buy you.
+survives the backward pass. Its units are the velocity's, which is not the same
+thing as the derivative's — [Autodiff](../autodiff.md) covers why.
 
 ## What you did
 
