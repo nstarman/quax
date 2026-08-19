@@ -10,6 +10,12 @@ import quax
 
 
 class Dimension:
+    """A base physical dimension, e.g. metres.
+
+    Three are provided ready-made: `kilograms`, `meters` and `seconds`. Make others
+    by instantiating this class with a name.
+    """
+
     def __init__(self, name):
         self.name = name
 
@@ -30,6 +36,23 @@ def _dim_to_unit(x: Dimension | dict[Dimension, int]) -> dict[Dimension, int]:
 
 
 class Unitful(quax.ArrayValue):
+    """An array with physical units attached.
+
+    Arithmetic propagates the units rather than checking them after the fact:
+    multiplying two `Unitful`s adds their exponents, raising to an integer power
+    multiplies them, and adding or comparing arrays whose units disagree raises.
+
+    Refuses to [`quax.Value.materialise`][]. A primitive with no registered rule is
+    therefore an error rather than a silent unit loss -- see
+    [Sharp bits](../sharp-bits.md).
+
+    **Arguments:**
+
+    - `array`: the array to attach units to.
+    - `units`: either a single `Dimension`, or a dict from `Dimension` to integer
+        exponent -- e.g. `{meters: 1, seconds: -2}` for an acceleration.
+    """
+
     array: ArrayLike
     units: dict[Dimension, int] = eqx.field(static=True, converter=_dim_to_unit)
 

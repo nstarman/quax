@@ -1,6 +1,8 @@
 # Symbolic zeros, structured matrices, ...
 
-Quax also includes several other example libraries.
+Quax also includes several other example libraries. Two are documented in their own right: [`quax.examples.lora`](../api/lora.md) and [`quax.examples.unitful`](../api/unitful.md).
+
+The rest are listed below.
 
 These are deliberately not documented further here, as we have no intention of turning these into officially-supported fully-fledged Quax libraries.
 
