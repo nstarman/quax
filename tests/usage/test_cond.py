@@ -165,7 +165,7 @@ def test_cond_mismatched_branches_materialise():
 
 
 def test_cond_mismatched_branches_reports_refusal():
-    """A type that refuses to materialise says so, rather than "same pytree"."""
+    """A type that refuses to materialise says so, not that branches disagree."""
     x = Unitful(jnp.arange(3.0), meters)
 
     with pytest.raises(ValueError, match="Refusing to materialise"):

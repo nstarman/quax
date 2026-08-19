@@ -113,6 +113,11 @@ _CARRY_LEAF_COUNT_CHANGED: Final = (
     "it cannot be bound against the initial carry."
 )
 
+_COND_BRANCHES_DISAGREE: Final = (
+    "`lax.cond` branches returned different pytrees, and still disagreed after "
+    f"materialising every `quax.Value` -- see {_SHARP_BITS_URL}"
+)
+
 
 def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
     """Reject a loop body that changes a carried `Value`'s metadata.
@@ -250,7 +255,7 @@ def cond_quax(
         out_trees.clear()
         quax_branches = tuple(_make_quax_branch(j, materialise=True) for j in branches)
         if any(t != out_trees[0] for t in out_trees[1:]):
-            raise TypeError("all branches output must have the same pytree.")
+            raise TypeError(_COND_BRANCHES_DISAGREE)
 
     kwargs = {"linear": linear} if linear is not _sentinel else {}
     if branches_platforms is not _sentinel:
