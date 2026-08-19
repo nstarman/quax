@@ -3,7 +3,7 @@
 __all__ = ()
 
 import weakref
-from typing import Any, no_type_check
+from typing import Any, Final, no_type_check
 
 import jax
 import jax._src.core as core
@@ -14,7 +14,7 @@ from jaxtyping import ArrayLike
 from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
 from ._dispatch import register
 from ._quaxify import _Quaxify, quaxify
-from ._values import _make_cache_finalizer, ArrayValue
+from ._values import _is_value, _make_cache_finalizer, ArrayValue
 
 
 # Cache for jit_quax: maps (id(jaxpr), treedef) -> (jaxpr_wref, jitted_fn).
@@ -88,6 +88,58 @@ def jit_quax(
 _while_quax_cache: dict[tuple, tuple] = {}
 
 
+# One retrace settles a wrapper change; anything still moving after that is not
+# a structure a single traced body can represent.
+_MAX_CARRY_RETRACES: Final = 3
+
+_SHARP_BITS_URL: Final = "https://nstarman.github.io/quax/sharp-bits/"
+
+_CARRY_METADATA_CHANGED: Final = (
+    "`{primitive}` carry changed structure: the body was given\n"
+    "    {before}\n"
+    "and returned\n"
+    "    {after}\n"
+    "A carry must look the same every iteration, and for a `quax.Value` that "
+    f"includes its metadata -- see {_SHARP_BITS_URL}"
+)
+
+_CARRY_DID_NOT_SETTLE: Final = (
+    "`lax.while_loop` carry structure did not settle after {retraces} traces "
+    f"of the body -- see {_SHARP_BITS_URL}"
+)
+
+_CARRY_LEAF_COUNT_CHANGED: Final = (
+    "`lax.while_loop` carry changed its number of arrays inside the body, so "
+    "it cannot be bound against the initial carry."
+)
+
+
+def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
+    """Reject a loop body that changes a carried `Value`'s metadata.
+
+    A slot that gains or loses its `Value` wrapper is not this: materialising or
+    promoting leaves an honest plain array, and the caller settles it by
+    retracing. Only a slot that is a `Value` on both sides, with different
+    metadata, is unrepresentable -- so compare slot by slot.
+    """
+    before_leaves = jtu.tree_leaves(before, is_leaf=_is_value)
+    after_leaves = jtu.tree_leaves(after, is_leaf=_is_value)
+    if len(before_leaves) != len(after_leaves):
+        # A different count is a shape-level change; leave it to JAX to report.
+        return
+    for b, a in zip(before_leaves, after_leaves):
+        if not (_is_value(b) and _is_value(a)):
+            continue
+        b_treedef = jtu.tree_structure(b)
+        a_treedef = jtu.tree_structure(a)
+        if b_treedef == a_treedef:
+            continue
+        msg = _CARRY_METADATA_CHANGED.format(
+            primitive=primitive, before=b_treedef, after=a_treedef
+        )
+        raise TypeError(msg)
+
+
 @register(jax.lax.while_p)
 def while_quax(
     *args: ArrayValue | ArrayLike,
@@ -108,21 +160,39 @@ def while_quax(
     key = (id(cond_jaxpr), id(body_jaxpr), val_treedef)
     entry = _while_quax_cache.get(key)
     if entry is None:
-        quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
-        quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *init_vals)
         quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
-        quax_body_jaxpr = jax.make_jaxpr(quax_body_fn)(*body_consts, *init_vals)
+        # Trace to a fixed point: a wrapper change settles after one more pass,
+        # and what settles is what every later iteration sees. Metadata never
+        # settles, which `_check_carry_stable` rejects outright.
+        vals = tuple(init_vals)
+        for _ in range(_MAX_CARRY_RETRACES):
+            quax_body_jaxpr, body_out = jax.make_jaxpr(quax_body_fn, return_shape=True)(
+                *body_consts, *vals
+            )
+            _check_carry_stable(vals, body_out, "lax.while_loop")
+            if jtu.tree_structure(vals) == jtu.tree_structure(tuple(body_out)):
+                break
+            vals = tuple(body_out)
+        else:
+            msg = _CARRY_DID_NOT_SETTLE.format(retraces=_MAX_CARRY_RETRACES)
+            raise TypeError(msg)
+        if len(jtu.tree_leaves(vals)) != len(init_val_leaves):
+            raise TypeError(_CARRY_LEAF_COUNT_CHANGED)
+        # The condition sees the settled carry too.
+        quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
+        quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *vals)
+        out_treedef = jtu.tree_structure(vals)
         fin = _make_cache_finalizer(_while_quax_cache, key)
         entry = (
             weakref.ref(cond_jaxpr, fin),
             weakref.ref(body_jaxpr, fin),
             quax_cond_jaxpr,
             quax_body_jaxpr,
-            val_treedef,
+            out_treedef,
         )
         _while_quax_cache[key] = entry
     else:
-        _, _, quax_cond_jaxpr, quax_body_jaxpr, val_treedef = entry
+        _, _, quax_cond_jaxpr, quax_body_jaxpr, out_treedef = entry
 
     out_val = jax.lax.while_p.bind(
         *cond_leaves,
@@ -133,7 +203,7 @@ def while_quax(
         body_nconsts=body_nconsts,
         body_jaxpr=quax_body_jaxpr,
     )
-    result = jtu.tree_unflatten(val_treedef, out_val)
+    result = jtu.tree_unflatten(out_treedef, out_val)
     return result
 
 
@@ -224,7 +294,9 @@ def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
             consts = jtu.tree_unflatten(c_tree, flat[:nc])
             carry = jtu.tree_unflatten(v_tree, flat[nc : nc + nv])
             xs = jtu.tree_unflatten(x_tree, flat[nc + nv :])
-            return quaxify(fn)(*consts, *carry, *xs)
+            out = quaxify(fn)(*consts, *carry, *xs)
+            _check_carry_stable(carry, out[: len(carry)], "lax.scan")
+            return out
 
         quax_jaxpr, out_shape = jax.make_jaxpr(quax_fn, return_shape=True)(*trace_in)
         out_tree = jtu.tree_structure(out_shape)
