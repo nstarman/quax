@@ -84,3 +84,72 @@ quax.quaxify(WithMethod.doubled)(WithMethod(jnp.ones(2)))  # works
 Quaxify the method as you would any other function. `quax.quaxify(Type.method)`
 takes the instance as its first argument, so it behaves like the unbound
 function it is.
+
+## Why does `jaxtyping` reject my `Value` inside a quaxified function?
+
+Because inside the `quaxify` your function is not handed the `Value` — it is
+handed a tracer, and the tracer presents as a plain array:
+
+```python
+import jax
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import meters, Unitful
+
+
+def peek(x):
+    print(type(x).__name__)  # _QuaxTracer
+    print(jax.typeof(x))  # float32[1]
+    return x
+
+
+quax.quaxify(peek)(Unitful(jnp.asarray([1.0]), meters))
+```
+
+So a runtime typechecker sees `f32[1]` where you wrote `Unitful`, and rejects it.
+Annotate the array, not your type:
+
+```python
+import beartype
+from jaxtyping import Array, Float, jaxtyped
+
+
+@jaxtyped(typechecker=beartype.beartype)
+def double(x: Float[Array, "..."]) -> Float[Array, "..."]:
+    return x * 2.0
+
+
+out = quax.quaxify(double)(Unitful(jnp.asarray([1.0]), meters))
+print(type(out).__name__, out.units)  # Unitful {m: 1}
+```
+
+The annotation describes what the function body works with; your type is what
+crosses the `quaxify` boundary, and it still comes back out. Annotate with your
+`Value` only on functions that take it *outside* a quaxify — a constructor, or a
+rule registered with [`quax.register`][].
+
+## I get an `UnexpectedTracerError`. Is this a Quax bug?
+
+Almost certainly not, though it once was: `jnp.linalg.inv` and `jnp.linalg.solve`
+did leak tracers, and no longer do. Today the usual cause is the ordinary JAX one
+— a value escaped the transform and was used after it finished:
+
+```python
+stash = []
+
+
+def leaky(x):
+    stash.append(x)  # keeps the tracer past the trace
+    return x * 2.0
+
+
+quax.quaxify(leaky)(Unitful(jnp.asarray([1.0, 2.0]), meters))
+
+try:
+    quax.quaxify(lambda y: y * stash[0])(Unitful(jnp.asarray([1.0]), meters))
+except Exception as e:
+    print(type(e).__name__)  # UnexpectedTracerError
+```
+
+`quaxify` is a JAX transform, so JAX's rule applies unchanged: do not let a value
+outlive the call it was traced in. Return it instead of stashing it.
