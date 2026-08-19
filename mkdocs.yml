@@ -95,6 +95,7 @@ nav:
         - 'how-to/combine-with-jit-and-vmap.md'
         - 'how-to/resolve-an-ambiguous-rule.md'
         - 'how-to/quaxify-part-of-a-function.md'
+        - 'how-to/recover-a-nan-gradient.md'
     - Explanation:
         - 'how-quaxify-works.md'
         - 'autodiff.md'
