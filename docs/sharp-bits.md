@@ -50,6 +50,17 @@ the information was lost.
 If you want a type that survives these boundaries, implement `materialise` to
 return the dense array. If you want the boundary flagged, raise.
 
+## 🔪 A gradient carries the primal's metadata, not the derivative's
+
+Differentiate a `Unitful` in metres and the cotangent is in metres. That looks
+right for `x²` and is wrong for almost everything else: the units you get are
+whatever the *input* had, because a cotangent must match the structure of its
+primal, and metadata is part of that structure.
+
+Quax cannot fix this for you, and neither can a `jax.custom_vjp` rule —
+[Autodiff](autodiff.md#metadata-on-a-cotangent-is-the-primals) has the details.
+If your metadata should transform under differentiation, track it yourself.
+
 ## 🔪 A loop carry cannot change its metadata
 
 A `Value`'s Python-level metadata — units, a sparsity pattern, anything held in

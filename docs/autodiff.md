@@ -8,35 +8,55 @@ The part worth knowing is what comes *back*.
 
 ## Cotangents keep your type
 
-Differentiate a quaxified function and the cotangent is an instance of your
-type, not a plain array. For a type that carries units, that means the
-gradient carries the derivative's units:
+Differentiate a quaxified function and the cotangent is an instance of your type,
+not a plain array:
 
 ```python
 import jax
 import jax.numpy as jnp
 import quax
-from quax.examples.unitful import meters, Unitful
+from quax.examples.unitful import kilograms, meters, seconds, Unitful
 
-def area(x):
-    return x * x
 
-length = Unitful(jnp.asarray([2.0, 3.0]), meters)
+def kinetic_energy(m, v):
+    return 0.5 * m * v**2
 
-out = quax.quaxify(area)(length)
-print(out.units)  # {m: 2}
 
-grad = jax.grad(lambda x: quax.quaxify(area)(x).array.sum())(length)
-print(grad.units)  # {m: 1}
+mass = Unitful(jnp.asarray(2.0), kilograms)
+velocity = Unitful(jnp.asarray(3.0), {meters: 1, seconds: -1})
+
+print(quax.quaxify(kinetic_energy)(mass, velocity).units)  # {kg: 1, m: 2, s: -2}
+
+grad = jax.grad(lambda v: quax.quaxify(kinetic_energy)(mass, v).array)(velocity)
+print(type(grad).__name__)  # Unitful
+print(grad.units)  # {m: 1, s: -1}
 ```
 
-`d(m²)/dm` is in metres, and that is what arrives. Nothing in `area` mentions
-units; the rules registered on `Unitful` did the work in both directions.
+The forward units are derived: nothing in `kinetic_energy` mentions units, and
+joules came out. The gradient is a `Unitful` too — so rules keep firing on the
+backward pass, and a `Value` that refuses to materialise still refuses there.
 
-This falls out of how JAX cotangents work — they match the structure of the
-primal input — rather than being something Quax arranges specially. It does
-mean a rule author gets it for free, and that a `Value` with an invariant to
-enforce keeps enforcing it on the backward pass.
+But read those gradient units again. They are the *velocity's*, not the
+`{kg: 1, m: 1, s: -1}` that `d(½mv²)/dv` is measured in.
+
+## Metadata on a cotangent is the primal's
+
+This is worth stating plainly, because the first example anyone writes hides it.
+Differentiate `x²` where `x` is in metres and the gradient is in metres — which
+looks like the derivative's units, but is only the primal's units coinciding with
+them.
+
+A cotangent must have the same pytree structure as the primal it belongs to; that
+is JAX's contract, not a Quax choice. For an `equinox.Module` the static fields
+*are* part of that structure, so your metadata rides along unchanged. Quax
+enforces this on the way out of a bwd rule: it takes the leaves of whatever the
+rule returned and rebuilds them against the primal's treedef, so even
+`jax.custom_vjp` cannot hand back a cotangent carrying different metadata.
+
+What you get is that your type survives differentiation intact. What you do not
+get is metadata recomputed for the derivative — Quax has no way to know what your
+metadata means, or how the chain rule ought to act on it. If that transformation
+matters to you, track it outside the gradient.
 
 ## Custom derivative rules
 
@@ -44,6 +64,9 @@ A function carrying its own derivative rule via `jax.custom_jvp` or
 `jax.custom_vjp` works under `quaxify`, forwards and backwards:
 
 ```python
+length = Unitful(jnp.asarray([2.0, 3.0]), meters)
+
+
 @jax.custom_jvp
 def square(x):
     return x * x
