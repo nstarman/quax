@@ -3,7 +3,7 @@
 __all__ = ()
 
 import weakref
-from typing import Any, no_type_check
+from typing import Any, Final, no_type_check
 
 import jax
 import jax._src.core as core
@@ -90,7 +90,28 @@ _while_quax_cache: dict[tuple, tuple] = {}
 
 # One retrace settles a wrapper change; anything still moving after that is not
 # a structure a single traced body can represent.
-_MAX_CARRY_RETRACES = 3
+_MAX_CARRY_RETRACES: Final = 3
+
+_SHARP_BITS_URL: Final = "https://nstarman.github.io/quax/sharp-bits/"
+
+_CARRY_METADATA_CHANGED: Final = (
+    "`{primitive}` carry changed structure: the body was given\n"
+    "    {before}\n"
+    "and returned\n"
+    "    {after}\n"
+    "A carry must look the same every iteration, and for a `quax.Value` that "
+    f"includes its metadata -- see {_SHARP_BITS_URL}"
+)
+
+_CARRY_DID_NOT_SETTLE: Final = (
+    "`lax.while_loop` carry structure did not settle after {retraces} traces "
+    f"of the body -- see {_SHARP_BITS_URL}"
+)
+
+_CARRY_LEAF_COUNT_CHANGED: Final = (
+    "`lax.while_loop` carry changed its number of arrays inside the body, so "
+    "it cannot be bound against the initial carry."
+)
 
 
 def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
@@ -113,14 +134,8 @@ def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
         a_treedef = jtu.tree_structure(a)
         if b_treedef == a_treedef:
             continue
-        msg = (
-            f"`{primitive}` carry changed structure: the body was given\n"
-            f"    {b_treedef}\n"
-            f"and returned\n"
-            f"    {a_treedef}\n"
-            "A carry must look the same every iteration, and for a "
-            "`quax.Value` that includes its metadata -- see "
-            "https://nstarman.github.io/quax/sharp-bits/"
+        msg = _CARRY_METADATA_CHANGED.format(
+            primitive=primitive, before=b_treedef, after=a_treedef
         )
         raise TypeError(msg)
 
@@ -159,18 +174,10 @@ def while_quax(
                 break
             vals = tuple(body_out)
         else:
-            msg = (
-                "`lax.while_loop` carry structure did not settle after "
-                f"{_MAX_CARRY_RETRACES} traces of the body -- see "
-                "https://nstarman.github.io/quax/sharp-bits/"
-            )
+            msg = _CARRY_DID_NOT_SETTLE.format(retraces=_MAX_CARRY_RETRACES)
             raise TypeError(msg)
         if len(jtu.tree_leaves(vals)) != len(init_val_leaves):
-            msg = (
-                "`lax.while_loop` carry changed its number of arrays inside "
-                "the body, so it cannot be bound against the initial carry."
-            )
-            raise TypeError(msg)
+            raise TypeError(_CARRY_LEAF_COUNT_CHANGED)
         # The condition sees the settled carry too.
         quax_cond_fn = quaxify(jexc.jaxpr_as_fun(cond_jaxpr))
         quax_cond_jaxpr = jax.make_jaxpr(quax_cond_fn)(*cond_consts, *vals)
