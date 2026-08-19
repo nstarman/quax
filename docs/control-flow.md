@@ -35,33 +35,38 @@ A `Value` that flattens to several arrays changes the number of operands the
 primitive takes, so Quax rebuilds the primitive's parameters to match. This is
 why a type with two array fields works in a `scan` carry at all.
 
-And the body is traced **once**, not once per iteration. That is where the
-sharp edge is.
+And the body is traced for its *structure*, not once per iteration. Usually
+that is a single pass. A body whose first pass changes the carry's wrapper —
+a slot pre-allocated plain and first written to inside the loop, or one
+materialised by a rule that does not match it — is traced again against that
+new structure, until it settles. What settles is what every iteration after
+the first actually sees, and it is how the result is labelled.
 
-## The loop-carry trap
+## The loop-carry constraint
 
 A loop's carry must be stable — JAX enforces this, and rejects a body whose
 output type differs from its input. But a `Value`'s Python-level metadata is
-*static*: it does not appear in the JAX type at all. So a body that changes it
-looks perfectly stable to JAX, and the change is silently lost:
+*static*: it does not appear in the JAX type at all, so a body that changes it
+slips past that check.
+
+A wrapper change settles: trace the body again against it and you reach a fixed
+point. Metadata does not. Squaring takes `{m: 1}` to `{m: 2}` to `{m: 4}`, and
+no number of passes reaches a structure the loop could keep. Quax refuses,
+rather than returning an array labelled with one iteration's units:
 
 ```python
 def square_thrice(x):
     return lax.fori_loop(0, 3, lambda i, c: c * c, x)
 
-out = quax.quaxify(square_thrice)(Unitful(jnp.asarray([2.0]), meters))
-print(out.array)  # [256.] -- correct, 2**8
-print(out.units)  # {m: 2}  -- wrong, should be {m: 8}
+try:
+    quax.quaxify(square_thrice)(Unitful(jnp.asarray([2.0]), meters))
+except TypeError as e:
+    print(str(e).splitlines()[0])  # `lax.scan` carry changed structure: the body was given
 ```
 
-The number is right. The units are not: squaring three times should give
-`{m: 8}`, and the result claims `{m: 2}` — what one pass through the body
-produced. `lax.while_loop` and `lax.scan` mislabel the same way, differing only
-in which pass they happen to keep.
+`lax.cond` does not need this: its branches are traced separately and compared,
+so a disagreement is caught rather than absorbed.
 
-`lax.cond` does not have this problem: its branches are traced separately and
-compared, so a disagreement is caught rather than absorbed.
-
-This is a real trap rather than a limitation to work around, so it is written
-up in full — with what to do about it — in
-[Sharp bits](sharp-bits.md#a-loop-carry-silently-keeps-the-metadata-it-started-with).
+Keeping the carry stable is the fix, and
+[Sharp bits](sharp-bits.md#a-loop-carry-cannot-change-its-metadata) covers what
+to do when the metadata genuinely has to change.
