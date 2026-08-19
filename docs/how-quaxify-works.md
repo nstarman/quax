@@ -42,7 +42,6 @@ from jaxtyping import ArrayLike
 
 class Tagged(quax.ArrayValue):
     array: jax.Array = eqx.field(converter=jnp.asarray)
-    tag: str = eqx.field(static=True)
 
     def aval(self):
         return jax.typeof(self.array)
@@ -52,7 +51,7 @@ class Tagged(quax.ArrayValue):
         return self.array
 
 
-x = Tagged(jnp.asarray([1.0, 2.0]), "a")
+x = Tagged(jnp.asarray([1.0, 2.0]))
 
 # No rule for add_p, so case 3: materialise and run plain JAX.
 print(type(quax.quaxify(lambda v: v + 1.0)(x)).__name__)  # materialised
@@ -61,10 +60,10 @@ print(type(quax.quaxify(lambda v: v + 1.0)(x)).__name__)  # materialised
 
 @quax.register(jax.lax.mul_p)
 def mul_tagged_array_like(a: Tagged, b: ArrayLike, **kw: Any) -> Tagged:
-    return Tagged(jax.lax.mul_p.bind(a.array, b, **kw), a.tag)
+    return Tagged(jax.lax.mul_p.bind(a.array, b, **kw))
 
 
-# Now case 1: a rule matches, and the tag survives.
+# Now case 1: a rule matches, and the type survives.
 print(type(quax.quaxify(lambda v: v * 2.0)(x)).__name__)  # Tagged
 ```
 

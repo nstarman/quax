@@ -40,7 +40,6 @@ pytest_collect_file = Sybil(
         "how-to/*.md",
         "tutorials/*.md",
         "how-quaxify-works.md",
-        "api/unitful.md",
         "faq.md",
     ],
     excludes=["examples/*/README.md"],
