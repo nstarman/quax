@@ -29,6 +29,8 @@ pip install quax
 
 ## Getting started
 
+New to Quax? Start with [Use a Quax type](./tutorials/use-a-quax-type.md), then [How quaxify works](./how-quaxify-works.md) for the model behind it.
+
 To use the built-in LoRA library, check out the [`quax`](./api/quax.md) and [`quax.examples.lora`](./api/lora.md) pages in the left bar.
 
 To start writing your own library (with your own array-ish type) using Quax, then check out the [custom type tutorial](./examples/custom_rules.ipynb).
