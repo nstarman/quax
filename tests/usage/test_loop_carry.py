@@ -87,3 +87,34 @@ def test_materialising_carry_is_not_an_error():
 
     assert not isinstance(out, quax.ArrayValue)
     assert jnp.allclose(out, 1.0 + 0.0 + 1.0 + 2.0)
+
+
+def test_materialised_while_carry_is_not_rewrapped():
+    """A slot the body materialised must not come back wearing its old metadata.
+
+    `while_quax` used to unflatten with the *input* treedef, so a carry the body
+    materialised away was re-wrapped as the `Value` it no longer was -- the same
+    silent mislabelling this module is about, surviving for wrapper changes.
+    """
+    import equinox as eqx
+
+    class Tagged(quax.ArrayValue):
+        array: jax.Array = eqx.field(converter=jnp.asarray)
+        tag: str = eqx.field(static=True, default="original")
+
+        def materialise(self) -> jax.Array:
+            return self.array
+
+        def aval(self) -> jax.core.ShapedArray:
+            return typeof(self.array)
+
+    def loop(x):
+        # `Tagged` has no rules, so `c + 1.0` materialises it
+        return lax.while_loop(
+            lambda c: c[0] < 3, lambda c: (c[0] + 1, c[1] + 1.0), (0, x)
+        )[1]
+
+    out = quax.quaxify(jax.jit(loop))(Tagged(jnp.asarray([1.0]), "original"))
+
+    assert not isinstance(out, quax.ArrayValue)
+    assert jnp.allclose(out, 4.0)

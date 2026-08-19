@@ -62,6 +62,33 @@ def add_unitful_array_like(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
     return Unitful(jax.lax.add_p.bind(x.array, y, **kw), x.units)
 
 
+@quax.register(jax.lax.scatter_p)
+def scatter_into_plain_buffer(
+    operand: ArrayLike, indices: ArrayLike, updates: Unitful, **kw: Any
+) -> Any:
+    """Writing a quantity into a plain buffer: store the magnitude."""
+    return jax.lax.scatter_p.bind(operand, indices, updates.array, **kw)
+
+
+@quax.register(jax.lax.select_n_p)
+def select_n_unitful_or_plain(
+    which: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any
+) -> Any:
+    """`select_n` over a mix of `Unitful` and a plain buffer read.
+
+    `quax.examples.unitful` registers a strict all-`Unitful` rule; this is the
+    same buffer-boundary bridge as the rules below, for the slot equinox
+    pre-allocates plain and fills with a quantity inside the loop.
+    """
+    unitful = [c.units for c in cases if isinstance(c, Unitful)]
+    if not unitful:
+        return jax.lax.select_n_p.bind(which, *cases, **kw)
+    if any(u != unitful[0] for u in unitful[1:]):
+        raise ValueError(f"Cannot select between arrays with units {unitful}.")
+    arrays = [c.array if isinstance(c, Unitful) else c for c in cases]
+    return Unitful(jax.lax.select_n_p.bind(which, *arrays, **kw), unitful[0])
+
+
 @quax.register(select_if_vmap_p)
 def select_if_vmap_unitful(
     pred: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any

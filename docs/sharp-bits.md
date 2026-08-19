@@ -65,10 +65,10 @@ quax.quaxify(square_thrice)(Unitful(jnp.asarray([2.0]), meters))
 # TypeError: `lax.scan` carry changed structure ...
 ```
 
-Squaring three times should give `{m: 8}`, but Quax traces the body once, so
-only one pass is ever represented. Rather than hand back an array wearing the
-metadata of a single iteration, Quax compares the body's output structure
-against its input and refuses.
+Squaring three times should give `{m: 8}`. Quax traces the body until its carry
+structure settles — a wrapper change reaches a fixed point after one more pass —
+but metadata like this never does: `{m: 1}`, `{m: 2}`, `{m: 4}`, on and on.
+Rather than hand back an array wearing one iteration's units, Quax refuses.
 
 `lax.while_loop` and `lax.scan` both check this; `lax.fori_loop` reports as
 whichever it lowered to. `lax.cond` never needed it — its branches are traced

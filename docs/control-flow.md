@@ -35,8 +35,12 @@ A `Value` that flattens to several arrays changes the number of operands the
 primitive takes, so Quax rebuilds the primitive's parameters to match. This is
 why a type with two array fields works in a `scan` carry at all.
 
-And the body is traced **once**, not once per iteration. That is where the
-sharp edge is.
+And the body is traced for its *structure*, not once per iteration. Usually
+that is a single pass. A body whose first pass changes the carry's wrapper —
+a slot pre-allocated plain and first written to inside the loop, or one
+materialised by a rule that does not match it — is traced again against that
+new structure, until it settles. What settles is what every iteration after
+the first actually sees, and it is how the result is labelled.
 
 ## The loop-carry constraint
 
@@ -45,10 +49,10 @@ output type differs from its input. But a `Value`'s Python-level metadata is
 *static*: it does not appear in the JAX type at all, so a body that changes it
 slips past that check.
 
-Since Quax traces the body once, only one pass through it is ever represented.
-It therefore compares the body's output structure against its input, and
-refuses rather than returning an array labelled with the metadata of a single
-iteration:
+A wrapper change settles: trace the body again against it and you reach a fixed
+point. Metadata does not. Squaring takes `{m: 1}` to `{m: 2}` to `{m: 4}`, and
+no number of passes reaches a structure the loop could keep. Quax refuses,
+rather than returning an array labelled with one iteration's units:
 
 ```python
 def square_thrice(x):
