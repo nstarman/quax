@@ -1,9 +1,9 @@
-"""A loop body may not change its carry's static metadata.
+"""A loop carry's structure must settle.
 
-JAX enforces a stable carry, but only over what its type system sees. A
-`Value`'s static metadata is part of its pytree structure rather than its aval,
-so a body that changes it used to pass JAX's check and have the change silently
-dropped -- returning a correct array wearing the wrong units.
+A `Value`'s metadata lives in its pytree structure rather than its aval, so
+JAX's carry-stability check cannot see it. A body that changes it used to pass
+that check and have the change dropped, returning a correct array wearing the
+wrong units.
 """
 
 import jax
@@ -12,8 +12,9 @@ import pytest
 from jax import lax
 
 import quax
-from quax._compat import typeof
 from quax.examples.unitful import meters, Unitful
+
+from ..unit.myarray import DenseArray
 
 
 def _while_squares(x):
@@ -34,7 +35,7 @@ def _scan_squares(x):
     "fn", [_while_squares, _fori_squares, _scan_squares], ids=["while", "fori", "scan"]
 )
 def test_changing_carry_metadata_raises(fn):
-    """Squaring changes the units every iteration, which cannot be represented."""
+    """Squaring takes the units somewhere new on every iteration."""
     x = Unitful(jnp.asarray([2.0]), meters)
 
     with pytest.raises(TypeError, match="carry changed structure"):
@@ -53,7 +54,7 @@ def test_changing_carry_metadata_raises(fn):
     ids=["while", "fori", "scan"],
 )
 def test_stable_carry_metadata_still_runs(fn):
-    """Doubling keeps the units, so the loop is representable and must still work."""
+    """Doubling keeps the units, so the loop is representable."""
     x = Unitful(jnp.asarray([2.0]), meters)
 
     out = quax.quaxify(fn)(x)
@@ -63,58 +64,31 @@ def test_stable_carry_metadata_still_runs(fn):
 
 
 def test_materialising_carry_is_not_an_error():
-    """A body that materialises its carry has fallen back, not changed metadata.
+    """Losing the wrapper is the documented fallback, not the failure above."""
 
-    `Plainish` has no registered rules, so `c + x` materialises it to a plain
-    array. The result is honestly plain rather than a mislabelled `Value`, which
-    is the documented fallback -- not the failure this check is for.
-    """
-    import equinox as eqx
-
-    class Plainish(quax.ArrayValue):
-        array: jax.Array = eqx.field(converter=jnp.asarray)
-
-        def materialise(self) -> jax.Array:
-            return self.array
-
-        def aval(self) -> jax.core.ShapedArray:
-            return typeof(self.array)
-
+    # `DenseArray` has no registered rules, so `c + x` materialises it.
     def f(carry, xs):
         return lax.scan(lambda c, x: (c + x, None), carry, xs)[0]
 
-    out = quax.quaxify(jax.jit(f))(Plainish(jnp.asarray(1.0)), jnp.arange(3.0))
+    out = quax.quaxify(jax.jit(f))(DenseArray(jnp.asarray(1.0)), jnp.arange(3.0))
 
     assert not isinstance(out, quax.ArrayValue)
     assert jnp.allclose(out, 1.0 + 0.0 + 1.0 + 2.0)
 
 
 def test_materialised_while_carry_is_not_rewrapped():
-    """A slot the body materialised must not come back wearing its old metadata.
+    """`while_loop` labels its result from the settled body, not the input.
 
-    `while_quax` used to unflatten with the *input* treedef, so a carry the body
-    materialised away was re-wrapped as the `Value` it no longer was -- the same
-    silent mislabelling this module is about, surviving for wrapper changes.
+    It used to unflatten with the input treedef, so a materialised carry came
+    back as the `Value` it no longer was.
     """
-    import equinox as eqx
-
-    class Tagged(quax.ArrayValue):
-        array: jax.Array = eqx.field(converter=jnp.asarray)
-        tag: str = eqx.field(static=True, default="original")
-
-        def materialise(self) -> jax.Array:
-            return self.array
-
-        def aval(self) -> jax.core.ShapedArray:
-            return typeof(self.array)
 
     def loop(x):
-        # `Tagged` has no rules, so `c + 1.0` materialises it
         return lax.while_loop(
             lambda c: c[0] < 3, lambda c: (c[0] + 1, c[1] + 1.0), (0, x)
         )[1]
 
-    out = quax.quaxify(jax.jit(loop))(Tagged(jnp.asarray([1.0]), "original"))
+    out = quax.quaxify(jax.jit(loop))(DenseArray(jnp.asarray([1.0])))
 
     assert not isinstance(out, quax.ArrayValue)
     assert jnp.allclose(out, 4.0)

@@ -74,12 +74,7 @@ def scatter_into_plain_buffer(
 def select_n_unitful_or_plain(
     which: ArrayLike, *cases: Unitful | ArrayLike, **kw: Any
 ) -> Any:
-    """`select_n` over a mix of `Unitful` and a plain buffer read.
-
-    `quax.examples.unitful` registers a strict all-`Unitful` rule; this is the
-    same buffer-boundary bridge as the rules below, for the slot equinox
-    pre-allocates plain and fills with a quantity inside the loop.
-    """
+    """Selecting between a quantity and a plain buffer read: keep the units."""
     unitful = [c.units for c in cases if isinstance(c, Unitful)]
     if not unitful:
         return jax.lax.select_n_p.bind(which, *cases, **kw)
