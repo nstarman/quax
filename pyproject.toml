@@ -46,7 +46,7 @@ docs = [
   "hippogriffe==0.2.2",
   "mkdocstrings[python]==1.0.6",
   "nbconvert>=7",
-  "pymdown-extensions==11.0.1",
+  "pymdown-extensions==11.0.2",
   "zensical",
 ]
 ide = ["ipykernel>=7.2.0"]
