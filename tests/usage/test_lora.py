@@ -5,6 +5,7 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
 import pytest
 from jaxtyping import TypeCheckError
 from plum import NotFoundLookupError
@@ -142,3 +143,62 @@ def test_regression_38(getkey):
     # `allow_materialise` is False.
     with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
         _ = func(y)
+
+
+def _count(tree):
+    return sum(x.size for x in jtu.tree_leaves(tree) if eqx.is_array(x))
+
+
+def test_trainable_filter_counts_only_the_adaptation(getkey):
+    linear = eqx.nn.Linear(64, 32, key=getkey())
+    loraed = lora.loraify(linear, rank=4, key=getkey())
+
+    trainable = eqx.filter(loraed, lora.trainable_filter(loraed))
+
+    # a (32x4) + b (4x64) + bias (32), but not the 32x64 frozen weight.
+    assert _count(trainable) == 32 * 4 + 4 * 64 + 32
+    assert _count(loraed) == _count(trainable) + 32 * 64
+
+
+def test_trainable_filter_keeps_everything_when_not_frozen(getkey):
+    mlp = eqx.nn.MLP(2, 2, 8, 2, key=getkey())
+    loraed = lora.loraify(mlp, rank=3, stop_gradient=False, key=getkey())
+
+    trainable = eqx.filter(loraed, lora.trainable_filter(loraed))
+
+    assert _count(trainable) == _count(loraed)
+
+
+def test_trainable_filter_is_a_no_op_without_lora(getkey):
+    mlp = eqx.nn.MLP(2, 2, 8, 2, key=getkey())
+
+    trainable = eqx.filter(mlp, lora.trainable_filter(mlp))
+
+    assert _count(trainable) == _count(mlp)
+
+
+def test_trainable_filter_removes_the_zero_cotangent(getkey):
+    """Partitioning gives the same gradients without allocating one for `w`."""
+    linear = eqx.nn.Linear(64, 32, key=getkey())
+    loraed = lora.loraify(linear, rank=4, key=getkey())
+    vector = jr.normal(getkey(), (64,))
+
+    @eqx.filter_grad
+    def whole(model, x):
+        return jnp.sum(quax.quaxify(model)(x))
+
+    @eqx.filter_grad
+    def split(trainable, frozen, x):
+        return jnp.sum(quax.quaxify(eqx.combine(trainable, frozen))(x))
+
+    trainable, frozen = eqx.partition(loraed, lora.trainable_filter(loraed))
+    grad_whole = whole(loraed, vector)
+    grad_split = split(trainable, frozen, vector)
+
+    # Differentiating the whole model produces a full-size buffer of zeros.
+    assert (grad_whole.weight._w == 0).all()
+    assert grad_split.weight._w is None
+
+    assert jnp.array_equal(grad_split.weight.a, grad_whole.weight.a)
+    assert jnp.array_equal(grad_split.weight.b, grad_whole.weight.b)
+    assert jnp.array_equal(grad_split.bias, grad_whole.bias)

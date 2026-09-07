@@ -167,6 +167,60 @@ def loraify(
     return jtu.tree_map(_loraify, model, is_leaf=_is_linear)
 
 
+def _is_lora_array(x) -> bool:
+    return isinstance(x, LoraArray)
+
+
+def trainable_filter(model: PyTree) -> PyTree:
+    """Builds a filter specifying which of `model`'s arrays LoRA trains.
+
+    Every array is marked `True`, except the frozen `w` of each
+    [`quax.examples.lora.LoraArray`][] that was created with `stop_gradient=True`.
+
+    `LoraArray` holds `w` as an ordinary array field, so it is a leaf like any
+    other. Filtering it out matters twice over: it is what makes a parameter count
+    report the adaptation rather than the whole model, and -- because
+    `jax.grad` allocates a cotangent for every array it is given -- it is what
+    stops a full-size buffer of zeros being produced for a weight that is not
+    being trained.
+
+    **Arguments:**
+
+    - `model`: any PyTree, typically the output of [`quax.examples.lora.loraify`][].
+
+    **Returns:**
+
+    A PyTree of the same structure as `model`, whose leaves are booleans. Suitable
+    for `equinox.filter` and `equinox.partition`.
+
+    !!! Example
+
+        ```python
+        filter_spec = lora.trainable_filter(model)
+
+        # Count what is actually being trained.
+        n = sum(x.size for x in jtu.tree_leaves(eqx.filter(model, filter_spec)))
+
+        # Or keep the frozen weights out of the gradient entirely.
+        trainable, frozen = eqx.partition(model, filter_spec)
+
+
+        @eqx.filter_grad
+        def loss(trainable, frozen, x):
+            model = eqx.combine(trainable, frozen)
+            return ...
+        ```
+    """
+
+    def _node(x):
+        spec = jtu.tree_map(eqx.is_array, x)
+        if _is_lora_array(x) and x.stop_gradient:
+            spec = eqx.tree_at(lambda n: n._w, spec, replace=False)
+        return spec
+
+    return jtu.tree_map(_node, model, is_leaf=_is_lora_array)
+
+
 @quax.quaxify
 def _lora_array_matmul_impl(w, a, b, rhs, lhs_batch, ndim, dimension_numbers, kwargs):
     n_sharedbatch = len(lhs_batch)  # = len(rhs_batch)

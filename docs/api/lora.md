@@ -15,6 +15,8 @@ For a user who only wants to LoRA'ify only part of their model, the underlying [
         members:
             - __init__
 
+::: quax.examples.lora.trainable_filter
+
 ## Example
 
 Here's a copy of the LoRA example from the README again:
