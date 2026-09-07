@@ -98,10 +98,10 @@ velocity = hijax_units.Unitful(
 )
 
 print(jax.jit(quax.quaxify(lambda m, v: 0.5 * m * v**2)).trace(mass, velocity).jaxpr)
-# { lambda ; a:q[]{kg} b:q[]{m s^-1}. let
-#     c:q[]{kg} = call_hi_primitive[_prim=Mul[{}]] 0.5:f32[] a
-#     d:q[]{m^2 s^-2} = call_hi_primitive[_prim=IntPow[{'y': 2}]] b
-#     e:q[]{kg m^2 s^-2} = call_hi_primitive[_prim=Mul[{}]] c d
+# { lambda ; a:u[]{kg} b:u[]{m s^-1}. let
+#     c:u[]{kg} = call_hi_primitive[_prim=Mul[{}]] 0.5:f32[] a
+#     d:u[]{m^2 s^-2} = call_hi_primitive[_prim=IntPow[{'y': 2}]] b
+#     e:u[]{kg m^2 s^-2} = call_hi_primitive[_prim=Mul[{}]] c d
 #   in (e,) }
 ```
 

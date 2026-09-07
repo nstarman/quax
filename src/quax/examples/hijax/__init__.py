@@ -8,16 +8,16 @@ from ._core import (
     MAPPED as MAPPED,
     Unitful as Unitful,
 )
-from ._quantity import (
+from ._unitful_array import (
     add as add,
     broadcast_in_dim as broadcast_in_dim,
     int_pow as int_pow,
     mul as mul,
-    Quantity as Quantity,
-    QuantitySpec as QuantitySpec,
-    QuantityTy as QuantityTy,
     sum as sum,
     to_units as to_units,
+    UnitfulArray as UnitfulArray,
+    UnitfulArraySpec as UnitfulArraySpec,
+    UnitfulArrayTy as UnitfulArrayTy,
     Units as Units,
     unwrap as unwrap,
     wrap as wrap,

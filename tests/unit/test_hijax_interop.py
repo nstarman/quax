@@ -22,7 +22,7 @@ pytest.importorskip(
     "quax.examples.hijax", reason="jax.experimental.hijax is unavailable"
 )
 
-from quax.examples.hijax import Quantity, unwrap, wrap  # noqa: E402
+from quax.examples.hijax import UnitfulArray, unwrap, wrap  # noqa: E402
 from quax.examples.unitful import meters, Unitful  # noqa: E402
 
 
@@ -36,14 +36,14 @@ def _quax_value():
 
 
 def test_hi_value_returned_from_quaxify_holds_no_tracer():
-    """Regression: the returned `Quantity` held a `_QuaxTracer`."""
+    """Regression: the returned `UnitfulArray` held a `_QuaxTracer`."""
 
     def f(_, array):
         return wrap(array * 2.0, meters)
 
     out = quax.quaxify(f)(_quax_value(), jnp.array([3.0, 4.0]))
 
-    assert isinstance(out, Quantity)
+    assert isinstance(out, UnitfulArray)
     assert not isinstance(out.array, jax.core.Tracer)
     assert jnp.array_equal(out.array, jnp.array([6.0, 8.0]))
 
@@ -65,11 +65,11 @@ def test_hi_value_passed_through_unchanged():
     Not necessarily the same object: it is taken apart and rebuilt through its
     own type, which is what makes the tracer case work.
     """
-    quantity = wrap(jnp.array([1.0, 2.0]), meters)
+    unitful_array = wrap(jnp.array([1.0, 2.0]), meters)
 
-    out = quax.quaxify(lambda _, q: q)(_quax_value(), quantity)
+    out = quax.quaxify(lambda _, q: q)(_quax_value(), unitful_array)
 
-    assert isinstance(out, Quantity)
+    assert isinstance(out, UnitfulArray)
     assert out.units == ((meters, 1),)
     assert jnp.array_equal(out.array, jnp.array([1.0, 2.0]))
 
@@ -113,13 +113,13 @@ def test_an_array_value_aval_must_stay_a_shaped_array():
     `ShapedArray` built *from* its leaf's hijax type instead. If JAX ever makes
     this work, that reason is gone and this test is the place it will show.
     """
-    from quax.examples.hijax import QuantityTy
+    from quax.examples.hijax import UnitfulArrayTy
 
     class HiAval(quax.ArrayValue):
         array: jax.Array
 
         def aval(self):
-            return QuantityTy(self.array.shape, self.array.dtype, ())
+            return UnitfulArrayTy(self.array.shape, self.array.dtype, ())
 
         def materialise(self):
             raise AssertionError

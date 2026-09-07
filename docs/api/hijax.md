@@ -37,7 +37,7 @@ operation is an error rather than a silent loss of units.
 | `jax.jvp` | Tangent units are the primal's |
 | `jax.vmap` | Requires [`MAPPED`][quax.examples.hijax.MAPPED] as the `in_axes`/`out_axes` entry, and `axis_size` when no plain-array argument is mapped |
 | `jax.lax.scan` | Works with a `Unitful` carry; no spec needed |
-| `jax.shard_map` | Not supported: `QuantityTy` implements no `shard`, `unshard` or `nospec` |
+| `jax.shard_map` | Not supported: `UnitfulArrayTy` implements no `shard`, `unshard` or `nospec` |
 
 ## Limitations
 
@@ -64,7 +64,7 @@ Built on [`quax.experimental.hijax`](experimental.md), which supplies the
 wrapper base class and generates the dispatch rules.
 
 `Unitful` is a [`quax.experimental.hijax.HiValue`][], so it inherits `aval`,
-`materialise`, and the `leaf` field holding the `Quantity`.
+`materialise`, and the `leaf` field holding the `UnitfulArray`.
 
 ::: quax.examples.hijax.Unitful
     options:
@@ -81,11 +81,11 @@ Values of these types are produced and consumed only by the functions below.
 See [the how-to](../how-to/transform-metadata-under-autodiff.md#avoid-two-traps)
 for the two rules that govern using them in traced code.
 
-::: quax.examples.hijax.Quantity
+::: quax.examples.hijax.UnitfulArray
 
-::: quax.examples.hijax.QuantityTy
+::: quax.examples.hijax.UnitfulArrayTy
 
-::: quax.examples.hijax.QuantitySpec
+::: quax.examples.hijax.UnitfulArraySpec
 
 `Units` is the canonical representation of physical units used throughout this
 module: a tuple of `(Dimension, exponent)` pairs, sorted by dimension name, with

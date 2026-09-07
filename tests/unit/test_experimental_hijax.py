@@ -20,7 +20,7 @@ pytest.importorskip(
     "quax.experimental.hijax", reason="jax.experimental.hijax is unavailable"
 )
 
-import quax.examples.hijax._quantity as hi  # noqa: E402
+import quax.examples.hijax._unitful_array as hi  # noqa: E402
 from quax.examples.unitful import meters  # noqa: E402
 from quax.experimental.hijax import HiValue, register_rules  # noqa: E402
 
@@ -29,7 +29,9 @@ class Tagged(HiValue):
     """A `HiValue` of its own, so its rules cannot collide with the example's."""
 
     def __init__(self, array: Any, units: Any = (), /) -> None:
-        self.leaf = array if isinstance(array, hi.Quantity) else hi.wrap(array, units)
+        self.leaf = (
+            array if isinstance(array, hi.UnitfulArray) else hi.wrap(array, units)
+        )
 
     @property
     def units(self) -> Any:
@@ -72,7 +74,7 @@ def test_the_hi_value_is_the_single_leaf(tagged):
     leaves = jax.tree.leaves(tagged)
 
     assert len(leaves) == 1
-    assert isinstance(leaves[0], hi.Quantity)
+    assert isinstance(leaves[0], hi.UnitfulArray)
 
 
 def test_rules_cover_every_mixed_operand_combination(tagged):

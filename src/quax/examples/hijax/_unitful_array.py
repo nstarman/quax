@@ -1,4 +1,4 @@
-"""The hijax layer: a `Quantity` value, its type, and its primitives.
+"""The hijax layer: a `UnitfulArray` value, its type, and its primitives.
 
 Nothing here mentions Quax. This is an ordinary [hijax](https://docs.jax.dev/en/latest/301/hijax-types.html)
 type: a value class that is *not* a pytree, a `HiType` describing it, and one
@@ -6,7 +6,7 @@ primitive per operation. [`_core.py`][] then wraps it in a `quax.ArrayValue` so
 that unmodified `jnp` code can drive these primitives.
 
 The reason to build units this way rather than as a plain `quax.ArrayValue`
-(which [`quax.examples.unitful`][] already does) is `QuantityTy.to_ct_aval`: a
+(which [`quax.examples.unitful`][] already does) is `UnitfulArrayTy.to_ct_aval`: a
 hijax type chooses its own cotangent type, so differentiating with respect to a
 length can yield a per-length gradient. Quax alone cannot express that, because
 a cotangent must reuse the primal's pytree structure -- static metadata
@@ -14,9 +14,9 @@ included.
 """
 
 __all__ = (
-    "Quantity",
-    "QuantitySpec",
-    "QuantityTy",
+    "UnitfulArray",
+    "UnitfulArraySpec",
+    "UnitfulArrayTy",
     "Units",
     "add",
     "broadcast_in_dim",
@@ -107,11 +107,11 @@ def str_units(a: Units, /) -> str:
 # ---------------------------------------------------------------------------
 
 
-class _QuantityMeta(type):
-    """Make `isinstance(x, Quantity)` true for a tracer of a `Quantity` too.
+class _UnitfulArrayMeta(type):
+    """Make `isinstance(x, UnitfulArray)` true for a tracer of a `UnitfulArray` too.
 
-    Under a trace a quantity is a `Tracer` of type `q[...]{...}`, not a
-    `Quantity` instance, so a plain `isinstance` check would answer "no" in
+    Under a trace a unitful array is a `Tracer` of type `u[...]{...}`, not a
+    `UnitfulArray` instance, so a plain `isinstance` check would answer "no" in
     exactly the code that has to work under tracing. Hijax's own `Box` and `Log`
     types use this same metaclass trick.
     """
@@ -119,12 +119,12 @@ class _QuantityMeta(type):
     def __instancecheck__(cls, instance: Any) -> bool:
         return super().__instancecheck__(instance) or (
             isinstance(instance, jax_core.Tracer)
-            and isinstance(jax.typeof(instance), QuantityTy)
+            and isinstance(jax.typeof(instance), UnitfulArrayTy)
         )
 
 
 @dataclass(frozen=True)
-class Quantity(metaclass=_QuantityMeta):
+class UnitfulArray(metaclass=_UnitfulArrayMeta):
     """An array with units, as hijax sees it.
 
     Deliberately *not* a pytree: JAX flattens a pytree into its leaves before it
@@ -151,14 +151,15 @@ class Quantity(metaclass=_QuantityMeta):
     units: Units
 
     def __repr__(self) -> str:
-        return f"Quantity({self.array}, {str_units(self.units)})"
+        return f"UnitfulArray({self.array}, {str_units(self.units)})"
 
 
 @dataclass(frozen=True)
-class QuantitySpec(MappingSpec):
-    """How a [`Quantity`][quax.examples.hijax.Quantity] is mapped by `vmap`.
+class UnitfulArraySpec(MappingSpec):
+    """How a [`UnitfulArray`][quax.examples.hijax.UnitfulArray] is mapped by `vmap`.
 
-    A batch of quantities is one bigger quantity with the same units, so the
+    A batch of unitful arrays is one bigger unitful array with the same units,
+    so the
     leading axis is the only mapping there is and this spec carries no data.
     Pass it as a `vmap` `in_axes`/`out_axes` entry, or use
     [`MAPPED`][quax.examples.hijax.MAPPED] for the `Unitful` that holds one.
@@ -166,10 +167,10 @@ class QuantitySpec(MappingSpec):
 
 
 @dataclass(frozen=True)
-class QuantityTy(HiType):
-    """The hijax type of a [`Quantity`][quax.examples.hijax.Quantity].
+class UnitfulArrayTy(HiType):
+    """The hijax type of a [`UnitfulArray`][quax.examples.hijax.UnitfulArray].
 
-    Prints in jaxprs as e.g. `q[3]{m s^-1}`. Equality includes the units, so
+    Prints in jaxprs as e.g. `u[3]{m s^-1}`. Equality includes the units, so
     JAX's own type checking rejects a rule that returns the wrong units.
     """
 
@@ -181,68 +182,70 @@ class QuantityTy(HiType):
     def lo_ty(self) -> list[Any]:  # list[ShapedArray]
         return [ShapedArray(self.shape, self.dtype)]
 
-    def lower_val(self, value: Quantity) -> list[ArrayLike]:
+    def lower_val(self, value: UnitfulArray) -> list[ArrayLike]:
         return [value.array]
 
-    def raise_val(self, array: ArrayLike) -> Quantity:
-        return Quantity(array, self.units)  # pyright: ignore[reportArgumentType]
+    def raise_val(self, array: ArrayLike) -> UnitfulArray:
+        return UnitfulArray(array, self.units)  # pyright: ignore[reportArgumentType]
 
     # -- autodiff.
     # A perturbation of a length is a length, so the tangent type is this type.
     # A cotangent is not: d(dimensionless)/d(x) is measured per unit of `x`, so
     # the cotangent type carries the *inverse* units. This asymmetry is the
     # whole reason for building units on hijax; see the module docstring.
-    def to_tangent_aval(self) -> "QuantityTy":
+    def to_tangent_aval(self) -> "UnitfulArrayTy":
         return self
 
-    def to_ct_aval(self) -> "QuantityTy":
-        return QuantityTy(self.shape, self.dtype, inv_units(self.units))
+    def to_ct_aval(self) -> "UnitfulArrayTy":
+        return UnitfulArrayTy(self.shape, self.dtype, inv_units(self.units))
 
     # Required because the tangent type is itself a hi type: autodiff needs to
     # instantiate and accumulate values of it.
-    def vspace_zero(self) -> Quantity:
-        return Quantity(jnp.zeros(self.shape, self.dtype), self.units)
+    def vspace_zero(self) -> UnitfulArray:
+        return UnitfulArray(jnp.zeros(self.shape, self.dtype), self.units)
 
-    def vspace_add(self, x: Quantity, y: Quantity) -> Quantity:
+    def vspace_add(self, x: UnitfulArray, y: UnitfulArray) -> UnitfulArray:
         return add(x, y)
 
     # -- vmap, and through it scan
-    def dec_rank(self, size: int | None, spec: Any) -> "QuantityTy":
-        return QuantityTy(self.shape[1:], self.dtype, self.units)
+    def dec_rank(self, size: int | None, spec: Any) -> "UnitfulArrayTy":
+        return UnitfulArrayTy(self.shape[1:], self.dtype, self.units)
 
-    def inc_rank(self, size: int | None, spec: Any) -> "QuantityTy":
-        return QuantityTy((size, *self.shape), self.dtype, self.units)  # pyright: ignore[reportArgumentType]
+    def inc_rank(self, size: int | None, spec: Any) -> "UnitfulArrayTy":
+        return UnitfulArrayTy((size, *self.shape), self.dtype, self.units)  # pyright: ignore[reportArgumentType]
 
-    def leading_axis_spec(self) -> QuantitySpec:
-        return QuantitySpec()
+    def leading_axis_spec(self) -> UnitfulArraySpec:
+        return UnitfulArraySpec()
 
     # -- printing
     def str_short(self, short_dtypes: bool = False, **kwargs: Any) -> str:
         dims = ",".join(map(str, self.shape))
-        return f"q[{dims}]{{{str_units(self.units)}}}"
+        return f"u[{dims}]{{{str_units(self.units)}}}"
 
     __repr__ = str_short
 
 
-register_hitype(Quantity, lambda q: QuantityTy(q.array.shape, q.array.dtype, q.units))
+register_hitype(
+    UnitfulArray, lambda q: UnitfulArrayTy(q.array.shape, q.array.dtype, q.units)
+)
 
 
 def units_of(aval: Any, /) -> Units:
     """The units of a hijax aval; a plain array type is dimensionless."""
-    return aval.units if isinstance(aval, QuantityTy) else ()
+    return aval.units if isinstance(aval, UnitfulArrayTy) else ()
 
 
 def _lower(aval: Any, value: Any, /) -> Any:
-    """The array inside `value`, which is a `Quantity` only if `aval` says so.
+    """The array inside `value`, which is a `UnitfulArray` only if `aval` says so.
 
-    Primitives here accept a mix of `QuantityTy` and plain array operands, so
+    Primitives here accept a mix of `UnitfulArrayTy` and plain array operands, so
     `expand` and the rules need to know which is which. The aval is fixed at
     primitive-construction time, which makes it the reliable place to ask.
     """
-    return value.array if isinstance(aval, QuantityTy) else value
+    return value.array if isinstance(aval, UnitfulArrayTy) else value
 
 
-def _matching_ct(aval: Any, ct: Quantity, /) -> Any:
+def _matching_ct(aval: Any, ct: UnitfulArray, /) -> Any:
     """Reshape and retype a cotangent to what the input type `aval` demands.
 
     Two corrections, both of which JAX type-checks. An operand that broadcast
@@ -259,10 +262,10 @@ def _matching_ct(aval: Any, ct: Quantity, /) -> Any:
             )
             raise NotImplementedError(msg)
         ct = sum(ct)
-    return ct if isinstance(aval, QuantityTy) else unwrap(ct)
+    return ct if isinstance(aval, UnitfulArrayTy) else unwrap(ct)
 
 
-def _result_type(x_aval: Any, y_aval: Any, units: Units, /) -> QuantityTy:
+def _result_type(x_aval: Any, y_aval: Any, units: Units, /) -> UnitfulArrayTy:
     """The output type of a binary elementwise primitive.
 
     A scalar operand broadcasts against an array one, which is what `jnp` emits
@@ -277,15 +280,15 @@ def _result_type(x_aval: Any, y_aval: Any, units: Units, /) -> QuantityTy:
         )
         raise TypeError(msg)
     dtype = jnp.promote_types(x_aval.dtype, y_aval.dtype)
-    return QuantityTy(shape, dtype, units)
+    return UnitfulArrayTy(shape, dtype, units)
 
 
 # ---------------------------------------------------------------------------
 # Primitives
 # ---------------------------------------------------------------------------
 #
-# Every operation on a Quantity is its own primitive: a hijax type gets no
-# implementations for free, and `jnp.sin(quantity)` is an error rather than a
+# Every operation on a UnitfulArray is its own primitive: a hijax type gets no
+# implementations for free, and `jnp.sin(unitful_array)` is an error rather than a
 # silent unit loss. Each declares its input and output types, gives the
 # implementation in `expand`, and carries the rules for the transforms it
 # supports (`jvp` for forward mode, `vjp_fwd`/`vjp_bwd_retval` for reverse,
@@ -300,7 +303,7 @@ def _batched(size: int, args: Sequence[Any], dims: Sequence[Any]) -> tuple[Any, 
     to report and the result is `(args, None)`.
 
     An unbatched operand alongside batched ones is given a leading size-`size`
-    axis. For a `Quantity` that needs a primitive -- `q[None]` would read an
+    axis. For a `UnitfulArray` that needs a primitive -- `q[None]` would read an
     attribute off a value that may be a tracer.
     """
     if all(d is None for d in dims):
@@ -313,26 +316,26 @@ def _batched(size: int, args: Sequence[Any], dims: Sequence[Any]) -> tuple[Any, 
             bdims = tuple(range(1, len(aval.shape) + 1))
             arg = (
                 broadcast_in_dim(arg, shape, bdims)
-                if isinstance(aval, QuantityTy)
+                if isinstance(aval, UnitfulArrayTy)
                 else jnp.broadcast_to(arg, shape)
             )
         elif isinstance(dim, int):
             arg = jnp.moveaxis(arg, dim, 0)
         aligned.append(arg)
-    return tuple(aligned), QuantitySpec()
+    return tuple(aligned), UnitfulArraySpec()
 
 
 class Wrap(HiPrim):
-    """`array -> Quantity`, attaching static units."""
+    """`array -> UnitfulArray`, attaching static units."""
 
     def __init__(self, x_aval: Any, units: Units) -> None:
         self.in_avals = (x_aval,)
-        self.out_aval = QuantityTy(x_aval.shape, x_aval.dtype, units)
+        self.out_aval = UnitfulArrayTy(x_aval.shape, x_aval.dtype, units)
         self.params = {"units": units}
         super().__init__()
 
-    def expand(self, x: ArrayLike) -> Quantity:
-        return Quantity(x, self.units)  # pyright: ignore[reportArgumentType]
+    def expand(self, x: ArrayLike) -> UnitfulArray:
+        return UnitfulArray(x, self.units)  # pyright: ignore[reportArgumentType]
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (x,), (t,) = primals, tangents
@@ -349,19 +352,19 @@ class Wrap(HiPrim):
         (x,), (d,) = args, dims
         if d is None:
             return self(x), None
-        return wrap(jnp.moveaxis(x, d, 0), self.units), QuantitySpec()
+        return wrap(jnp.moveaxis(x, d, 0), self.units), UnitfulArraySpec()
 
 
 class Unwrap(HiPrim):
-    """`Quantity -> array`, discarding the units."""
+    """`UnitfulArray -> array`, discarding the units."""
 
-    def __init__(self, q_aval: QuantityTy) -> None:
+    def __init__(self, q_aval: UnitfulArrayTy) -> None:
         self.in_avals = (q_aval,)
         self.out_aval = ShapedArray(q_aval.shape, q_aval.dtype)
         self.params = {}
         super().__init__()
 
-    def expand(self, q: Quantity) -> ArrayLike:
+    def expand(self, q: UnitfulArray) -> ArrayLike:
         return q.array
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
@@ -381,7 +384,7 @@ class Unwrap(HiPrim):
 
 
 class Add(HiPrim):
-    """Add two quantities. Their units must match."""
+    """Add two unitful arrays. Their units must match."""
 
     def __init__(self, x_aval: Any, y_aval: Any) -> None:
         x_units, y_units = units_of(x_aval), units_of(y_aval)
@@ -396,10 +399,10 @@ class Add(HiPrim):
         self.params = {}
         super().__init__()
 
-    def expand(self, x: Any, y: Any) -> Quantity:
+    def expand(self, x: Any, y: Any) -> UnitfulArray:
         x_aval, y_aval = self.in_avals
         array = _lower(x_aval, x) + _lower(y_aval, y)
-        return Quantity(array, self.out_aval.units)
+        return UnitfulArray(array, self.out_aval.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (x, y), (tx, ty) = primals, tangents
@@ -419,7 +422,7 @@ class Add(HiPrim):
 
 
 class Mul(HiPrim):
-    """Multiply two quantities, or a quantity and a plain array."""
+    """Multiply two unitful arrays, or one and a plain array."""
 
     def __init__(self, x_aval: Any, y_aval: Any) -> None:
         self.in_avals = (x_aval, y_aval)
@@ -428,10 +431,10 @@ class Mul(HiPrim):
         self.params = {}
         super().__init__()
 
-    def expand(self, x: Any, y: Any) -> Quantity:
+    def expand(self, x: Any, y: Any) -> UnitfulArray:
         x_aval, y_aval = self.in_avals
         array = _lower(x_aval, x) * _lower(y_aval, y)
-        return Quantity(array, self.out_aval.units)
+        return UnitfulArray(array, self.out_aval.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (x, y), (tx, ty) = primals, tangents
@@ -459,18 +462,18 @@ class Mul(HiPrim):
 
 
 class IntPow(HiPrim):
-    """Raise a quantity to a static integer power, units included."""
+    """Raise a unitful array to a static integer power, units included."""
 
-    def __init__(self, q_aval: QuantityTy, y: int) -> None:
+    def __init__(self, q_aval: UnitfulArrayTy, y: int) -> None:
         self.in_avals = (q_aval,)
-        self.out_aval = QuantityTy(
+        self.out_aval = UnitfulArrayTy(
             q_aval.shape, q_aval.dtype, pow_units(q_aval.units, y)
         )
         self.params = {"y": y}
         super().__init__()
 
-    def expand(self, q: Quantity) -> Quantity:
-        return Quantity(q.array**self.y, self.out_aval.units)
+    def expand(self, q: UnitfulArray) -> UnitfulArray:
+        return UnitfulArray(q.array**self.y, self.out_aval.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (q,), (t,) = primals, tangents
@@ -498,17 +501,17 @@ class IntPow(HiPrim):
 
 
 class Sum(HiPrim):
-    """Sum a quantity over `axes`. Units are unchanged."""
+    """Sum a unitful array over `axes`. Units are unchanged."""
 
-    def __init__(self, q_aval: QuantityTy, axes: tuple[int, ...]) -> None:
+    def __init__(self, q_aval: UnitfulArrayTy, axes: tuple[int, ...]) -> None:
         self.in_avals = (q_aval,)
         shape = tuple(d for i, d in enumerate(q_aval.shape) if i not in axes)
-        self.out_aval = QuantityTy(shape, q_aval.dtype, q_aval.units)
+        self.out_aval = UnitfulArrayTy(shape, q_aval.dtype, q_aval.units)
         self.params = {"axes": axes}
         super().__init__()
 
-    def expand(self, q: Quantity) -> Quantity:
-        return Quantity(jnp.sum(q.array, axis=self.axes), q.units)
+    def expand(self, q: UnitfulArray) -> UnitfulArray:
+        return UnitfulArray(jnp.sum(q.array, axis=self.axes), q.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (q,), (t,) = primals, tangents
@@ -532,22 +535,22 @@ class Sum(HiPrim):
 
 
 class BroadcastInDim(HiPrim):
-    """Broadcast a quantity to `shape`, as `lax.broadcast_in_dim` does."""
+    """Broadcast a unitful array to `shape`, as `lax.broadcast_in_dim` does."""
 
     def __init__(
         self,
-        q_aval: QuantityTy,
+        q_aval: UnitfulArrayTy,
         shape: tuple[int, ...],
         broadcast_dimensions: tuple[int, ...],
     ) -> None:
         self.in_avals = (q_aval,)
-        self.out_aval = QuantityTy(shape, q_aval.dtype, q_aval.units)
+        self.out_aval = UnitfulArrayTy(shape, q_aval.dtype, q_aval.units)
         self.params = {"shape": shape, "broadcast_dimensions": broadcast_dimensions}
         super().__init__()
 
-    def expand(self, q: Quantity) -> Quantity:
+    def expand(self, q: UnitfulArray) -> UnitfulArray:
         array = jax.lax.broadcast_in_dim(q.array, self.shape, self.broadcast_dimensions)
-        return Quantity(array, q.units)
+        return UnitfulArray(array, q.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (q,), (t,) = primals, tangents
@@ -593,15 +596,16 @@ class BroadcastInDim(HiPrim):
 # build one from the argument types and immediately apply it.
 
 
-def wrap(x: ArrayLike, units: UnitsLike = (), /) -> Quantity:
-    """Attach `units` to an array, giving a [`Quantity`][quax.examples.hijax.Quantity].
+def wrap(x: ArrayLike, units: UnitsLike = (), /) -> UnitfulArray:
+    """Attach `units` to an array, giving a
+    [`UnitfulArray`][quax.examples.hijax.UnitfulArray].
 
     ```python
     from quax.examples.hijax import wrap
     from quax.examples.unitful import meters
     import jax.numpy as jnp
 
-    wrap(jnp.asarray(2.0), meters)  # Quantity(2.0, m)
+    wrap(jnp.asarray(2.0), meters)  # UnitfulArray(2.0, m)
     ```
     """
     # A Python scalar reaches here as a typed literal, which has no `.shape`.
@@ -609,35 +613,35 @@ def wrap(x: ArrayLike, units: UnitsLike = (), /) -> Quantity:
     return Wrap(jax.typeof(x), to_units(units))(x)
 
 
-def unwrap(q: Quantity, /) -> ArrayLike:
-    """Drop the units from a [`Quantity`][quax.examples.hijax.Quantity]."""
+def unwrap(q: UnitfulArray, /) -> ArrayLike:
+    """Drop the units from a [`UnitfulArray`][quax.examples.hijax.UnitfulArray]."""
     return Unwrap(jax.typeof(q))(q)
 
 
-def add(x: Any, y: Any, /) -> Quantity:
-    """Add two quantities of the same units and shape."""
+def add(x: Any, y: Any, /) -> UnitfulArray:
+    """Add two unitful arrays of the same units and shape."""
     return Add(jax.typeof(x), jax.typeof(y))(x, y)
 
 
-def mul(x: Any, y: Any, /) -> Quantity:
-    """Multiply two quantities, or a quantity and a plain array."""
+def mul(x: Any, y: Any, /) -> UnitfulArray:
+    """Multiply two unitful arrays, or one and a plain array."""
     return Mul(jax.typeof(x), jax.typeof(y))(x, y)
 
 
-def int_pow(q: Quantity, y: int, /) -> Quantity:
-    """Raise a quantity to a static integer power."""
+def int_pow(q: UnitfulArray, y: int, /) -> UnitfulArray:
+    """Raise a unitful array to a static integer power."""
     return IntPow(jax.typeof(q), y)(q)
 
 
-def sum(q: Quantity, axes: tuple[int, ...] | None = None, /) -> Quantity:  # noqa: A001
-    """Sum a quantity over `axes`, or over every axis if `axes` is `None`."""
+def sum(q: UnitfulArray, axes: tuple[int, ...] | None = None, /) -> UnitfulArray:  # noqa: A001
+    """Sum a unitful array over `axes`, or over every axis if `axes` is `None`."""
     if axes is None:
         axes = tuple(builtins.range(len(jax.typeof(q).shape)))
     return Sum(jax.typeof(q), tuple(axes))(q)
 
 
 def broadcast_in_dim(
-    q: Quantity, shape: tuple[int, ...], broadcast_dimensions: tuple[int, ...], /
-) -> Quantity:
-    """Broadcast a quantity, as `jax.lax.broadcast_in_dim` does for arrays."""
+    q: UnitfulArray, shape: tuple[int, ...], broadcast_dimensions: tuple[int, ...], /
+) -> UnitfulArray:
+    """Broadcast a unitful array, as `jax.lax.broadcast_in_dim` does for arrays."""
     return BroadcastInDim(jax.typeof(q), tuple(shape), tuple(broadcast_dimensions))(q)

@@ -22,7 +22,7 @@ hijax = pytest.importorskip(
     "quax.examples.hijax", reason="jax.experimental.hijax is unavailable"
 )
 
-from quax.examples.hijax import MAPPED, Quantity, Unitful  # noqa: E402
+from quax.examples.hijax import MAPPED, Unitful, UnitfulArray  # noqa: E402
 from quax.examples.unitful import kilograms, meters, seconds  # noqa: E402
 
 
@@ -90,7 +90,7 @@ def test_units_appear_in_the_jaxpr():
 
     jaxpr = jax.jit(quax.quaxify(kinetic_energy)).trace(mass, velocity).jaxpr
 
-    assert "q[]{kg m^2 s^-2}" in str(jaxpr)
+    assert "u[]{kg m^2 s^-2}" in str(jaxpr)
 
 
 def test_jit_agrees_with_eager(no_tracer_leak_check):
@@ -192,12 +192,12 @@ def test_an_unregistered_primitive_refuses_to_materialise(length):
         quax.quaxify(jnp.sin)(length)
 
 
-def test_the_quantity_is_the_single_pytree_leaf(length):
+def test_the_unitful_array_is_the_single_pytree_leaf(length):
     """A `Unitful` is a pytree; the hijax value inside it is not."""
     leaves = jax.tree.leaves(length)
 
     assert len(leaves) == 1
-    assert isinstance(leaves[0], Quantity)
+    assert isinstance(leaves[0], UnitfulArray)
     assert jax.tree.leaves(leaves[0]) == [leaves[0]]
 
 

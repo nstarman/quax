@@ -145,7 +145,7 @@ class HiValue(ArrayValue):
     ```python
     class Unitful(HiValue):
         def __init__(self, array, units=()):
-            self.leaf = array if isinstance(array, Quantity) else wrap(array, units)
+            self.leaf = array if isinstance(array, UnitfulArray) else wrap(array, units)
 
         @property
         def units(self):

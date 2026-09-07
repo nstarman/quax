@@ -282,12 +282,12 @@ tracer. Build your values, *then* cross the boundary.
 and it has a consequence for runtime typechecking: the jaxtyping/beartype import
 hook installs *inside* the quaxify, so annotations on the wrapped function must
 describe arrays, not your Value type. A function annotated
-`q: Shaped[Quantity, "3"]` will fail typechecking when quaxify hands it something
+`q: Shaped[UnitfulArray, "3"]` will fail typechecking when quaxify hands it something
 that presents as `f64[3]`.
 
 **`__array__` must not silently strip.** If your type carries information a bare
 array cannot (a unit, an axis name), returning a stripped array from `__array__`
-converts a loud failure into a wrong number — `Quantity(90, "deg")` becoming
+converts a loud failure into a wrong number — `UnitfulArray(90, "deg")` becoming
 `90.0` for a radian consumer is a 57x error nothing will catch. This is reached
 implicitly: `np.asarray` always used it, and `jax.numpy.asarray` began using it in
 jax 0.10 where it previously raised. Raise instead, and name the explicit

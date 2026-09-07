@@ -1,12 +1,12 @@
-"""The Quax layer: an `ArrayValue` whose leaf is a hijax `Quantity`.
+"""The Quax layer: an `ArrayValue` whose leaf is a hijax `UnitfulArray`.
 
-The hijax type in [`_quantity.py`][] is complete but unfriendly: hijax types get
-no operations for free, so `jnp.sum(quantity)` is an error and every unit-aware
+The hijax type in [`_unitful_array.py`][] is complete but unfriendly: hijax types get
+no operations for free, so `jnp.sum(unitful_array)` is an error and every
 program has to be written against the primitives by hand.
 
 Quax fixes exactly that, and [`quax.experimental.hijax`][] supplies the
 plumbing. `Unitful` is a `HiValue` -- a `quax.ArrayValue`, so a pytree, holding
-one `Quantity` as its single leaf -- and `register_rules` maps the `lax`
+one `UnitfulArray` as its single leaf -- and `register_rules` maps the `lax`
 primitives that `jnp` emits onto the hijax primitives. Unmodified array code
 then runs, while the units, the typed jaxpr, and the inverted cotangent type all
 live in the leaf's hijax type.
@@ -21,8 +21,8 @@ import jax.lax as lax
 
 from quax.experimental.hijax import HiValue, register_rules
 
-from . import _quantity as hi
-from ._quantity import Quantity, QuantitySpec, Units, UnitsLike
+from . import _unitful_array as hi
+from ._unitful_array import UnitfulArray, UnitfulArraySpec, Units, UnitsLike
 
 
 class Unitful(HiValue):
@@ -43,23 +43,23 @@ class Unitful(HiValue):
     **Arguments:**
 
     - `array`: the array to attach units to. An existing
-        [`Quantity`][quax.examples.hijax.Quantity] is taken as-is.
+        [`UnitfulArray`][quax.examples.hijax.UnitfulArray] is taken as-is.
     - `units`: either a single `Dimension`, or a dict from `Dimension` to
         integer exponent -- e.g. `{meters: 1, seconds: -2}` for an acceleration.
     """
 
     def __init__(self, array: Any, units: UnitsLike = (), /) -> None:
         # A hi value is held as-is; anything else is an array to attach units
-        # to. The `isinstance` is true for a tracer of a quantity as well as a
-        # `Quantity` instance, which matters because the dispatch rules
+        # to. The `isinstance` is true for a tracer of a unitful array as well
+        # `UnitfulArray` instance, which matters because the dispatch rules
         # construct `Unitful`s under a trace. Do not test `eqx.is_array_like`
-        # here: a quantity tracer forwards `.shape` and `.dtype` from its type,
+        # here: such a tracer forwards `.shape` and `.dtype` from its type,
         # so it passes that check and would be wrapped a second time.
-        self.leaf = array if isinstance(array, Quantity) else hi.wrap(array, units)
+        self.leaf = array if isinstance(array, UnitfulArray) else hi.wrap(array, units)
 
     @property
     def units(self) -> Units:
-        """The units of the wrapped quantity, as a `Units` tuple."""
+        """The units of the wrapped array, as a `Units` tuple."""
         return jax.typeof(self.leaf).units
 
     @property
@@ -72,7 +72,7 @@ class Unitful(HiValue):
         return hi.unwrap(self.leaf)
 
 
-MAPPED = QuantitySpec()
+MAPPED = UnitfulArraySpec()
 """The `vmap` axis entry for a mapped [`Unitful`][quax.examples.hijax.Unitful].
 
 `vmap` will not guess how a hijax type is batched, so it takes a mapping spec
