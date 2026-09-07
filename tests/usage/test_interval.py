@@ -152,11 +152,10 @@ def test_mismatched_bound_shapes_are_rejected():
         Interval(jnp.zeros(3), jnp.zeros(4))
 
 
-def test_width_and_midpoint():
+def test_width():
     x = Interval(jnp.array([1.0, -2.0]), jnp.array([3.0, 2.0]))
 
     assert jnp.array_equal(x.width, jnp.array([2.0, 4.0]))
-    assert jnp.array_equal(x.midpoint, jnp.array([2.0, 0.0]))
 
 
 def test_inverted_bounds_are_not_checked():

@@ -48,10 +48,12 @@ better rule set.
 ## What works without a rule
 
 `Interval` overrides `quax.Value.default`, so any primitive that is *monotone*
-in its operands works without a rule of its own — reshaping, slicing, flipping,
-concatenating, `max`, `min`, and increasing functions like `exp`, `sqrt` and
-`tanh`. For those, mapping the operation over `lo` and over `hi` separately is
-exact.
+in its operands works without a rule of its own — addition, summation,
+reshaping, slicing, flipping, concatenating, broadcasting, `max`, `min`, and
+increasing functions like `exp`, `sqrt` and `tanh`. For those, mapping the
+operation over `lo` and over `hi` separately is exact, so only the four
+operations that are *not* — subtraction, negation, multiplication and
+`integer_pow` — need a rule written for them.
 
 There is deliberately no blanket fallback, because that same rule is unsound
 for anything else, and fails quietly. Applied to `sin` over `[0, 2*pi]` it would

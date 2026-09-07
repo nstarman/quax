@@ -99,8 +99,14 @@ class Interval(quax.ArrayValue):
 
         For those, mapping the primitive over `lo` and over `hi` separately is
         not just sound but *exact*, so one implementation covers a whole class
-        of operations without a rule each. See `MONOTONE` for the list, and for
-        why it is a list rather than "everything".
+        of operations without a rule each; `MONOTONE` is the list.
+
+        It is a list rather than "everything" because the same rule is
+        *unsound* for anything else, and fails silently. Applied to `sin` over
+        `[0, 2*pi]` it would give `[sin(0), sin(2*pi)]`, which is `[0, 0]` -- a
+        confident claim that the value is exactly zero, when it ranges over the
+        whole of `[-1, 1]`. `abs` and `neg` fail the same way; `neg` even
+        returns its bounds inverted. So an unrecognised primitive raises.
         """
         if primitive not in MONOTONE:
             covered = ", ".join(sorted(p.name for p in MONOTONE))
@@ -130,16 +136,13 @@ class Interval(quax.ArrayValue):
         """`hi - lo`, the size of the bracket on each element."""
         return self.hi - self.lo
 
-    @property
-    def midpoint(self) -> Array:
-        """The centre of the bracket on each element."""
-        return self.lo + self.width / 2
-
 
 MONOTONE: Final = frozenset(
     {
-        # Rearrange or select elements. Monotone because each output element is
-        # some input element, or the largest/smallest of several.
+        # Rearrange, replicate or select elements. Monotone because each
+        # output element is some input element, or the largest/smallest of
+        # several.
+        lax.broadcast_in_dim_p,
         lax.concatenate_p,
         lax.copy_p,
         lax.dynamic_slice_p,
@@ -156,26 +159,25 @@ MONOTONE: Final = frozenset(
         lax.asinh_p,
         lax.atan_p,
         lax.cbrt_p,
+        lax.convert_element_type_p,
         lax.erf_p,
         lax.exp_p,
         lax.log_p,
         lax.logistic_p,
         lax.sqrt_p,
         lax.tanh_p,
+        # Increasing in every operand they combine.
+        lax.add_p,
+        lax.reduce_sum_p,
     }
 )
 """The primitives that [`Interval.default`][] handles.
 
 Membership means the primitive is monotonically non-decreasing in each of its
 interval operands, which is what makes "apply it to `lo`, apply it to `hi`"
-exact.
-
-There is deliberately no blanket fallback, because that rule is *unsound* for
-anything else and fails silently. Applied to `sin` over `[0, 2*pi]` it would
-give `[sin(0), sin(2*pi)]`, which is `[0, 0]` -- a confident claim that the
-value is exactly zero, when it ranges over the whole of `[-1, 1]`. `abs` and
-`neg` fail the same way; `neg` even returns its bounds inverted. An operation
-missing from this set raises instead.
+exact. Anything missing from it raises instead --
+[`Interval.default`][quax.examples.interval.Interval.default] says why there is
+no blanket fallback.
 """
 
 
@@ -188,40 +190,22 @@ def _bounds(x: "Interval | ArrayLike", /) -> tuple[Any, Any]:
 # Rules
 # ---------------------------------------------------------------------------
 #
-# One per `lax` primitive. A plain array operand is a degenerate interval, so
-# the mixed cases fall out of the same arithmetic; they are registered
-# separately because Quax dispatches on the operand types.
-
-
-@quax.register(lax.add_p)
-def add_interval_interval(x: Interval, y: Interval, **kw: Any) -> Interval:
-    return Interval(x.lo + y.lo, x.hi + y.hi)
-
-
-@quax.register(lax.add_p)
-def add_interval_array_like(x: Interval, y: ArrayLike, **kw: Any) -> Interval:
-    return Interval(x.lo + y, x.hi + y)
-
-
-@quax.register(lax.add_p)
-def add_array_like_interval(x: ArrayLike, y: Interval, **kw: Any) -> Interval:
-    return Interval(y.lo + x, y.hi + x)
+# Only the primitives that are *not* monotone in every operand -- everything
+# else goes through `Interval.default`. A plain array operand is a degenerate
+# interval, so the mixed cases fall out of the same arithmetic; they need their
+# own registration only because Quax dispatches on the operand types.
 
 
 @quax.register(lax.sub_p)
-def sub_interval_interval(x: Interval, y: Interval, **kw: Any) -> Interval:
+def sub_any_interval(x: Interval | ArrayLike, y: Interval, **kw: Any) -> Interval:
     # The upper bound of a difference pairs x's upper with y's *lower*.
-    return Interval(x.lo - y.hi, x.hi - y.lo)
+    x_lo, x_hi = _bounds(x)
+    return Interval(x_lo - y.hi, x_hi - y.lo)
 
 
 @quax.register(lax.sub_p)
 def sub_interval_array_like(x: Interval, y: ArrayLike, **kw: Any) -> Interval:
     return Interval(x.lo - y, x.hi - y)
-
-
-@quax.register(lax.sub_p)
-def sub_array_like_interval(x: ArrayLike, y: Interval, **kw: Any) -> Interval:
-    return Interval(x - y.hi, x - y.lo)
 
 
 @quax.register(lax.neg_p)
@@ -244,13 +228,8 @@ def _mul_bounds(x: Any, y: Any, /) -> Interval:
 
 
 @quax.register(lax.mul_p)
-def mul_interval_interval(x: Interval, y: Interval, **kw: Any) -> Interval:
-    return _mul_bounds(x, y)
-
-
-@quax.register(lax.mul_p)
-def mul_interval_array_like(x: Interval, y: ArrayLike, **kw: Any) -> Interval:
-    # Not `Interval(x.lo * y, x.hi * y)`: a negative `y` swaps the bounds.
+def mul_interval_any(x: Interval, y: Interval | ArrayLike, **kw: Any) -> Interval:
+    # Not `Interval(x.lo * y, x.hi * y)`: a negative operand swaps the bounds.
     return _mul_bounds(x, y)
 
 
@@ -275,29 +254,3 @@ def integer_pow_interval(x: Interval, *, y: int, **kw: Any) -> Interval:
         straddles = (x.lo < 0) & (x.hi > 0)
         out_lo = jnp.where(straddles, jnp.zeros_like(out_lo), out_lo)
     return Interval(out_lo, out_hi)
-
-
-@quax.register(lax.broadcast_in_dim_p)
-def broadcast_in_dim_interval(operand: Interval, **kw: Any) -> Interval:
-    kw.pop("sharding", None)
-    return Interval(
-        lax.broadcast_in_dim(operand.lo, **kw),
-        lax.broadcast_in_dim(operand.hi, **kw),
-    )
-
-
-@quax.register(lax.convert_element_type_p)
-def convert_element_type_interval(operand: Interval, **kw: Any) -> Interval:
-    return Interval(
-        lax.convert_element_type_p.bind(operand.lo, **kw),
-        lax.convert_element_type_p.bind(operand.hi, **kw),
-    )
-
-
-@quax.register(lax.reduce_sum_p)
-def reduce_sum_interval(operand: Interval, *, axes: tuple[int, ...], **kw: Any):
-    # Summation is monotonic in each term, so the bounds sum independently.
-    return Interval(
-        lax.reduce_sum_p.bind(operand.lo, axes=axes, **kw),
-        lax.reduce_sum_p.bind(operand.hi, axes=axes, **kw),
-    )
