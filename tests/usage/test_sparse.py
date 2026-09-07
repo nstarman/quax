@@ -9,6 +9,11 @@ import quax.examples.sparse as sparse
 from ..helpers import tree_allclose
 
 
+# Well above float32 epsilon at the O(1) magnitudes `jr.normal` produces, and
+# well below the O(0.1) error a genuinely dropped contribution would cause.
+_ATOL = 1e-6
+
+
 def _make_sparse_example(getkey):
     data = jr.normal(getkey(), (2, 4))
     indices0 = jnp.array([2, 0, 3])
@@ -65,10 +70,14 @@ def test_add_dense(getkey):
         return jnp.ones((5, 1, 4)).at[idx].add(d)
 
     true_out0 = _add0(x.indices, x.data)
-    # `indices` contains duplicates, so both sides scatter-add into the same slot;
-    # float32 addition is not associative, so compare with a tolerance.
-    assert tree_allclose(out0, true_out0)
-    assert jnp.allclose(out0, x_mat + y0)
+    # `indices` repeats `indices3` in batch 1, so slot (1, 2, 0, 1) is a
+    # scatter-add of two `data` entries. `_add_bcoo_dense` accumulates them into
+    # the dense operand in one scatter; `materialise() + y` scatters into zeros
+    # and adds the dense operand last. Same sum, different order, so they differ
+    # by ~eps_f32 * max|summand|. When the summands cancel, that dwarfs `rtol *
+    # |result|`, so an absolute tolerance is what has to carry the comparison.
+    assert tree_allclose(out0, true_out0, atol=_ATOL)
+    assert jnp.allclose(out0, x_mat + y0, atol=_ATOL)
 
     @jax.vmap
     def _add1(i, d):
@@ -79,10 +88,10 @@ def test_add_dense(getkey):
         return base.at[idx].add(d)
 
     true_out1 = _add1(x.indices, x.data)
-    assert tree_allclose(out1, true_out1)
-    assert jnp.allclose(out1, x_mat + y1)
+    assert tree_allclose(out1, true_out1, atol=_ATOL)
+    assert jnp.allclose(out1, x_mat + y1, atol=_ATOL)
 
-    assert jnp.allclose(out2, x_mat + y2)
+    assert jnp.allclose(out2, x_mat + y2, atol=_ATOL)
 
 
 def test_add_sparse(getkey):
@@ -99,8 +108,8 @@ def test_add_sparse(getkey):
     assert z_mat.shape == (3, 2, 5, 1, 4)
     assert w.shape == (2, 5, 1, 4)
     assert w_mat.shape == (2, 5, 1, 4)
-    assert jnp.allclose(w_mat, x_mat * 2)
-    assert jnp.allclose(z_mat, x_mat + y_mat)
+    assert jnp.allclose(w_mat, x_mat * 2, atol=_ATOL)
+    assert jnp.allclose(z_mat, x_mat + y_mat, atol=_ATOL)
 
 
 def test_mul(getkey):
@@ -125,3 +134,22 @@ def test_mul(getkey):
     y2_at_indices = jax.vmap(lambda a, b: a[b])(y2, tuple_indices)
     true_out2 = sparse.BCOO(data * y2_at_indices, indices, shape)
     assert eqx.tree_equal(out2, true_out2)
+
+
+def test_add_dense_duplicate_indices():
+    """Adding a `BCOO` to a dense array accumulates repeated indices.
+
+    Deterministic, so it pins the semantics `test_add_dense` relies on: a
+    repeated index contributes every one of its `data` entries. A plain scatter
+    ("last writer wins") would give `[[2.0, -3.0]]` instead.
+    """
+    # The first two entries both target (0, 0); the third is a control.
+    indices = jnp.array([[0, 0], [0, 0], [0, 1]])
+    data = jnp.array([1.0, 2.0, -3.0])
+    x = sparse.BCOO(data, indices, (1, 2))
+    y = jnp.array([[10.0, 20.0]])
+
+    out = quax.quaxify(lambda a, b: a + b)(x, y)
+    assert jnp.array_equal(out, jnp.array([[13.0, 17.0]]))
+    x_mat = x.enable_materialise().materialise()
+    assert jnp.array_equal(x_mat, jnp.array([[3.0, -3.0]]))
