@@ -153,3 +153,18 @@ except Exception as e:
 
 `quaxify` is a JAX transform, so JAX's rule applies unchanged: do not let a value
 outlive the call it was traced in. Return it instead of stashing it.
+
+## JAX has hijax now. Should I use that instead?
+
+Usually not, and they are not really alternatives. Hijax defines a new JAX type
+with its own primitives; nothing existing applies to one, so `jnp.sin` on it is
+an error and every operation you want is a primitive you write. Quax runs code
+you do not own on your type, which is the opposite problem and the one most
+people have.
+
+Reach for hijax when the *type* has to do something Quax cannot — chiefly a
+cotangent that carries different metadata than its primal. The two also compose,
+with a hijax value in the leaf of a `quax.ArrayValue`.
+[Which should you use?](hijax.md#which-should-you-use) sets out the three cases,
+and [`quax.examples.hijax`](api/hijax.md) is a worked implementation of the
+combination.

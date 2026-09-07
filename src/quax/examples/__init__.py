@@ -2,6 +2,7 @@ import importlib
 
 
 __all__ = (
+    "hijax",
     "lora",
     "named",
     "prng",

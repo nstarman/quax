@@ -56,7 +56,9 @@ rule returned and rebuilds them against the primal's treedef, so even
 What you get is that your type survives differentiation intact. What you do not
 get is metadata recomputed for the derivative — Quax has no way to know what your
 metadata means, or how the chain rule ought to act on it. If that transformation
-matters to you, track it outside the gradient.
+matters to you, either track it outside the gradient, or move it out of the
+pytree and into the JAX type, where a cotangent type can differ from its primal:
+see [Transform metadata under autodiff](how-to/transform-metadata-under-autodiff.md).
 
 ## Custom derivative rules
 

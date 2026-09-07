@@ -25,6 +25,7 @@ Register a new JAX primitive handler for the `$input` operation.
    ```
 
    - Name the function after the primitive and the types it dispatches on (`add_meters_meters`, `mul_meters_array_like`) — never `def _`, which makes every rule indistinguishable in tracebacks and in plum's ambiguity errors
+   - If the type is hijax-backed (a `quax.experimental.hijax.HiValue`, whose single leaf is a `jax.experimental.hijax` value, as in `quax.examples.hijax`), do not write the rule by hand: add an entry to the type's `register_rules` mapping, which generates the rules for every operand combination. The entry maps the primitive to the hijax function, adapting parameters where they do not line up — `lax.integer_pow_p: lambda q, *, y, **kw: hi.int_pow(q, y)`. An operation the existing hijax primitives cannot express needs a new `HiPrim` first — see "Quax, hijax, or both" in [skills/quax/SKILL.md](../../skills/quax/SKILL.md)
    - Keep keyword-only params as `**kw` if the primitive may pass extra args (e.g. `out_dtype` for `mul_p`)
    - Forward unknown kwargs to the underlying JAX op when doing a materialised fallback
 

@@ -35,6 +35,8 @@ To use the built-in LoRA library, check out the [`quax`](./api/quax.md) and [`qu
 
 To start writing your own library (with your own array-ish type) using Quax, then check out the [custom type tutorial](./examples/custom_rules.ipynb).
 
+Weighing Quax against JAX's own [hijax](https://docs.jax.dev/en/latest/301/hijax-types.html) extension API? [Which should you use?](./hijax.md#which-should-you-use) sets out when each is right, and when to combine them.
+
 ## Example: LoRA
 
 This example demonstrates everything you need to use the built-in `quax.examples.lora` library.
