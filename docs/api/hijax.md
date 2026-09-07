@@ -1,27 +1,15 @@
 # quax.examples.hijax
 
-An array with physical units, built as a
-[hijax](https://docs.jax.dev/en/latest/301/hijax-types.html) type and wrapped in
-a `quax.ArrayValue`. The units live in the JAX type of the leaf, so they appear
-in jaxprs and a cotangent carries the *inverse* units. See
-[Quax and hijax](../hijax.md) for why the two layers are arranged this way, and
+An array with physical units whose cotangent carries the *inverse* units. Built
+on [`quax.experimental.hijax`](experimental.md); see
+[Quax and hijax](../hijax.md) for when to reach for it, and
 [`quax.examples.unitful`](unitful.md) for the same physics as a plain Quax type.
-
-Dimensions are shared with `quax.examples.unitful`: import `meters`,
-`kilograms`, `seconds` and `Dimension` from there.
-
-## Requirements
 
 | | |
 |---|---|
 | Minimum JAX | 0.10.2 ([`quax.experimental.hijax.HIJAX_FLOOR`](experimental.md)) |
-| JAX API used | `jax.experimental.hijax`, which is experimental |
 | Import failure | `ImportError` naming the missing hijax objects |
-
-Every other `quax.examples` submodule works on Quax's usual JAX floor. This one
-tracks a later one because it is built on
-[`quax.experimental.hijax`](experimental.md), which is where the JAX floor and
-the hijax name resolution live.
+| Dimensions | shared with `quax.examples.unitful`: import `meters`, `kilograms`, `seconds`, `Dimension` from there |
 
 ## Supported operations
 
@@ -90,8 +78,8 @@ wrapper base class and generates the dispatch rules.
 ## The hijax layer
 
 Values of these types are produced and consumed only by the functions below.
-Construct a `Quantity` with [`wrap`][quax.examples.hijax.wrap] rather than by
-calling the class, and do not read its attributes inside traced code.
+See [the how-to](../how-to/transform-metadata-under-autodiff.md#avoid-two-traps)
+for the two rules that govern using them in traced code.
 
 ::: quax.examples.hijax.Quantity
 

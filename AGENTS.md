@@ -39,8 +39,9 @@ Reference implementations: [src/quax/examples/zero/_core.py](src/quax/examples/z
 (minimal) and [src/quax/examples/lora/_core.py](src/quax/examples/lora/_core.py) (advanced).
 
 [src/quax/examples/hijax/](src/quax/examples/hijax/) is the worked
-quax-plus-hijax combination, and [docs/hijax.md](docs/hijax.md) is the reasoning
-behind it.
+quax-plus-hijax combination. [docs/hijax.md](docs/hijax.md) tells a user when to
+reach for it; [docs/about/why-not-built-on-hijax.md](docs/about/why-not-built-on-hijax.md)
+records why the two libraries are arranged this way.
 
 ## Testing Patterns
 

@@ -4,14 +4,11 @@ Experimental APIs, which may change or be removed without notice.
 
 ## quax.experimental.hijax
 
-Plumbing for building a `quax.Value` on top of a
-[hijax](https://docs.jax.dev/en/latest/301/hijax-types.html) type: a
-`quax.ArrayValue` whose single pytree leaf is a hijax value. Quax stays on the
-outside, dispatching unmodified `jnp` code; hijax owns the inside, where a
-cotangent can carry different metadata than its primal.
-[Quax and hijax](../hijax.md#which-should-you-use) covers when that is worth
-doing, and [`quax.examples.hijax`](hijax.md) is a worked type built on this
-module.
+Plumbing for building a `quax.Value` around a
+[hijax](https://docs.jax.dev/en/latest/301/hijax-types.html) type.
+[Quax and hijax](../hijax.md#which-should-you-use) covers when to reach for it,
+[the how-to](../how-to/transform-metadata-under-autodiff.md) covers how, and
+[`quax.examples.hijax`](hijax.md) is a worked type built on this module.
 
 Doubly experimental: `jax.experimental.hijax` is itself experimental and has
 renamed things in most recent releases. This module resolves those names by

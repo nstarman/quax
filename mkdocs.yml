@@ -111,3 +111,5 @@ nav:
         - 'api/experimental.md'
         - 'examples/other.md'
     - 'faq.md'
+    - About:
+        - 'about/why-not-built-on-hijax.md'

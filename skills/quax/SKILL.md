@@ -392,8 +392,9 @@ Hard constraints, if you do reach for hijax:
   `register_rules(cls, {primitive: hijax_fn})`, which generates the dispatch
   rules including the mixed operand combinations. It also re-exports the
   hijax names, so a rename upstream never reaches your code.
-- Working example: `quax.examples.hijax`. Rationale and worked comparison:
-  `docs/hijax.md`.
+- Working example: `quax.examples.hijax`. User-facing guidance:
+  `docs/hijax.md`. Why quax is not built on hijax, with the three constraints
+  above spelled out: `docs/about/why-not-built-on-hijax.md`.
 
 ## Troubleshooting
 
