@@ -136,5 +136,5 @@ those names for you.
   builds one.
 - [`quax.examples.hijax`](api/hijax.md) is the worked type, with the full list of
   what it supports.
-- [Why Quax is not built on hijax](about/why-not-built-on-hijax.md) is the design
+- [Why Quax is not built on hijax](why-not-built-on-hijax.md) is the design
   reasoning, if you want it.

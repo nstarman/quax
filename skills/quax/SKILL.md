@@ -394,7 +394,7 @@ Hard constraints, if you do reach for hijax:
   hijax names, so a rename upstream never reaches your code.
 - Working example: `quax.examples.hijax`. User-facing guidance:
   `docs/hijax.md`. Why quax is not built on hijax, with the three constraints
-  above spelled out: `docs/about/why-not-built-on-hijax.md`.
+  above spelled out: `docs/why-not-built-on-hijax.md`.
 
 ## Troubleshooting
 

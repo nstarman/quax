@@ -102,6 +102,7 @@ nav:
         - 'autodiff.md'
         - 'control-flow.md'
         - 'hijax.md'
+        - 'why-not-built-on-hijax.md'
         - 'sharp-bits.md'
     - Reference:
         - 'api/quax.md'
@@ -111,5 +112,3 @@ nav:
         - 'api/experimental.md'
         - 'examples/other.md'
     - 'faq.md'
-    - About:
-        - 'about/why-not-built-on-hijax.md'

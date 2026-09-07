@@ -1,7 +1,7 @@
 # Why Quax is not built on hijax
 
 *A design note. Nothing here is needed to use Quax — see
-[Quax and hijax](../hijax.md) for that. This records why the two libraries are
+[Quax and hijax](hijax.md) for that. This records why the two libraries are
 arranged as they are, for anyone evaluating Quax's direction or proposing to
 change it.*
 
