@@ -430,9 +430,10 @@ which added JAX 0.9–0.11 support, `scan_p`, and large trace-path speedups.
 
 `jax.experimental.hijax` is experimental and renames things: `HiType` and
 `register_hitype` arrived in JAX 0.8.2, `HiPspec` in 0.9.2, `MappingSpec` became
-public in 0.11.0, and `VJPHiPrimitive` becomes `HiPrim` after 0.11.1. Resolve
-the names by probing rather than pinning a version — `quax/examples/hijax/_compat.py`
-does this — and gate any use of it. See "Quax, hijax, or both" above.
+public in 0.11.0, and `VJPHiPrimitive` becomes `HiPrim` after 0.11.1. Do not
+spell either name yourself: import them from `quax.experimental.hijax`, which
+resolves them by probing (see `_resolve` in `src/quax/experimental/hijax.py`)
+and carries the JAX floor as `HIJAX_FLOOR`. See "Quax, hijax, or both" above.
 
 JAX-version-sensitive surfaces to expect churn in: primitive params (`sharding`,
 `out_sharding`, `out_dtype`), primitives that only exist in newer versions

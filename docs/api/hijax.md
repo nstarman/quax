@@ -14,14 +14,14 @@ Dimensions are shared with `quax.examples.unitful`: import `meters`,
 
 | | |
 |---|---|
-| Minimum JAX | 0.10.2 (`quax.examples.hijax._compat.HIJAX_FLOOR`) |
+| Minimum JAX | 0.10.2 ([`quax.experimental.hijax.HIJAX_FLOOR`](experimental.md)) |
 | JAX API used | `jax.experimental.hijax`, which is experimental |
 | Import failure | `ImportError` naming the missing hijax objects |
 
 Every other `quax.examples` submodule works on Quax's usual JAX floor. This one
-tracks a later one, and follows renames in the hijax API: the primitive base
-class is `VJPHiPrimitive` up to JAX 0.11.1 and `HiPrim` after it, and both names
-are resolved at import.
+tracks a later one because it is built on
+[`quax.experimental.hijax`](experimental.md), which is where the JAX floor and
+the hijax name resolution live.
 
 ## Supported operations
 

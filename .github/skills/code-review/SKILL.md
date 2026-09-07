@@ -145,7 +145,9 @@ both", and `quax.examples.hijax` is the worked combination. At review time:
   if a test actually differentiates it.
 - **The API renames.** Names must be resolved by probing, not pinned:
   `VJPHiPrimitive` becomes `HiPrim` after JAX 0.11.1 and `MappingSpec` only
-  became public in 0.11.0. `src/quax/examples/hijax/_compat.py` is the model.
+  became public in 0.11.0. `src/quax/experimental/hijax.py` does this once, in
+  `_resolve`; a change that spells either name anywhere else has reintroduced
+  the coupling.
 - **Expect the `JAX_CHECK_TRACER_LEAKS` fixture, and check it stays narrow.**
   Consuming a hi value under `jit` reports a false leak on JAX 0.10.2 and 0.11.0
   only — a JAX regression, fixed in 0.11.1. `tests/usage/test_hijax.py` disables
