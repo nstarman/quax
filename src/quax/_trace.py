@@ -13,7 +13,7 @@ import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
 
-from ._compat import JAX_GE_0_9_2, JAX_GE_0_11_0, to_ct_aval, typeof
+from ._compat import hi_aval, JAX_GE_0_9_2, JAX_GE_0_11_0, to_ct_aval, typeof
 from ._dispatch import (
     _default_process,
     _dispatch_cache,
@@ -549,4 +549,19 @@ def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
         x = trace.full_raise(x)
     if isinstance(x, _QuaxTracer):
         return x.value.array if type(x.value) is _DenseArrayValue else x.value
+    # A hijax value is an opaque leaf, so `tree_map` hands it here whole rather
+    # than descending into it. Its components may be our tracers -- a hi
+    # primitive applied under this trace runs its `expand` on whatever we gave
+    # it -- and returning it untouched would leak a `_QuaxTracer` past the
+    # `quaxify` boundary. Take it apart with the type's own lowering, unwrap
+    # each component, and rebuild.
+    #
+    # `hi_aval` returns `None` (so this costs one dict lookup) for every leaf
+    # that is not a hi value, which on this path is all of them: array-likes and
+    # tracers were handled above.
+    if (aval := hi_aval(x)) is not None:
+        # A list comprehension, not a generator: an unconsumed-then-discarded
+        # generator frame keeps its tracers reachable long enough for
+        # `JAX_CHECK_TRACER_LEAKS` to report them as leaked.
+        return aval.raise_val(*[_unwrap_tracer(trace, v) for v in aval.lower_val(x)])
     return x
