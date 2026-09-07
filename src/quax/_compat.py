@@ -181,42 +181,31 @@ def to_ct_aval(aval: Any, /) -> Any:
 # single typed value in a jaxpr and lowers into arrays only at compile time
 # (`jax.experimental.hijax`). A *value* of such a type is an opaque leaf -- not
 # a pytree -- so `jax.tree_util` walks straight past it, which is why Quax has
-# to recognise one explicitly at its boundary. Absent on the `jax>=0.7.2` floor.
-_HAS_HI_TYPES: Final = hasattr(jax_core.AbstractValue, "is_high")
+# to recognise one explicitly at its boundary.
 
-hi_aval: Callable[[Any], Any]
 
-if _HAS_HI_TYPES:
+def hi_aval(x: Any, /) -> Any:
+    """Return `x`'s hijax type, or `None` if `x` is not an immutable hi value.
 
-    def hi_aval(x: Any, /) -> Any:
-        """Return `x`'s hijax type, or `None` if `x` is not an immutable hi value.
+    Mirrors `jax.typeof`'s own registry lookup (exact type, then MRO) rather
+    than calling it, because `typeof` raises `TypeError` for the ordinary
+    non-JAX objects that reach this function, and swallowing that would also
+    swallow genuine errors raised from inside a user's own type function.
 
-        Mirrors `jax.typeof`'s own registry lookup (exact type, then MRO) rather
-        than calling it, because `typeof` raises `TypeError` for the ordinary
-        non-JAX objects that reach this function, and swallowing that would also
-        swallow genuine errors raised from inside a user's own type function.
-
-        Mutable hi types (`has_qdd`, e.g. `hijax.Box`) are excluded: they lower
-        through `read_loval`/`update_from_loval` against a separate state object
-        rather than the `lower_val`/`raise_val` pair used here.
-        """
-        mappings = jax_core.pytype_aval_mappings
-        for typ in type(x).__mro__:
-            aval_fn = mappings.get(typ)
-            if aval_fn is not None:
-                aval = aval_fn(x)
-                # `has_qdd` via `getattr`: a JAX new enough to have `is_high`
-                # but not `has_qdd` has no mutable hi types either, and `False`
-                # is then the right answer.
-                mutable = getattr(aval, "has_qdd", False)
-                return aval if aval.is_high and not mutable else None
-        return None
-
-else:
-
-    def hi_aval(x: Any, /) -> Any:
-        """Return `None`: this JAX is too old to have hijax types."""
-        return None
+    Both attributes are read with `getattr`, which is what makes this work on
+    every supported JAX: one without hi types has neither, and `False` is the
+    right answer for both. `has_qdd` excludes mutable hi types (`hijax.Box`),
+    which lower through a separate state object rather than the
+    `lower_val`/`raise_val` pair used here.
+    """
+    mappings = jax_core.pytype_aval_mappings
+    for typ in type(x).__mro__:
+        aval_fn = mappings.get(typ)
+        if aval_fn is not None:
+            aval = aval_fn(x)
+            hi = getattr(aval, "is_high", False) and not getattr(aval, "has_qdd", False)
+            return aval if hi else None
+    return None
 
 
 # Mark `jax.Array` as "faithful" for `plum` multiple dispatch.
