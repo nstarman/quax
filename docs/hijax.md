@@ -143,6 +143,7 @@ A hijax type is not metadata on a pytree; it is a *type*, and a type gets to say
 what its cotangent type is. Compare the two units libraries in this repository,
 which model the same physics and differ only in where the units live:
 
+<!--- skip: start if(not have_hijax, 'hijax needs a newer JAX than quax does') -->
 ```python
 import jax
 import jax.numpy as jnp
@@ -221,3 +222,5 @@ sharding-in-types are all things it could not do alone and can now reach.
 
 To build one, see
 [How to make metadata transform under autodiff](how-to/transform-metadata-under-autodiff.md).
+
+<!--- skip: end -->

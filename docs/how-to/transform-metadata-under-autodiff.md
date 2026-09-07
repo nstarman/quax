@@ -83,6 +83,7 @@ two do not line up, as three of the four entries above do.
 
 ## Check that the metadata transformed
 
+<!--- skip: start if(not have_hijax, 'hijax needs a newer JAX than quax does') -->
 ```python
 import jax
 import jax.numpy as jnp
@@ -123,6 +124,8 @@ def neg_unitful(x: hijax_units.Unitful, **kw: Any) -> hijax_units.Unitful:
 
 print(quax.quaxify(lambda a: -a)(length).units)  # ((m, 1),)
 ```
+
+<!--- skip: end -->
 
 An operation your primitives do *not* cover is the expensive case: it needs a
 new `HiPrim`, with a typing rule, an `expand`, and a rule for each transform you
