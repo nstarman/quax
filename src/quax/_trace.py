@@ -54,14 +54,14 @@ class _QuaxTracer(core.Tracer):
             # for the trace-context manager below.
             self._cached_aval = _DenseArrayValue.aval(value)
         else:
-            # `aval()` is user code and may bind JAX primitives (e.g.
-            # `lora.LoraArray.aval` calls `lax.stop_gradient`). Tracers are
-            # constructed while the current trace has been taken -- inside
-            # `core.take_current_trace()`, or inside `Primitive.bind` while it
-            # dispatches to `process_primitive` -- and JAX >=0.11 leaves the
-            # current trace as `None` there (it used to be `eval_trace`), so
-            # binding anything would fail. Evaluate the aval under the parent
-            # trace, which is where the value's leaves live.
+            # `aval()` is user code and may bind JAX primitives (see
+            # `StopGradArray` in tests/unit/test_aval_binds_primitive.py).
+            # Tracers are constructed while the current trace has been taken --
+            # inside `core.take_current_trace()`, or inside `Primitive.bind`
+            # while it dispatches to `process_primitive` -- and JAX >=0.11
+            # leaves the current trace as `None` there (it used to be
+            # `eval_trace`), so binding anything would fail. Evaluate the aval
+            # under the parent trace, which is where the value's leaves live.
             with core.set_current_trace(trace.parent_trace):
                 self._cached_aval = type(value).aval(value)
 

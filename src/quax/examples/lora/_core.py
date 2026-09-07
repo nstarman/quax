@@ -87,7 +87,12 @@ class LoraArray(quax.ArrayValue):
             )
 
     def aval(self):
-        return jax.core.ShapedArray(self.w.shape, self.w.dtype)
+        # `self._w`, not `self.w`: reading `w` binds `lax.stop_gradient`, and
+        # `aval` is called once per tracer on the hot path. Its result is the
+        # same either way -- `stop_gradient` is shape- and dtype-preserving --
+        # so going through the property bought nothing and cost a primitive
+        # bind on every tracer construction.
+        return jax.core.ShapedArray(self._w.shape, self._w.dtype)
 
 
 def _is_linear(x):

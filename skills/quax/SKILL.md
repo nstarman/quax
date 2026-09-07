@@ -138,9 +138,10 @@ quax.quaxify(jnp.add)(Meters(jnp.arange(3.0)), Meters(jnp.ones(3)))
 `AbstractValue` every time. Quax caches the result at tracer-construction time
 and never observes later changes.
 
-Pure does not mean array-free — `aval()` may bind JAX primitives, and
-`lora.LoraArray.aval` calls `lax.stop_gradient`. Quax evaluates it under the
-parent trace so that works. (Under jax ≤0.10 this held by luck; jax 0.11 leaves
+Pure does not mean array-free — `aval()` may bind JAX primitives, and quax
+evaluates it under the parent trace so that works. Prefer not to: `aval` runs
+once per tracer, so a bind there is on the hot path. Read the field directly
+when the primitive would not change the shape or dtype. (Under jax ≤0.10 this held by luck; jax 0.11 leaves
 no current trace at that point. Fixed on main after v0.4.3 — on v0.4.3 or
 earlier with jax 0.11, an `aval()` that binds anything fails.)
 
