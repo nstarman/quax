@@ -1,8 +1,8 @@
 """The Quax layer: an `ArrayValue` whose leaf is a hijax `UnitfulArray`.
 
-The hijax type in [`_unitful_array.py`][] is complete but unfriendly: hijax types get
-no operations for free, so `jnp.sum(unitful_array)` is an error and every
-program has to be written against the primitives by hand.
+The hijax type in [`_unitful_array.py`][] is complete but unfriendly: hijax
+types get no operations for free, so `jnp.sum(unitful_array)` is an error and
+every unit-aware program has to be written against the primitives by hand.
 
 Quax fixes exactly that, and [`quax.experimental.hijax`][] supplies the
 plumbing. `Unitful` is a `HiValue` -- a `quax.ArrayValue`, so a pytree, holding
@@ -51,10 +51,11 @@ class Unitful(HiValue):
     def __init__(self, array: Any, units: UnitsLike = (), /) -> None:
         # A hi value is held as-is; anything else is an array to attach units
         # to. The `isinstance` is true for a tracer of a unitful array as well
-        # `UnitfulArray` instance, which matters because the dispatch rules
-        # construct `Unitful`s under a trace. Do not test `eqx.is_array_like`
-        # here: such a tracer forwards `.shape` and `.dtype` from its type,
-        # so it passes that check and would be wrapped a second time.
+        # as for a `UnitfulArray` instance, which matters because the dispatch
+        # rules construct `Unitful`s under a trace. Do not test
+        # `eqx.is_array_like` here: such a tracer forwards `.shape` and
+        # `.dtype` from its type, so it passes that check and would be wrapped
+        # a second time.
         self.leaf = array if isinstance(array, UnitfulArray) else hi.wrap(array, units)
 
     @property

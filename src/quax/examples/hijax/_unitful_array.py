@@ -159,8 +159,8 @@ class UnitfulArraySpec(MappingSpec):
     """How a [`UnitfulArray`][quax.examples.hijax.UnitfulArray] is mapped by `vmap`.
 
     A batch of unitful arrays is one bigger unitful array with the same units,
-    so the
-    leading axis is the only mapping there is and this spec carries no data.
+    so the leading axis is the only mapping there is and this spec carries no
+    data.
     Pass it as a `vmap` `in_axes`/`out_axes` entry, or use
     [`MAPPED`][quax.examples.hijax.MAPPED] for the `Unitful` that holds one.
     """
@@ -288,8 +288,8 @@ def _result_type(x_aval: Any, y_aval: Any, units: Units, /) -> UnitfulArrayTy:
 # ---------------------------------------------------------------------------
 #
 # Every operation on a UnitfulArray is its own primitive: a hijax type gets no
-# implementations for free, and `jnp.sin(unitful_array)` is an error rather than a
-# silent unit loss. Each declares its input and output types, gives the
+# implementations for free, and `jnp.sin(unitful_array)` is an error rather
+# than a silent unit loss. Each declares its input and output types, gives the
 # implementation in `expand`, and carries the rules for the transforms it
 # supports (`jvp` for forward mode, `vjp_fwd`/`vjp_bwd_retval` for reverse,
 # `batch` for `vmap` and hence `scan`).
