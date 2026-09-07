@@ -97,10 +97,54 @@ def test_jit_agrees_with_eager():
     assert bounds(jax.jit(quax.quaxify(f))(x)) == bounds(quax.quaxify(f)(x))
 
 
-def test_an_unregistered_primitive_refuses_to_materialise():
+def test_default_handles_primitives_that_only_move_elements():
+    """One `default` covers a whole class, exactly, without a rule each."""
+    x = Interval(jnp.array([1.0, 2.0, 3.0, 4.0]), jnp.array([2.0, 4.0, 6.0, 8.0]))
+
+    sliced = quax.quaxify(lambda a: a[1:3])(x)
+    assert sliced.lo.tolist() == [2.0, 3.0]
+    assert sliced.hi.tolist() == [4.0, 6.0]
+
+    flipped = quax.quaxify(jnp.flip)(x)
+    assert flipped.lo.tolist() == [4.0, 3.0, 2.0, 1.0]
+
+    assert bounds(quax.quaxify(jnp.max)(x)) == (4.0, 8.0)
+    assert bounds(quax.quaxify(jnp.min)(x)) == (1.0, 2.0)
+
+    reshaped = quax.quaxify(lambda a: a.reshape(2, 2))(x)
+    assert reshaped.lo.tolist() == [[1.0, 2.0], [3.0, 4.0]]
+
+
+def test_default_handles_increasing_functions():
+    """An increasing function maps the bounds straight across."""
+    x = Interval(1.0, 4.0)
+
+    lo, hi = bounds(quax.quaxify(jnp.sqrt)(x))
+    assert (lo, hi) == (1.0, 2.0)
+    lo, hi = bounds(quax.quaxify(jnp.exp)(x))
+    assert lo == pytest.approx(float(jnp.exp(jnp.asarray(1.0))))
+    assert hi == pytest.approx(float(jnp.exp(jnp.asarray(4.0))))
+
+
+def test_default_refuses_a_non_monotone_primitive():
+    """Guessing here would be unsound, not merely loose.
+
+    Mapping `sin` over the endpoints of `[0, 2*pi]` gives `[0, 0]` -- a
+    confident claim that the value is exactly zero, when it ranges over all of
+    `[-1, 1]`. So an unknown primitive raises rather than falling back.
+    """
+    with pytest.raises(ValueError, match="no rule for `sin`"):
+        quax.quaxify(jnp.sin)(Interval(0.0, 1.0))
+
+    # and the message says what it *does* cover, so the fix is obvious
+    with pytest.raises(ValueError, match="Handled by default:"):
+        quax.quaxify(jnp.sin)(Interval(0.0, 1.0))
+
+
+def test_materialise_refuses_when_called_directly():
     """A silently collapsed bound would be a wrong answer, not a lost type."""
     with pytest.raises(ValueError, match="Refusing to materialise"):
-        quax.quaxify(jnp.sin)(Interval(0.0, 1.0))
+        Interval(0.0, 1.0).materialise()
 
 
 def test_mismatched_bound_shapes_are_rejected():

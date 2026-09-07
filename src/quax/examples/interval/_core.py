@@ -4,15 +4,18 @@ A demonstration, not a library -- see the class docstring for what that means
 here, and `src/quax/examples/interval/README.md` for the shape of the idea.
 """
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Final
 
 import equinox as eqx
 import jax.core
+import jax.extend.core as jexc
 import jax.lax as lax
 import jax.numpy as jnp
 from jaxtyping import Array, ArrayLike, Shaped
 
 import quax
+from quax._values import ValueLike
 
 
 class Interval(quax.ArrayValue):
@@ -48,9 +51,11 @@ class Interval(quax.ArrayValue):
         rounding error of one float operation. Fine for estimating error, not
         for verified computation.
 
-    Refuses to [`quax.Value.materialise`][]: an operation with no rule is an
-    error rather than a silently collapsed bound, which would be a wrong answer
-    presented as a right one.
+    Operations with no registered rule fall to
+    [`default`][quax.examples.interval.Interval.default], which handles anything
+    monotone in its operands — see [`MONOTONE`][quax.examples.interval.MONOTONE].
+    Anything else is an error, and [`quax.Value.materialise`][] refuses too: a
+    silently collapsed bound would be a wrong answer presented as a right one.
 
     **Arguments:**
 
@@ -84,6 +89,42 @@ class Interval(quax.ArrayValue):
         )
         raise ValueError(msg)
 
+    @staticmethod
+    def default(
+        primitive: jexc.Primitive,
+        values: Sequence[ValueLike],
+        params: dict[str, Any],
+    ) -> Any:
+        """Handle any primitive that is monotone in each of its interval operands.
+
+        For those, mapping the primitive over `lo` and over `hi` separately is
+        not just sound but *exact*, so one implementation covers a whole class
+        of operations without a rule each. See `MONOTONE` for the list, and for
+        why it is a list rather than "everything".
+        """
+        if primitive not in MONOTONE:
+            covered = ", ".join(sorted(p.name for p in MONOTONE))
+            msg = (
+                f"`Interval` has no rule for `{primitive.name}`, and it is not "
+                f"monotone in its operands as far as this example knows, so "
+                f"there is no sound bound to give. Register a rule for it. "
+                f"Handled by default: {covered}."
+            )
+            raise ValueError(msg)
+        if primitive is lax.select_n_p and isinstance(values[0], Interval):
+            msg = (
+                "`select_n` is monotone in its cases but not in its predicate, "
+                "so an `Interval` predicate has no sound bound."
+            )
+            raise ValueError(msg)
+        lo = [v.lo if isinstance(v, Interval) else v for v in values]
+        hi = [v.hi if isinstance(v, Interval) else v for v in values]
+        out_lo = primitive.bind(*lo, **params)
+        out_hi = primitive.bind(*hi, **params)
+        if primitive.multiple_results:
+            return [Interval(a, b) for a, b in zip(out_lo, out_hi, strict=True)]
+        return Interval(out_lo, out_hi)
+
     @property
     def width(self) -> Array:
         """`hi - lo`, the size of the bracket on each element."""
@@ -93,6 +134,49 @@ class Interval(quax.ArrayValue):
     def midpoint(self) -> Array:
         """The centre of the bracket on each element."""
         return self.lo + self.width / 2
+
+
+MONOTONE: Final = frozenset(
+    {
+        # Rearrange or select elements. Monotone because each output element is
+        # some input element, or the largest/smallest of several.
+        lax.concatenate_p,
+        lax.copy_p,
+        lax.dynamic_slice_p,
+        lax.gather_p,
+        lax.reduce_max_p,
+        lax.reduce_min_p,
+        lax.rev_p,
+        lax.reshape_p,
+        lax.select_n_p,
+        lax.slice_p,
+        lax.squeeze_p,
+        lax.transpose_p,
+        # Increasing elementwise functions, so the bounds map straight across.
+        lax.asinh_p,
+        lax.atan_p,
+        lax.cbrt_p,
+        lax.erf_p,
+        lax.exp_p,
+        lax.log_p,
+        lax.logistic_p,
+        lax.sqrt_p,
+        lax.tanh_p,
+    }
+)
+"""The primitives that [`Interval.default`][] handles.
+
+Membership means the primitive is monotonically non-decreasing in each of its
+interval operands, which is what makes "apply it to `lo`, apply it to `hi`"
+exact.
+
+There is deliberately no blanket fallback, because that rule is *unsound* for
+anything else and fails silently. Applied to `sin` over `[0, 2*pi]` it would
+give `[sin(0), sin(2*pi)]`, which is `[0, 0]` -- a confident claim that the
+value is exactly zero, when it ranges over the whole of `[-1, 1]`. `abs` and
+`neg` fail the same way; `neg` even returns its bounds inverted. An operation
+missing from this set raises instead.
+"""
 
 
 def _bounds(x: "Interval | ArrayLike", /) -> tuple[Any, Any]:
