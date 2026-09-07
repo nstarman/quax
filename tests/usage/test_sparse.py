@@ -6,6 +6,8 @@ import jax.random as jr
 import quax
 import quax.examples.sparse as sparse
 
+from ..helpers import tree_allclose
+
 
 def _make_sparse_example(getkey):
     data = jr.normal(getkey(), (2, 4))
@@ -63,7 +65,9 @@ def test_add_dense(getkey):
         return jnp.ones((5, 1, 4)).at[idx].add(d)
 
     true_out0 = _add0(x.indices, x.data)
-    assert jnp.array_equal(out0, true_out0)
+    # `indices` contains duplicates, so both sides scatter-add into the same slot;
+    # float32 addition is not associative, so compare with a tolerance.
+    assert tree_allclose(out0, true_out0)
     assert jnp.allclose(out0, x_mat + y0)
 
     @jax.vmap
@@ -75,7 +79,7 @@ def test_add_dense(getkey):
         return base.at[idx].add(d)
 
     true_out1 = _add1(x.indices, x.data)
-    assert jnp.array_equal(out1, true_out1)
+    assert tree_allclose(out1, true_out1)
     assert jnp.allclose(out1, x_mat + y1)
 
     assert jnp.allclose(out2, x_mat + y2)
