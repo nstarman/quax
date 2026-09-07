@@ -248,9 +248,10 @@ def integer_pow_interval(x: Interval, *, y: int, **kw: Any) -> Interval:
         raise NotImplementedError(msg)
     lo, hi = x.lo**y, x.hi**y
     out_lo, out_hi = jnp.minimum(lo, hi), jnp.maximum(lo, hi)
-    if y % 2 == 0:
+    if y >= 2 and y % 2 == 0:
         # An even power is non-negative, and dips to zero wherever the bracket
         # straddles zero -- which is what the endpoints alone cannot tell you.
+        # `y == 0` is even but constant at 1, so it must not take this branch.
         straddles = (x.lo < 0) & (x.hi > 0)
         out_lo = jnp.where(straddles, jnp.zeros_like(out_lo), out_lo)
     return Interval(out_lo, out_hi)

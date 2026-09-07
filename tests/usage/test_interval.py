@@ -54,6 +54,11 @@ def test_even_power_dips_to_zero_across_zero():
     assert bounds(quax.quaxify(lambda a: a**2)(Interval(-3.0, -2.0))) == (4.0, 9.0)
 
 
+def test_zeroth_power_is_one_even_across_zero():
+    """`y == 0` is even, but `x**0` is 1 everywhere -- it must not dip to zero."""
+    assert bounds(quax.quaxify(lambda a: a**0)(Interval(-1.0, 2.0))) == (1.0, 1.0)
+
+
 def test_odd_power_is_monotonic():
     assert bounds(quax.quaxify(lambda a: a**3)(Interval(-1.0, 2.0))) == (-1.0, 8.0)
 
@@ -80,6 +85,18 @@ def test_the_dependency_problem_is_real_and_sound():
     assert via_pow == (0.0, 4.0)
     # sound: the true range [0, 4] sits inside both
     assert via_mul[0] <= 0.0 and via_mul[1] >= 4.0
+
+
+def test_a_plain_value_on_the_left():
+    """`sub` with the array on the left still swaps the bounds.
+
+    Asymmetric on purpose: pairing the bounds the obvious way would give
+    `(4.0, 3.0)` here, inverted rather than merely wrong.
+    """
+    x = Interval(1.0, 2.0)
+
+    assert bounds(quax.quaxify(lambda a: 5.0 - a)(x)) == (3.0, 4.0)
+    assert bounds(quax.quaxify(lambda a: 5.0 + a)(x)) == (6.0, 7.0)
 
 
 def test_reduction_and_broadcasting():
