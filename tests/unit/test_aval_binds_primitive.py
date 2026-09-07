@@ -1,8 +1,10 @@
 """`Value.aval` is user code, and may bind JAX primitives.
 
-`quax.examples.lora.LoraArray.aval` does exactly that (via `lax.stop_gradient`), and
-quax evaluates `aval()` while building tracers -- which happens with the current
-trace taken. This module pins that down with a minimal `Value`.
+Quax evaluates `aval()` while building tracers, which happens with the current
+trace taken, so a bind there only works because quax evaluates it under the
+parent trace. No shipped example relies on this any more -- `lora.LoraArray`
+used to, via `lax.stop_gradient`, until it was changed to read its weight field
+directly -- so this module is what keeps the capability covered.
 """
 
 from typing import Any, cast

@@ -88,9 +88,11 @@ workflow — that prompt is the authoring counterpart to this section.
   value.
 - **`aval()` must be pure**: the same instance returns the same `AbstractValue`
   every time, because quax caches it at tracer-construction time. It *may* bind
-  primitives (`lora.LoraArray.aval` calls `lax.stop_gradient`); quax evaluates it
-  under the parent trace so that this works (#216). A change touching where or
-  when `aval()` is called needs care here.
+  primitives -- quax evaluates it under the parent trace so that this works
+  (#216), and `tests/unit/test_aval_binds_primitive.py` pins it -- but it should
+  not need to: `aval` runs once per tracer, so a bind there is hot-path cost for
+  a shape and a dtype. A change touching where or when `aval()` is called needs
+  care here.
 - **A `materialise()` that raises is a design decision, not a bug.** `Unitful`,
   `LoraArray`, `NamedArray`, and the `MyArray` test fixture all raise on purpose,
   because materialising would discard the information the type exists to carry.
