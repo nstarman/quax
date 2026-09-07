@@ -37,6 +37,7 @@ pytest_collect_file = Sybil(
         "SKILL.md",
         "autodiff.md",
         "control-flow.md",
+        "hijax.md",
         "how-to/*.md",
         "tutorials/*.md",
         "how-quaxify-works.md",

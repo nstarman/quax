@@ -37,6 +37,7 @@ Spend the review on the sections below instead.
 | A `@quax.register` rule added or edited | [Dispatch rules](#dispatch-rules) |
 | A `Value` / `ArrayValue` subclass, or its fields | [Value subclasses](#value-subclasses) |
 | `_compat.py`, or any `JAX_GE_*` / `jax._src` use | [Version compatibility](#version-compatibility) |
+| Anything using `jax.experimental.hijax` | [Hijax](#hijax) |
 | `_trace.py`, `_dispatch.py`, `_module.py`, `_values.py` | [The hot path](#the-hot-path) |
 | An `except`, `assert`, or fallback branch | [Silent failure](#silent-failure) |
 | Anything under `tests/` | [Tests](#tests) |
@@ -116,6 +117,41 @@ work goes wrong.
 - **`jax._src` reaches need a gate and a comment** explaining what changed and
   why the private API is the only route. `_compat.py` is the model for this —
   match its density of explanation, not its brevity.
+
+## Hijax
+
+`jax.experimental.hijax` is JAX's own extension API for custom types. It is
+complementary to quax rather than an alternative — the decision guide is in
+[skills/quax/SKILL.md](../../../skills/quax/SKILL.md) under "Quax, hijax, or
+both", and `quax.examples.hijax` is the worked combination. At review time:
+
+- **Ask whether it is needed at all.** A hijax primitive costs a typing rule, an
+  `expand`, and a rule per transform, for one operation. If the change could be a
+  plain `@quax.register` rule instead, it should be. Hijax earns its cost only
+  when the *type* must do something quax cannot: a cotangent type that differs
+  from the primal's, invariants checked in the jaxpr, custom batching, or
+  sharding in the type.
+- **`ArrayValue.aval()` must still return a `ShapedArray`.** Returning a
+  `HiType` makes every `jnp` function reject the tracer, because `jax.Array`'s
+  `isinstance` check reads the aval. Build the `ShapedArray` from the leaf's
+  hijax type instead. `tests/unit/test_hijax_interop.py` pins this.
+- **A hijax value must not be made a pytree**, and must not be constructed or
+  attribute-accessed under a trace. Both are legal only inside `expand` and the
+  type's own methods. A rule that reads `value.array` in traced code is a bug
+  even though it works eagerly.
+- **Cotangent units/metadata must match `to_ct_aval`.** JAX type-checks a bwd
+  rule's output against it, so a rule that returns the primal's type where the
+  cotangent type differs will fail at trace time rather than silently — but only
+  if a test actually differentiates it.
+- **The API renames.** Names must be resolved by probing, not pinned:
+  `VJPHiPrimitive` becomes `HiPrim` after JAX 0.11.1 and `MappingSpec` only
+  became public in 0.11.0. `src/quax/examples/hijax/_compat.py` is the model.
+- **Expect the `JAX_CHECK_TRACER_LEAKS` fixture, and check it stays narrow.**
+  Consuming a hi value under `jit` reports a false leak on JAX 0.10.2 and 0.11.0
+  only — a JAX regression, fixed in 0.11.1. `tests/usage/test_hijax.py` disables
+  the check for those versions and is a no-op elsewhere. A PR that widens it to
+  every version, weakens the check globally, or drops the version bound is a
+  regression: the bound is what makes a recurrence visible.
 
 ## The hot path
 

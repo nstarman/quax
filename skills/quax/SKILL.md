@@ -342,6 +342,59 @@ and [coordinax](https://github.com/GalacticDynamics/coordinax) (coordinates),
 which are the largest real-world quax types and worth reading before designing
 your own.
 
+## Quax, hijax, or both
+
+`jax.experimental.hijax` is JAX's own extension API for custom *types*: you
+write a `HiType` and a `HiPrim` per operation, and the type appears in jaxprs as
+one typed value. It is not a replacement for quax and quax is not built on it.
+They answer opposite questions — quax runs *existing* code on your type; hijax
+gives a *new* type its own operations, and nothing existing applies to it.
+
+Two questions decide it:
+
+1. **Does code you do not own have to work with the type?** (`jnp`, diffrax,
+   somebody's model.) If yes you need quax; a hijax type is invisible to all of
+   it.
+2. **Must the type do something quax cannot?** Quax's blind spot is that your
+   metadata sits on a pytree and JAX never acts on it. Four things follow that
+   quax cannot reach: a cotangent type that differs from the primal's; invariants
+   checked at trace time and printed in the jaxpr; custom batching semantics;
+   sharding carried in the type.
+
+| Situation | Use |
+|---|---|
+| Existing code must run; metadata just rides along | **quax alone** — the default |
+| You own every call site, and the type is not array-shaped (a box, a log, a handle) or needs its own lowering (a fused/Pallas kernel) | **hijax alone** |
+| Existing code must run **and** you need one of the four capabilities above | **both**: a hijax value as the single leaf of a `quax.ArrayValue` |
+
+Default to quax alone. It supports every JAX from 0.7.2, the value stays a
+pytree (so `eqx.filter_*`, Optax and `jax.tree` keep working), and a primitive
+with no rule falls back to `materialise` instead of erroring. Hijax costs one
+primitive — typing rule, `expand`, and a rule per transform — for *every*
+operation you want, so the hybrid suits a dozen ops, not all of `jnp`.
+
+Hard constraints, if you do reach for hijax:
+
+- **A hijax value must not be a pytree.** Every transform flattens a pytree
+  before consulting the hijax registry, so a pytree value can never carry a hijax
+  type. `quax.Value` is an `eqx.Module`, so it can never *be* a hijax value —
+  only hold one.
+- **`ArrayValue.aval()` must keep returning a `ShapedArray`.** `jax.Array`'s
+  `isinstance` check reads the tracer's aval and every `jnp` function gates on
+  it, so a `HiType` aval makes `jnp` reject your tracers. Build the `ShapedArray`
+  *from* the leaf's hijax type instead.
+- **Under a trace, do not construct the hi value class or read its attributes.**
+  Both are legal only inside `expand` and the type's own methods; elsewhere apply
+  a primitive. A quax tracer also will not forward attributes from a hijax leaf,
+  though a bare hijax tracer does.
+- **Do not hand-roll the wrapper.** `quax.experimental.hijax` has `HiValue`
+  (supplies `aval`/`materialise` and the `leaf` field, correctly) and
+  `register_rules(cls, {primitive: hijax_fn})`, which generates the dispatch
+  rules including the mixed operand combinations. It also re-exports the
+  hijax names, so a rename upstream never reaches your code.
+- Working example: `quax.examples.hijax`. Rationale and worked comparison:
+  `docs/hijax.md`.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -374,6 +427,12 @@ which added JAX 0.9–0.11 support, `scan_p`, and large trace-path speedups.
 | `jax.core.Primitive` in annotations | `jax.extend.core.Primitive`. |
 | Registering `jax.core.pytype_aval_mappings` for your type | Never needed; indicates a wrongly-nested transform. |
 | `_DenseArrayValue` | Internal and `@final`. Never instantiate or reference it. |
+
+`jax.experimental.hijax` is experimental and renames things: `HiType` and
+`register_hitype` arrived in JAX 0.8.2, `HiPspec` in 0.9.2, `MappingSpec` became
+public in 0.11.0, and `VJPHiPrimitive` becomes `HiPrim` after 0.11.1. Resolve
+the names by probing rather than pinning a version — `quax/examples/hijax/_compat.py`
+does this — and gate any use of it. See "Quax, hijax, or both" above.
 
 JAX-version-sensitive surfaces to expect churn in: primitive params (`sharding`,
 `out_sharding`, `out_dtype`), primitives that only exist in newer versions

@@ -24,17 +24,23 @@ uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 | [_primitives.py](src/quax/_primitives.py) | Handlers for `jit_p`, `while_p`, `cond_p`, `scan_p`, and their jaxpr caches |
 | [_trace.py](src/quax/_trace.py) | `_QuaxTrace`/`_QuaxTracer`; the interpreter that dispatches via plum |
 | [_module.py](src/quax/_module.py) | `_FastModuleMeta`; skips equinox per-instance validation on hot paths |
-| [_compat.py](src/quax/_compat.py) | Version flags (`JAX_GE_0_9_2`, etc.) for JAX API differences |
+| [_compat.py](src/quax/_compat.py) | Version flags (`JAX_GE_0_9_2`, etc.) for JAX API differences, and `hi_aval` for recognising a hijax value |
+| [experimental/hijax.py](src/quax/experimental/hijax.py) | `HiValue` + `register_rules`: build a `quax.Value` around a `jax.experimental.hijax` type. Resolves the hijax names, which get renamed upstream |
 
 ## Using and extending quax
 
 The user-facing material — the dispatch resolution ladder, creating a custom
-`ArrayValue`, writing and disambiguating rules, boundary behaviour, and
+`ArrayValue`, writing and disambiguating rules, boundary behaviour, choosing
+between quax, `jax.experimental.hijax` and the two combined, and
 troubleshooting — lives in [skills/quax/SKILL.md](skills/quax/SKILL.md). It is
 the single source of truth for that; do not duplicate it here.
 
 Reference implementations: [src/quax/examples/zero/_core.py](src/quax/examples/zero/_core.py)
 (minimal) and [src/quax/examples/lora/_core.py](src/quax/examples/lora/_core.py) (advanced).
+
+[src/quax/examples/hijax/](src/quax/examples/hijax/) is the worked
+quax-plus-hijax combination, and [docs/hijax.md](docs/hijax.md) is the reasoning
+behind it.
 
 ## Testing Patterns
 
@@ -58,6 +64,7 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
   types they dispatch on (`add_unitful_unitful`, `convert_element_type_zero`, `cond_quax`), never
   `def _`. Dispatch ignores the name; tracebacks, plum's ambiguity errors, and profiles do not.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
+- **hijax under `jit` trips the leak checker on JAX 0.10.2 and 0.11.0** — consuming a hi value reports a false `JAX_CHECK_TRACER_LEAKS` failure. A JAX regression, reproducible without quax, fixed in 0.11.1; `tests/usage/test_hijax.py` disables the check on those two versions only, so a recurrence on a fixed version fails the suite.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
