@@ -87,16 +87,19 @@ def test_the_dependency_problem_is_real_and_sound():
     assert via_mul[0] <= 0.0 and via_mul[1] >= 4.0
 
 
-def test_a_plain_value_on_the_left():
-    """`sub` with the array on the left still swaps the bounds.
+def test_a_plain_operand_on_either_side():
+    """A plain value is a degenerate interval, and `sub` still swaps bounds.
 
-    Asymmetric on purpose: pairing the bounds the obvious way would give
-    `(4.0, 3.0)` here, inverted rather than merely wrong.
+    Each side is a separate registration, so each needs its own case. The
+    numbers are asymmetric on purpose: pairing the bounds the obvious way
+    would give `(4.0, 3.0)` for `5.0 - x`, inverted rather than merely wrong.
     """
     x = Interval(1.0, 2.0)
 
     assert bounds(quax.quaxify(lambda a: 5.0 - a)(x)) == (3.0, 4.0)
+    assert bounds(quax.quaxify(lambda a: a - 0.5)(x)) == (0.5, 1.5)
     assert bounds(quax.quaxify(lambda a: 5.0 + a)(x)) == (6.0, 7.0)
+    assert bounds(quax.quaxify(lambda a: a + 0.5)(x)) == (1.5, 2.5)
 
 
 def test_reduction_and_broadcasting():
