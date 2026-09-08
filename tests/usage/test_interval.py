@@ -169,6 +169,34 @@ def test_where_refuses_an_interval_predicate():
         quax.quaxify(lambda p: jnp.where(p, 1.0, 2.0))(pred)
 
 
+@pytest.mark.parametrize(
+    ("lo", "hi", "target"),
+    [
+        # A cast to bool is a nonzero test: both endpoints are truthy, but
+        # `False` is reachable at zero inside the bracket.
+        (jnp.asarray(-1.0), jnp.asarray(2.0), jnp.bool_),
+        # int8 -1 becomes uint8 255, inverting the bracket.
+        (jnp.asarray(-1, jnp.int8), jnp.asarray(2, jnp.int8), jnp.uint8),
+        # int32 200/300 wrap to int8 -56/44.
+        (jnp.asarray(200, jnp.int32), jnp.asarray(300, jnp.int32), jnp.int8),
+        # Complex has no order to preserve.
+        (jnp.asarray(-1.0), jnp.asarray(2.0), jnp.complex64),
+    ],
+)
+def test_a_cast_that_reorders_is_refused(lo, hi, target):
+    """Order-preserving is a property of the dtype pair, not of casting."""
+    with pytest.raises(ValueError, match="does not preserve order"):
+        quax.quaxify(lambda a: a.astype(target))(Interval(lo, hi))
+
+
+def test_an_order_preserving_cast_maps_the_bounds():
+    """float -> int truncates toward zero, which is monotone."""
+    x = Interval(jnp.asarray(-1.5), jnp.asarray(2.5))
+
+    assert bounds(quax.quaxify(lambda a: a.astype(jnp.int32))(x)) == (-1.0, 2.0)
+    assert bounds(quax.quaxify(lambda a: a.astype(jnp.float16))(x)) == (-1.5, 2.5)
+
+
 def test_default_refuses_a_non_monotone_primitive():
     """Guessing here would be unsound, not merely loose.
 

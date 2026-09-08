@@ -51,9 +51,10 @@ better rule set.
 in its operands works without a rule of its own — addition, summation,
 reshaping, slicing, flipping, concatenating, broadcasting, `max`, `min`, and
 increasing functions like `exp`, `sqrt` and `tanh`. For those, mapping the
-operation over `lo` and over `hi` separately is exact, so only the four
-operations that are *not* — subtraction, negation, multiplication and
-`integer_pow` — need a rule written for them.
+operation over `lo` and over `hi` separately is exact, so a rule is written
+only for the operations that are *not*: subtraction, negation, multiplication,
+`integer_pow`, and casting — which preserves order for most target dtypes but
+not all, so it checks before mapping and raises otherwise.
 
 There is deliberately no blanket fallback, because that same rule is unsound
 for anything else, and fails quietly. Applied to `sin` over `[0, 2*pi]` it would

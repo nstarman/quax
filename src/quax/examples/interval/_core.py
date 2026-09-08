@@ -155,7 +155,6 @@ MONOTONE: Final = frozenset(
         lax.asinh_p,
         lax.atan_p,
         lax.cbrt_p,
-        lax.convert_element_type_p,
         lax.erf_p,
         lax.exp_p,
         lax.log_p,
@@ -175,6 +174,24 @@ exact. Anything missing from it raises instead --
 [`Interval.default`][quax.examples.interval.Interval.default] says why there is
 no blanket fallback.
 """
+
+
+def _preserves_order(old: Any, new: Any, /) -> bool:
+    """Whether casting `old` to `new` maps every input without reordering."""
+    if jnp.issubdtype(new, jnp.bool_):
+        # A nonzero test, not a cast: `[-1.0, 2.0]` maps to `[True, True]`,
+        # dropping that `False` is reachable at zero inside the bracket.
+        return False
+    if any(jnp.issubdtype(d, jnp.complexfloating) for d in (old, new)):
+        return False  # no order to preserve
+    if jnp.issubdtype(old, jnp.integer) and jnp.issubdtype(new, jnp.integer):
+        # A target that cannot hold the whole source range wraps: `int8 -1`
+        # becomes `uint8 255`, inverting the bracket.
+        o, n = jnp.iinfo(old), jnp.iinfo(new)
+        return bool(n.min <= o.min and n.max >= o.max)
+    # float -> float saturates monotonically, int -> float loses precision but
+    # not order, and float -> int truncates toward zero, which is monotone.
+    return True
 
 
 def _bounds(x: "Interval | ArrayLike", /) -> tuple[Any, Any]:
@@ -229,6 +246,28 @@ def mul_interval_any(x: Interval, y: Interval | ArrayLike, **kw: Any) -> Interva
 @quax.register(lax.mul_p)
 def mul_array_like_interval(x: ArrayLike, y: Interval, **kw: Any) -> Interval:
     return _mul_bounds(x, y)
+
+
+@quax.register(lax.convert_element_type_p)
+def convert_element_type_interval(
+    operand: Interval, *, new_dtype: Any, **kw: Any
+) -> Interval:
+    """Casting maps the bounds across -- but only when it preserves order."""
+    old_dtype = jnp.result_type(operand.lo)
+    if not _preserves_order(old_dtype, new_dtype):
+        msg = (
+            f"Casting an `Interval` from `{jnp.dtype(old_dtype)}` to "
+            f"`{jnp.dtype(new_dtype)}` does not preserve order, so mapping the "
+            "bounds across would give an unsound bracket: a cast to `bool` is "
+            "a nonzero test, a narrowing integer cast wraps, and complex has "
+            "no order at all."
+        )
+        raise ValueError(msg)
+    bind = lax.convert_element_type_p.bind
+    return Interval(
+        bind(operand.lo, new_dtype=new_dtype, **kw),
+        bind(operand.hi, new_dtype=new_dtype, **kw),
+    )
 
 
 @quax.register(lax.integer_pow_p)
