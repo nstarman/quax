@@ -143,6 +143,29 @@ def test_default_handles_increasing_functions():
     assert hi == pytest.approx(float(jnp.exp(jnp.asarray(4.0))))
 
 
+def test_where_selects_between_two_intervals():
+    """`select_n` is monotone in its cases, so `default` handles it."""
+    a = Interval(jnp.array([1.0, 2.0]), jnp.array([3.0, 4.0]))
+    b = Interval(jnp.array([10.0, 20.0]), jnp.array([30.0, 40.0]))
+
+    out = quax.quaxify(lambda p, q: jnp.where(jnp.array([True, False]), p, q))(a, b)
+
+    assert out.lo.tolist() == [1.0, 20.0]
+    assert out.hi.tolist() == [3.0, 40.0]
+
+
+def test_where_refuses_an_interval_predicate():
+    """Monotone in the cases, but not in the predicate.
+
+    Reachable only with a bool-dtype `Interval` -- a float one fails earlier,
+    on the comparison that would produce the mask.
+    """
+    pred = Interval(jnp.array([False, True]), jnp.array([True, True]))
+
+    with pytest.raises(ValueError, match="not in its predicate"):
+        quax.quaxify(lambda p: jnp.where(p, 1.0, 2.0))(pred)
+
+
 def test_default_refuses_a_non_monotone_primitive():
     """Guessing here would be unsound, not merely loose.
 
@@ -156,6 +179,30 @@ def test_default_refuses_a_non_monotone_primitive():
     # and the message says what it *does* cover, so the fix is obvious
     with pytest.raises(ValueError, match="Handled by default:"):
         quax.quaxify(jnp.sin)(Interval(0.0, 1.0))
+
+
+def test_no_rule_captures_plain_array_arithmetic():
+    """Every `Interval` rule must name `Interval` on at least one side.
+
+    A signature satisfiable by plain arrays alone would match ordinary
+    arithmetic inside *any* quaxified function, so an unrelated value's
+    `a - b` would come back as an `Interval` and then fail to dispatch.
+    """
+    from quax._dispatch import _rules
+
+    plain = jnp.asarray(1.0)
+    checked = 0
+    for primitive, fn in _rules.items():
+        fn._resolve_pending_registrations()
+        for method in fn.methods:
+            if method.implementation.__module__ != Interval.__module__:
+                continue
+            checked += 1
+            args = (plain,) * len(method.signature.types)
+            assert not method.signature.match(args), (
+                f"{primitive.name}: {method.signature} matches plain arrays"
+            )
+    assert checked > 0, "no `Interval` rules found -- the test is not looking"
 
 
 def test_materialise_refuses_when_called_directly():

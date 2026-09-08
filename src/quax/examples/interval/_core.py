@@ -125,11 +125,7 @@ class Interval(quax.ArrayValue):
             raise ValueError(msg)
         lo = [v.lo if isinstance(v, Interval) else v for v in values]
         hi = [v.hi if isinstance(v, Interval) else v for v in values]
-        out_lo = primitive.bind(*lo, **params)
-        out_hi = primitive.bind(*hi, **params)
-        if primitive.multiple_results:
-            return [Interval(a, b) for a, b in zip(out_lo, out_hi, strict=True)]
-        return Interval(out_lo, out_hi)
+        return Interval(primitive.bind(*lo, **params), primitive.bind(*hi, **params))
 
     @property
     def width(self) -> Array:
@@ -186,14 +182,11 @@ def _bounds(x: "Interval | ArrayLike", /) -> tuple[Any, Any]:
     return (x.lo, x.hi) if isinstance(x, Interval) else (x, x)
 
 
-# ---------------------------------------------------------------------------
-# Rules
-# ---------------------------------------------------------------------------
-#
-# Only the primitives that are *not* monotone in every operand -- everything
-# else goes through `Interval.default`. A plain array operand is a degenerate
-# interval, so the mixed cases fall out of the same arithmetic; they need their
-# own registration only because Quax dispatches on the operand types.
+# Rules, for the primitives that are *not* monotone in every operand; everything
+# else goes through `Interval.default`. A plain operand is a degenerate interval,
+# so the mixed cases fall out of the same arithmetic -- but each registration
+# must still name `Interval` on at least one side, or it would capture ordinary
+# array arithmetic inside every other quaxified function.
 
 
 @quax.register(lax.sub_p)
