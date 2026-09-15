@@ -53,7 +53,12 @@ jobs:
         # no-commit-to-branch always fails here: CI checks out the real
         # `main` branch on every push, which is exactly what the hook exists
         # to block for a human running `git commit`/`git push` locally.
-        run: uv run --frozen prek run --all-files --skip no-commit-to-branch
+        # SKIP over --skip: prek's --skip flag replaces rather than merges
+        # with an existing SKIP env var, so it can silently drop a SKIP a
+        # caller already set.
+        run: uv run --frozen prek run --all-files
+        env:
+          SKIP: no-commit-to-branch
 
   tests:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
