@@ -50,15 +50,7 @@ jobs:
         run: uv sync --no-default-groups --group lint --locked
 
       - name: Checks with prek
-        # no-commit-to-branch always fails here: CI checks out the real
-        # `main` branch on every push, which is exactly what this hook
-        # exists to block for a human running `git commit` locally. It's
-        # scoped to stages: [pre-commit] in .pre-commit-config.yaml, so it
-        # never fires as a pre-push git hook -- unrelated to this
-        # workflow's own push trigger above.
-        # SKIP over --skip: prek's --skip flag replaces rather than merges
-        # with an existing SKIP env var, so it can silently drop a SKIP a
-        # caller already set.
+        # Not a real commit -- no-commit-to-branch would always fail here.
         run: uv run --frozen prek run --all-files
         env:
           SKIP: no-commit-to-branch
