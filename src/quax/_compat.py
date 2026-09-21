@@ -163,18 +163,11 @@ else:
     typeof = jax.core.get_aval  # pyright: ignore[reportAttributeAccessIssue]
 
 
-# `AbstractValue.to_ct_aval` is absent on the `jax>=0.7.2` floor, where only
-# `to_tangent_aval` exists; they coincide on that floor. Probed with
-# `hasattr` because the release that added `to_ct_aval` is unverified.
-_HAS_TO_CT_AVAL: Final = hasattr(
-    jax.core.ShapedArray,  # pyright: ignore[reportAttributeAccessIssue]
-    "to_ct_aval",
-)
-
-
+# `AbstractValue.to_ct_aval` was added in JAX 0.9.2. Below it only
+# `to_tangent_aval` exists; the two coincide on those versions.
 def to_ct_aval(aval: Any, /) -> Any:
     """Return `aval`'s cotangent aval, on any supported JAX version."""
-    return aval.to_ct_aval() if _HAS_TO_CT_AVAL else aval.to_tangent_aval()
+    return aval.to_ct_aval() if JAX_GE_0_9_2 else aval.to_tangent_aval()
 
 
 # `AbstractValue.is_high` marks a hijax "hi type": a type JAX carries as a

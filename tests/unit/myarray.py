@@ -761,6 +761,18 @@ def log1p_p(x: MyArray, /, **kw: Any) -> MyArray:
 # ==============================================================================
 
 
+if JAX_VERSION >= Version("0.11.2"):
+    # `jnp.log2` lowered to `log_p` / `div_p` before JAX 0.11.2, which gave it
+    # its own `log2_p` primitive.
+
+    @quax.register(lax.log2_p)
+    def log2_p(x: MyArray, /, **kw: Any) -> MyArray:
+        return replace(x, array=lax.log2(x.array, **kw))
+
+
+# ==============================================================================
+
+
 @quax.register(lax.log_p)
 def log_p(x: MyArray, /, **kw: Any) -> MyArray:
     return replace(x, array=lax.log(x.array, **kw))
@@ -947,15 +959,6 @@ def ppermute_p() -> MyArray:
 @quax.register(lax.psum_p)
 def psum_p() -> MyArray:
     raise NotImplementedError
-
-
-# ==============================================================================
-
-if JAX_VERSION <= Version("0.6.0"):
-
-    @quax.register(lax.random_gamma_grad_p)
-    def random_gamma_grad_p(a: float | int, x: MyArray) -> MyArray:
-        return replace(x, array=lax.random_gamma_grad_p.bind(a, x.array))
 
 
 # ==============================================================================
