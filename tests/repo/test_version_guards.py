@@ -135,7 +135,3 @@ def test_line_guards_normalises_both_comparison_orders(
 ) -> None:
     """Guards are recognised in either order and normalised to JAX-first."""
     assert _line_guards(line) == expected
-
-
-if __name__ == "__main__":
-    pytest.main([__file__])
