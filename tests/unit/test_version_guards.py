@@ -11,6 +11,7 @@ guard at or below it, since such a guard is by then a constant. Bumping the
 floor therefore produces a list of exactly the shims to delete.
 """
 
+import operator
 import re
 import tomllib
 from pathlib import Path
@@ -20,13 +21,32 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 
 
-REPO_ROOT = Path(__file__).parents[2]
+# Resolved, so the self-skip in `_guards` is a reliable comparison whatever
+# `__file__` looks like under a given pytest import mode, and through symlinked
+# checkouts.
+SELF = Path(__file__).resolve()
+REPO_ROOT = SELF.parents[2]
 SCAN_DIRS = ("src", "tests")
 
-# A `JAX_GE_0_11_2`-style flag name, or a `Version("0.11.2")` literal on a line
-# that also mentions `JAX_VERSION` (so unrelated version literals are ignored).
+# A `JAX_GE_0_11_2`-style flag name. Each is defined as `JAX_VERSION >= ...`, so
+# a reference to one is a `>=` guard.
 FLAG_RE = re.compile(r"JAX_GE_(\d+)_(\d+)_(\d+)")
-INLINE_RE = re.compile(r'Version\("([0-9][0-9.]*)"\)')
+
+# An inline comparison, in either order. Requiring `JAX_VERSION` adjacent to the
+# literal is what keeps unrelated `Version("...")` calls out of the results.
+INLINE_RE = re.compile(r'JAX_VERSION\s*(>=|<=|>|<)\s*Version\("([0-9][0-9.]*)"\)')
+REVERSED_RE = re.compile(r'Version\("([0-9][0-9.]*)"\)\s*(>=|<=|>|<)\s*JAX_VERSION')
+
+# `Version("0.9") <= JAX_VERSION` guards the same releases as
+# `JAX_VERSION >= Version("0.9")`, so a reversed comparison is normalised by
+# flipping its operator.
+FLIP = {">=": "<=", "<=": ">=", ">": "<", "<": ">"}
+
+# When a floor makes each comparison a constant. Given `JAX_VERSION >= floor`,
+# `>=` and `<` are constant as soon as the floor *reaches* the guarded version.
+# The strict `>` and the inclusive `<=` only become constant once it *passes*:
+# at exactly the floor both still discriminate, since JAX may be newer.
+DEAD_AT = {">=": operator.ge, "<": operator.ge, ">": operator.gt, "<=": operator.gt}
 
 
 def _jax_floor() -> Version:
@@ -40,20 +60,27 @@ def _jax_floor() -> Version:
     raise AssertionError(msg)
 
 
-def _guards() -> list[tuple[Path, int, Version]]:
+def _line_guards(line: str) -> set[tuple[str, Version]]:
+    """The `(operator, version)` guards on one line, all normalised to JAX-first."""
+    guards = {(">=", Version(".".join(m))) for m in FLAG_RE.findall(line)}
+    guards |= {(op, Version(v)) for op, v in INLINE_RE.findall(line)}
+    guards |= {(FLIP[op], Version(v)) for v, op in REVERSED_RE.findall(line)}
+    return guards
+
+
+def _guards() -> list[tuple[Path, int, str, Version]]:
+    """Every JAX version guard in the codebase, with its location and operator."""
     found = set()
     for directory in SCAN_DIRS:
         for path in sorted((REPO_ROOT / directory).rglob("*.py")):
-            if path == Path(__file__):
+            if path.resolve() == SELF:  # this file's own examples are not guards
                 continue
             for lineno, line in enumerate(path.read_text().splitlines(), start=1):
-                versions = [".".join(m) for m in FLAG_RE.findall(line)]
-                if "JAX_VERSION" in line:
-                    versions += INLINE_RE.findall(line)
                 found |= {
-                    (path.relative_to(REPO_ROOT), lineno, Version(v)) for v in versions
+                    (path.relative_to(REPO_ROOT), lineno, op, v)
+                    for op, v in _line_guards(line)
                 }
-    return sorted(found, key=lambda g: (str(g[0]), g[1], g[2]))
+    return sorted(found, key=lambda g: (str(g[0]), g[1], g[3]))
 
 
 def test_no_version_guard_below_supported_floor() -> None:
@@ -61,10 +88,13 @@ def test_no_version_guard_below_supported_floor() -> None:
     floor = _jax_floor()
     guards = _guards()
     assert guards, "found no version guards at all -- the scan is broken"
+    assert not [g for g in guards if g[0] == SELF.relative_to(REPO_ROOT)], (
+        "this file's own docstring examples were scanned -- the self-skip broke"
+    )
 
-    dead = [(p, n, v) for p, n, v in _guards() if floor >= v]
+    dead = [(p, n, op, v) for p, n, op, v in guards if DEAD_AT[op](floor, v)]
     assert not dead, "JAX version guards made dead by the jax>={} floor:\n{}".format(
-        floor, "\n".join(f"  {p}:{n}: guards JAX {v}" for p, n, v in dead)
+        floor, "\n".join(f"  {p}:{n}: `JAX_VERSION {op} {v}`" for p, n, op, v in dead)
     )
 
 
@@ -75,6 +105,32 @@ def test_no_hasattr_probing_of_jax_internals() -> None:
         "`quax._compat` probes with `hasattr`; find the JAX release that "
         "introduced the feature and add a `JAX_GE_*` flag instead"
     )
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        # Both comparison orders describe the same guarded releases.
+        ('if JAX_VERSION >= Version("0.11.2"):', {(">=", Version("0.11.2"))}),
+        ('if Version("0.11.2") <= JAX_VERSION:', {(">=", Version("0.11.2"))}),
+        ('if JAX_VERSION < Version("0.10"):', {("<", Version("0.10"))}),
+        ('if Version("0.10") > JAX_VERSION:', {("<", Version("0.10"))}),
+        # A flag name is a `>=` guard by construction.
+        ("if JAX_GE_0_9_2:", {(">=", Version("0.9.2"))}),
+        # A two-sided range yields both bounds, JAX-first.
+        (
+            'Version("0.9") <= JAX_VERSION < Version("0.10")',
+            {(">=", Version("0.9")), ("<", Version("0.10"))},
+        ),
+        # A `Version(...)` unrelated to `JAX_VERSION` is not a guard.
+        ('if Version(importlib.metadata.version("plum")) >= Version("2.9"):', set()),
+    ],
+)
+def test_line_guards_normalises_both_comparison_orders(
+    line: str, expected: set[tuple[str, Version]]
+) -> None:
+    """Guards are recognised in either order and normalised to JAX-first."""
+    assert _line_guards(line) == expected
 
 
 if __name__ == "__main__":
