@@ -1,5 +1,9 @@
 """Guard against JAX compatibility shims outliving the supported floor.
 
+A repository-hygiene check, not a unit test: it asserts a property of the
+source tree rather than any runtime behaviour of `quax`, which is why it lives
+in `tests/repo/` rather than `tests/unit/`.
+
 Every version guard in the codebase names the JAX release it is there for --
 either as a ``JAX_GE_<major>_<minor>_<patch>`` flag from `quax._compat`, or as
 an inline ``Version("...")`` compared against ``JAX_VERSION``. Never probe with
