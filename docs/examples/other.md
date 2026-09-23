@@ -8,6 +8,7 @@ These are deliberately not documented further here, as we have no intention of t
 
 However if you want to write your own Quax library then they exist so that you can take a look at their source code -- as a useful demonstration, or as a starting point.
 
+- `quax.examples.interval`: interval arithmetic — an array carrying a lower and an upper bound, so that uncertainty on the inputs comes out as a width on the output. Read its README first: the bounds are pessimistic where a value is used more than once, and are approximate rather than certified.
 - `quax.examples.named`: arrays with named axes.
 - `quax.examples.prng`: PRNGs as array-ish values. (Rather than the special-cased `jax.random.key` you normally use.)
 - `quax.examples.sparse`: sparse arrays as array-ish values. (Rather than the `jax.experimental.sparse` implementation.)

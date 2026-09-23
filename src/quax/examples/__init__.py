@@ -3,6 +3,7 @@ import importlib
 
 __all__ = (
     "hijax",
+    "interval",
     "lora",
     "named",
     "prng",
