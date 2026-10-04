@@ -149,7 +149,8 @@ class _QuaxTrace(
         # ── O2: cache resolved dispatch method per (primitive, arg-types) ───
         # plum's resolve_method performs MRO inspection on every call; cache
         # the result so repeated invocations with the same type signature pay
-        # the lookup cost only once.
+        # the lookup cost only once. Primitives with an unfaithful rule are never
+        # cached, so they always resolve per value below.
         cache_key = (primitive, tuple(type(v) for v in values))
         cached = _dispatch_cache.get(cache_key)
 
@@ -163,13 +164,18 @@ class _QuaxTrace(
                 _dispatch_cache[cache_key] = _DISPATCH_MISS
                 out = _default_process(primitive, values, params)
             else:
+                # Like plum, cache by type only if every registered signature is
+                # faithful: an unfaithful type's `isinstance` depends on the
+                # value, so another value of the same type may resolve elsewhere.
                 try:
                     method, _ = rule.resolve_method(values)
                 except plum.NotFoundLookupError:
-                    _dispatch_cache[cache_key] = _DISPATCH_MISS
+                    if rule._resolver.is_faithful:
+                        _dispatch_cache[cache_key] = _DISPATCH_MISS
                     out = _default_process(primitive, values, params)
                 else:
-                    _dispatch_cache[cache_key] = method
+                    if rule._resolver.is_faithful:
+                        _dispatch_cache[cache_key] = method
                     out = method(*values, **params)
 
         # Post-process the output
