@@ -17,7 +17,10 @@ def test_matmul(getkey):
     matmul = quax.quaxify(lambda a, b: a @ b)
     out = matmul(x, v)
     out2 = matmul(y, v)
-    assert jnp.allclose(out, out2)
+    # Scale atol by |y| @ |v| (the float32 rounding bound): a row that nearly
+    # cancels differs by ~1 ulp of its operands between the two paths.
+    atol = 1e-5 * jnp.max(jnp.abs(y) @ jnp.abs(v))
+    assert jnp.allclose(out, out2, atol=atol)
 
 
 def test_materialise():
@@ -73,4 +76,5 @@ def test_dot_general_batched_axis_order(batch, rhs_shape, dn):
     ref = jax.lax.dot_general(dense, rhs, dn)
 
     assert out.shape == ref.shape
-    assert jnp.allclose(out, ref)
+    atol = 1e-5 * jnp.max(jax.lax.dot_general(jnp.abs(dense), jnp.abs(rhs), dn))
+    assert jnp.allclose(out, ref, atol=atol)
