@@ -3,6 +3,7 @@ from typing import Any, cast
 import equinox as eqx
 import jax
 import jax.core
+import jax.extend.core as jexc
 import jax.lax as lax
 import jax.numpy as jnp
 import pytest
@@ -194,3 +195,45 @@ def test_quaxify_no_values_is_passthrough():
     x1 = jnp.array([1.0, 2.0, 3.0])
     got = quax.quaxify(jnp.compress)(xbool, x1)
     assert jnp.array_equal(got, jnp.compress(xbool, x1))
+
+
+def test_dispatch_cache_respects_unfaithful_types():
+    """Rules on a type whose `isinstance` depends on the value are not cached by type.
+
+    Regression test for https://github.com/nstarman/quax/issues/257.
+    """
+
+    class Tagged(quax.ArrayValue):
+        array: Array
+        tag: str = eqx.field(static=True)
+
+        def materialise(self):
+            return self.array
+
+        def aval(self):
+            return cast(jax.core.ShapedArray, typeof(self.array))
+
+    class _BigMeta(type(Tagged)):
+        def __instancecheck__(cls, x):
+            return isinstance(x, Tagged) and x.tag == "big"
+
+    class Big(Tagged, metaclass=_BigMeta):  # never instantiated
+        __faithful__ = False
+
+    # A private primitive, so the unfaithful rule doesn't outlive this test.
+    prim = jexc.Primitive("unfaithful_test")
+    prim.def_impl(lambda x: x)
+    prim.def_abstract_eval(lambda x: x)
+
+    @quax.register(prim)
+    def unfaithful_test_big(x: Big):
+        return Tagged(x.array, "big")
+
+    f = quax.quaxify(prim.bind)
+    big = Tagged(jnp.array(1.0), "big")
+    small = Tagged(jnp.array(1.0), "small")
+
+    # small -> big -> small: neither the miss nor the hit may be cached by type.
+    assert not isinstance(f(small), Tagged)  # no rule: default materialises
+    assert f(big).tag == "big"
+    assert not isinstance(f(small), Tagged)
