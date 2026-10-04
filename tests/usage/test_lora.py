@@ -5,6 +5,7 @@ import jax
 import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.tree_util as jtu
 import pytest
 from jaxtyping import TypeCheckError
 from plum import NotFoundLookupError
@@ -142,3 +143,45 @@ def test_regression_38(getkey):
     # `allow_materialise` is False.
     with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
         _ = func(y)
+
+
+@pytest.mark.parametrize(
+    "f",
+    [
+        # The counter is carried; the untouched lora is hoisted into a body const.
+        lambda x: lax.while_loop(
+            lambda c: c[0] < 2, lambda c: (c[0] + 1, c[1]), (0, x)
+        )[1],
+        lambda x: lax.while_loop(lambda c: jnp.array(False), lambda c: c, x),
+    ],
+    ids=["counter", "alone"],
+)
+def test_while_lora_const(f, getkey):
+    """A `LoraArray` const is several leaves; `while_p` nconsts must count leaves."""
+    x = lora.LoraArray(jnp.ones((3, 3)), rank=2, key=getkey())
+    out = quax.quaxify(f)(x)
+    assert isinstance(out, lora.LoraArray)
+    assert jtu.tree_all(jtu.tree_map(jnp.array_equal, out, x))
+
+
+def test_while_cache_keys_on_const_structure(getkey):
+    """Same `while` jaxprs, consts differing only in static metadata: no cache reuse."""
+
+    def f(w, v):
+        return lax.while_loop(
+            lambda c: c[0] < 2, lambda c: (c[0] + 1, w @ c[1]), (0, v)
+        )[1]
+
+    g = quax.quaxify(jax.jit(f))
+    v = jnp.ones(3)
+    key = getkey()
+
+    def w_tangent(stop_gradient):
+        w = lora.LoraArray(jnp.eye(3), rank=2, key=key, stop_gradient=stop_gradient)
+        dw = jtu.tree_map(jnp.zeros_like, w)
+        dw = eqx.tree_at(lambda t: t._w, dw, jnp.ones((3, 3)))
+        return jax.jvp(lambda w: g(w, v), (w,), (dw,))[1]
+
+    # Same avals, so `jit` hands both calls the same inner while jaxprs.
+    assert (w_tangent(stop_gradient=True) == 0).all()
+    assert (w_tangent(stop_gradient=False) != 0).all()
