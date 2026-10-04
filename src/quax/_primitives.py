@@ -158,11 +158,12 @@ def while_quax(
     body_consts = args[cond_nconsts:body_end]
     init_vals = args[body_end:]
 
-    cond_leaves, _ = jtu.tree_flatten(cond_consts)
-    body_leaves, _ = jtu.tree_flatten(body_consts)
+    cond_leaves, cond_treedef = jtu.tree_flatten(cond_consts)
+    body_leaves, body_treedef = jtu.tree_flatten(body_consts)
     init_val_leaves, val_treedef = jtu.tree_flatten(init_vals)
 
-    key = (id(cond_jaxpr), id(body_jaxpr), val_treedef)
+    # The quaxified jaxprs depend on the consts' types as well as the carry's.
+    key = (id(cond_jaxpr), id(body_jaxpr), cond_treedef, body_treedef, val_treedef)
     entry = _while_quax_cache.get(key)
     if entry is None:
         quax_body_fn = quaxify(jexc.jaxpr_as_fun(body_jaxpr))
@@ -203,9 +204,10 @@ def while_quax(
         *cond_leaves,
         *body_leaves,
         *init_val_leaves,
-        cond_nconsts=cond_nconsts,
+        # A `Value` const flattens to several leaves, so count leaves, not args.
+        cond_nconsts=len(cond_leaves),
         cond_jaxpr=quax_cond_jaxpr,
-        body_nconsts=body_nconsts,
+        body_nconsts=len(body_leaves),
         body_jaxpr=quax_body_jaxpr,
     )
     result = jtu.tree_unflatten(out_treedef, out_val)
