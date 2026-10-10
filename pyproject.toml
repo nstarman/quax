@@ -58,9 +58,7 @@ lint = ["prek>=0.3.11", "ruff>=0.15.9"]
 # in a dedicated job.
 test-integration = [{ include-group = "tests" }, "diffrax>=0.7.2"]
 tests = [
-  # beartype>=0.23.0rc0 breaks plum's method-redefinition detection:
-  # https://github.com/beartype/plum/issues/295, fix in https://github.com/beartype/plum/pull/296 (unmerged).
-  "beartype>=0.20.2,<0.23.0",
+  "beartype>=0.20.2",
   "pytest>=8.3.5",
   "pytest-env>=1.1.5",
   "sybil>=9",
