@@ -50,6 +50,13 @@ pip install -e . --dependency-groups tests
 pytest
 ```
 
+If a merge, rebase, or cherry-pick conflicts in `uv.lock`, don't resolve it by
+hand or by picking a side; regenerate it against the merged `pyproject.toml`:
+
+```bash
+git checkout --ours uv.lock && uv lock && git add uv.lock
+```
+
 Then push your changes back to your fork of the repository:
 
 ```bash
