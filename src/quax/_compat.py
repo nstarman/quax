@@ -39,6 +39,24 @@ JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
 JAX_GE_0_10_2: Final = JAX_VERSION >= Version("0.10.2")
 JAX_GE_0_11_0: Final = JAX_VERSION >= Version("0.11.0")
 
+# beartype 0.23 made `is_subhint(Any, T)` true for every `T`. plum < 2.10 ranks
+# methods with it, so an unannotated rule silently outranks a typed one and
+# dispatch picks the wrong rule: https://github.com/beartype/plum/issues/295.
+# Packaging metadata can't make one dependency's floor conditional on another's
+# version, so enforce the pairing here.
+_BEARTYPE_VERSION: Final = Version(version("beartype"))
+_PLUM_VERSION: Final = Version(version("plum-dispatch"))
+_BEARTYPE_GE_0_23_0: Final = _BEARTYPE_VERSION >= Version("0.23.0rc0")
+_PLUM_GE_2_10_0: Final = _PLUM_VERSION >= Version("2.10.0")
+if _BEARTYPE_GE_0_23_0 and not _PLUM_GE_2_10_0:
+    msg = (
+        f"quax requires plum-dispatch>=2.10.0 with beartype>=0.23, but found "
+        f"plum-dispatch=={_PLUM_VERSION} and beartype=={_BEARTYPE_VERSION}. "
+        f"Upgrade plum-dispatch, or install beartype<0.23. "
+        f"See https://github.com/beartype/plum/issues/295."
+    )
+    raise ImportError(msg)
+
 # `jit_p` was renamed from `pjit_p` in JAX 0.7.0, before the supported floor.
 jit_p: jexc.Primitive = jax._src.pjit.jit_p  # pyright: ignore[reportAttributeAccessIssue]
 
