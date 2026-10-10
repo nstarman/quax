@@ -11,9 +11,11 @@ permissions:
   contents: read
 
 concurrency:
-  # Pushes to main get a group per commit, so merges never cancel each
-  # other and main keeps a complete CI record. PRs still supersede.
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  # Each push to main gets its own group, so merges never cancel each other
+  # and main keeps a complete CI record. Other events (PRs, releases, manual
+  # runs) keep the per-ref group and still supersede older runs.
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 env:
