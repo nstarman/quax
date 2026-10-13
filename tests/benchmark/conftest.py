@@ -62,7 +62,7 @@ def _explicitly_targeted(config) -> bool:
 
 def pytest_ignore_collect(collection_path, config):
     """Ignore this directory's contents unless benchmarks were explicitly requested."""
-    path = Path(collection_path)
+    path = Path(collection_path).resolve()
     if path != _HERE and _HERE not in path.parents:
         return None  # not under the benchmark directory; not our concern
 
