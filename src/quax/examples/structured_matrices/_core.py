@@ -1,3 +1,4 @@
+import functools as ft
 from typing import cast
 
 import equinox as eqx
@@ -59,7 +60,12 @@ class TridiagonalMatrix(quax.ArrayValue):
 
 
 def _tridiagonal_matvec(
-    lower_diag: Array, main_diag: Array, upper_diag: Array, vector: Array
+    lower_diag: Array,
+    main_diag: Array,
+    upper_diag: Array,
+    vector: Array,
+    *,
+    preferred_element_type=None,
 ):
     (size1,) = lower_diag.shape
     (size2,) = main_diag.shape
@@ -68,6 +74,21 @@ def _tridiagonal_matvec(
     assert size1 == size2 - 1
     assert size3 == size2 - 1
     assert size4 == size2
+    if preferred_element_type is not None:
+        diagonals = jnp.stack(
+            (jnp.pad(lower_diag, (1, 0)), main_diag, jnp.pad(upper_diag, (0, 1))),
+            axis=1,
+        )
+        windows = jnp.stack(
+            (jnp.pad(vector[:-1], (1, 0)), vector, jnp.pad(vector[1:], (0, 1))),
+            axis=1,
+        )
+        return lax.dot_general(
+            diagonals,
+            windows,
+            (((1,), (1,)), ((0,), (0,))),
+            preferred_element_type=preferred_element_type,
+        )
     a = lower_diag * vector[:-1]
     b = main_diag * vector
     c = upper_diag * vector[1:]
@@ -94,6 +115,8 @@ def dot_general_tridiagonal_matrix_array_like(
         rhs_unused = [i for i in range(rhs_ndim) if i not in rhs_used]
         del lhs_used, rhs_used
         matvec = _tridiagonal_matvec
+        if (preferred := kwargs.get("preferred_element_type")) is not None:
+            matvec = ft.partial(matvec, preferred_element_type=preferred)
         for lhs_i, rhs_i in zip(lhs_batch, rhs_batch):
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, rhs_i))
         for lhs_i in lhs_unused:

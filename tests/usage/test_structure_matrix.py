@@ -78,3 +78,66 @@ def test_dot_general_batched_axis_order(batch, rhs_shape, dn):
     assert out.shape == ref.shape
     atol = 1e-5 * jnp.max(jax.lax.dot_general(jnp.abs(dense), jnp.abs(rhs), dn))
     assert jnp.allclose(out, ref, atol=atol)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "preferred"),
+    [
+        (jnp.float16, jnp.float32),
+        (jnp.bfloat16, jnp.float32),
+        (jnp.float16, None),
+        (jnp.float32, None),
+        (jnp.float32, jnp.float16),
+        (jnp.float32, jnp.int32),
+    ],
+)
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("jit", [False, True])
+def test_preferred_element_type(dtype, preferred, batched, jit):
+    batch = (2,) if batched else ()
+    scale = (
+        1.5
+        if dtype == jnp.float32 and preferred is not None
+        else (400.0 if preferred is not None else 1.0)
+    )
+    lower = jnp.full((*batch, 3), scale, dtype)
+    main = jnp.full((*batch, 4), scale, dtype)
+    upper = jnp.full((*batch, 3), scale, dtype)
+    rhs = jnp.full(
+        (*batch, 4),
+        1.5
+        if dtype == jnp.float32 and preferred is not None
+        else (500.0 if preferred is not None else 2.0),
+        dtype,
+    )
+    dn = (((2,), (1,)), ((0,), (0,))) if batched else (((1,), (0,)), ((), ()))
+
+    def run(lower, main, upper, rhs):
+        tri = structured_matrices.TridiagonalMatrix(lower, main, upper)
+        return quax.quaxify(
+            lambda A, x: jax.lax.dot_general(A, x, dn, preferred_element_type=preferred)
+        )(tri, rhs)
+
+    def reference(lower, main, upper, rhs):
+        make_dense = lambda l, m, u: jnp.diag(m) + jnp.diag(l, -1) + jnp.diag(u, 1)
+        dense = (
+            jax.vmap(make_dense)(lower, main, upper)
+            if batched
+            else make_dense(lower, main, upper)
+        )
+        return jax.lax.dot_general(dense, rhs, dn, preferred_element_type=preferred)
+
+    if jit:
+        run = jax.jit(run)
+    args = (lower, main, upper, rhs)
+    actual, expected = run(*args), reference(*args)
+    assert actual.dtype == expected.dtype
+    assert jnp.array_equal(actual, expected)
+    if not jnp.issubdtype(actual.dtype, jnp.inexact):
+        return
+    actual_grads = jax.grad(lambda *xs: run(*xs).sum(), argnums=(0, 1, 2, 3))(*args)
+    expected_grads = jax.grad(lambda *xs: reference(*xs).sum(), argnums=(0, 1, 2, 3))(
+        *args
+    )
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        assert jnp.array_equal(actual_grad, expected_grad)
