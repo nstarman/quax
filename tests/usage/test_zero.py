@@ -220,3 +220,35 @@ def test_pow():
     out = power(3, z)
     assert not isinstance(out, zero.Zero)
     assert jnp.array_equal(out, ones)
+
+
+@pytest.mark.parametrize("exponent", [-2, -1, 0, 2])
+@pytest.mark.parametrize("dtype", [jnp.float32, jnp.complex64])
+@pytest.mark.parametrize("shape", [(), (2, 3)])
+@pytest.mark.parametrize("jit", [False, True])
+def test_integer_pow_native_semantics(exponent, dtype, shape, jit):
+    z = zero.Zero(shape, dtype)
+    fn = quax.quaxify(lambda x: lax.integer_pow(x, exponent))
+    if jit:
+        fn = jax.jit(fn)
+    out = fn(z)
+    expected = lax.integer_pow(jnp.zeros(shape, dtype), exponent)
+    if isinstance(out, zero.Zero):
+        assert jnp.array_equal(out.materialise(), expected, equal_nan=True)
+    else:
+        assert jnp.array_equal(out, expected, equal_nan=True)
+    assert isinstance(out, zero.Zero) == (exponent > 0)
+    assert out.shape == expected.shape
+    assert out.dtype == expected.dtype
+
+
+@pytest.mark.parametrize("exponent", [-2, -1])
+@pytest.mark.parametrize("jit", [False, True])
+def test_negative_integer_pow_rejects_integer_dtype(exponent, jit):
+    with pytest.raises(TypeError, match="Integers cannot be raised to negative powers"):
+        lax.integer_pow(jnp.zeros((2,), jnp.int32), exponent)
+    fn = quax.quaxify(lambda x: lax.integer_pow(x, exponent))
+    if jit:
+        fn = jax.jit(fn)
+    with pytest.raises(TypeError, match="Integers cannot be raised to negative powers"):
+        fn(zero.Zero((2,), jnp.int32))
