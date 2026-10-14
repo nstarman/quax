@@ -171,12 +171,13 @@ def _(lhs: Zero, rhs: Zero, **kwargs) -> Zero:
 
 
 @quax.register(lax.integer_pow_p)
-def _integer_pow(x: Zero, *, y: int) -> Array | Zero:
+def integer_pow_zero(x: Zero, *, y: int) -> Array | Zero:
     # Zero is a special case, because 0^0 = 1.
     if y == 0:
         return jnp.ones(x.shape, x.dtype)  # pyright: ignore[reportArgumentType]
 
-    # Otherwise, we can just return a zero.
-    # Inf and NaN are not integers, so we don't need to worry about them.
-    del y
+    if y < 0:
+        return lax.integer_pow(x.materialise(), y)
+
+    # Positive integer powers preserve the symbolic zero.
     return x
