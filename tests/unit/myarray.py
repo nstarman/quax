@@ -752,6 +752,18 @@ def log1p_p(x: MyArray, /, **kw: Any) -> MyArray:
 # ==============================================================================
 
 
+if JAX_VERSION >= Version("0.11.2"):
+    # `jnp.log2` lowered to `log_p` / `div_p` before JAX 0.11.2, which gave it
+    # its own `log2_p` primitive.
+
+    @register(lax.log2_p)
+    def log2_p(x: MyArray, /, **kw: Any) -> MyArray:
+        return replace(x, array=lax.log2(x.array, **kw))
+
+
+# ==============================================================================
+
+
 @register(lax.log_p)
 def log_p(x: MyArray, /, **kw: Any) -> MyArray:
     return replace(x, array=lax.log(x.array, **kw))
