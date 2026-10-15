@@ -27,7 +27,8 @@ def test_invalid_slice_matches_jax(jit, start, limit, strides):
     symbolic_fn = quax.quaxify(fn)
     if jit:
         symbolic_fn = jax.jit(symbolic_fn)
-    with pytest.raises((TypeError, ValueError)):
+    # JAX 0.7.2 reports eager rank mismatches as AssertionError.
+    with pytest.raises((AssertionError, TypeError, ValueError)):
         dense_fn(jnp.zeros(2))
     with pytest.raises((TypeError, ValueError)):
         symbolic_fn(Zero((2,), jnp.float32))
