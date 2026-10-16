@@ -1,3 +1,4 @@
+import functools as ft
 from typing import cast
 
 import equinox as eqx
@@ -59,7 +60,12 @@ class TridiagonalMatrix(quax.ArrayValue):
 
 
 def _tridiagonal_matvec(
-    lower_diag: Array, main_diag: Array, upper_diag: Array, vector: Array
+    lower_diag: Array,
+    main_diag: Array,
+    upper_diag: Array,
+    vector: Array,
+    *,
+    preferred_element_type=None,
 ):
     (size1,) = lower_diag.shape
     (size2,) = main_diag.shape
@@ -68,10 +74,16 @@ def _tridiagonal_matvec(
     assert size1 == size2 - 1
     assert size3 == size2 - 1
     assert size4 == size2
+    dtype = jnp.result_type(lower_diag, main_diag, upper_diag, vector)
+    out = dtype if preferred_element_type is None else preferred_element_type
+    acc = jnp.promote_types(dtype, out)
+    lower_diag, main_diag, upper_diag, vector = (
+        x.astype(acc) for x in (lower_diag, main_diag, upper_diag, vector)
+    )
     a = lower_diag * vector[:-1]
     b = main_diag * vector
     c = upper_diag * vector[1:]
-    return b.at[:-1].add(c).at[1:].add(a)
+    return b.at[:-1].add(c).at[1:].add(a).astype(out)
 
 
 @quax.register(lax.dot_general_p)
@@ -85,7 +97,20 @@ def dot_general_tridiagonal_matrix_array_like(
     rhs = cast("Array", rhs)  # quax(jax) is type broadened.
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
     lhs_ndim = lhs.ndim
-    if lhs_contract == (lhs_ndim - 1,) and (lhs_ndim - 2 not in lhs_batch):
+    preferred = kwargs.get("preferred_element_type")
+    # Reordering floating-point reductions can change the integer after casting.
+    # Only the native dense dot preserves that reduction, subject to the usual
+    # allow_materialise permission. Floating-point results keep the O(n) path.
+    cast_requires_native_dot = (
+        preferred is not None
+        and jnp.issubdtype(lhs.dtype, jnp.inexact)
+        and not jnp.issubdtype(preferred, jnp.inexact)
+    )
+    if (
+        lhs_contract == (lhs_ndim - 1,)
+        and (lhs_ndim - 2 not in lhs_batch)
+        and not cast_requires_native_dot
+    ):
         rhs_ndim = quax.quaxify(jnp.ndim)(rhs)
         lhs_used = set(lhs_contract + lhs_batch)
         lhs_used.add(lhs_ndim - 2)
@@ -94,6 +119,8 @@ def dot_general_tridiagonal_matrix_array_like(
         rhs_unused = [i for i in range(rhs_ndim) if i not in rhs_used]
         del lhs_used, rhs_used
         matvec = _tridiagonal_matvec
+        if preferred is not None:
+            matvec = ft.partial(matvec, preferred_element_type=preferred)
         for lhs_i, rhs_i in zip(lhs_batch, rhs_batch):
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, rhs_i))
         for lhs_i in lhs_unused:
