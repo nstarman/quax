@@ -97,7 +97,20 @@ def dot_general_tridiagonal_matrix_array_like(
     rhs = cast("Array", rhs)  # quax(jax) is type broadened.
     ((lhs_contract, rhs_contract), (lhs_batch, rhs_batch)) = dimension_numbers
     lhs_ndim = lhs.ndim
-    if lhs_contract == (lhs_ndim - 1,) and (lhs_ndim - 2 not in lhs_batch):
+    preferred = kwargs.get("preferred_element_type")
+    # Reordering floating-point reductions can change the integer after casting.
+    # Only the native dense dot preserves that reduction, subject to the usual
+    # allow_materialise permission. Floating-point results keep the O(n) path.
+    cast_requires_native_dot = (
+        preferred is not None
+        and jnp.issubdtype(lhs.dtype, jnp.inexact)
+        and not jnp.issubdtype(preferred, jnp.inexact)
+    )
+    if (
+        lhs_contract == (lhs_ndim - 1,)
+        and (lhs_ndim - 2 not in lhs_batch)
+        and not cast_requires_native_dot
+    ):
         rhs_ndim = quax.quaxify(jnp.ndim)(rhs)
         lhs_used = set(lhs_contract + lhs_batch)
         lhs_used.add(lhs_ndim - 2)
@@ -106,7 +119,7 @@ def dot_general_tridiagonal_matrix_array_like(
         rhs_unused = [i for i in range(rhs_ndim) if i not in rhs_used]
         del lhs_used, rhs_used
         matvec = _tridiagonal_matvec
-        if (preferred := kwargs.get("preferred_element_type")) is not None:
+        if preferred is not None:
             matvec = ft.partial(matvec, preferred_element_type=preferred)
         for lhs_i, rhs_i in zip(lhs_batch, rhs_batch):
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, rhs_i))

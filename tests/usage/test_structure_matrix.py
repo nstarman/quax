@@ -102,7 +102,9 @@ def test_preferred_element_type(dtype, preferred, lhs_val, rhs_val, batched, jit
     dn = (((2,), (1,)), ((0,), (0,))) if batched else (((1,), (0,)), ((), ()))
 
     def run(lower, main, upper, rhs):
-        tri = structured_matrices.TridiagonalMatrix(lower, main, upper)
+        tri = structured_matrices.TridiagonalMatrix(
+            lower, main, upper, allow_materialise=preferred == jnp.int32
+        )
         return quax.quaxify(
             lambda A, x: jax.lax.dot_general(A, x, dn, preferred_element_type=preferred)
         )(tri, rhs)
@@ -149,7 +151,9 @@ def test_preferred_element_type_random(dtype, preferred, batched, jit):
     batch = (2,) if batched else ()
     lower, main, upper = (x.astype(dtype) for x in _tridiag(jr.PRNGKey(17), batch, 8))
     rhs = jr.normal(jr.PRNGKey(18), (*batch, 8)).astype(dtype)
-    tri = structured_matrices.TridiagonalMatrix(lower, main, upper)
+    tri = structured_matrices.TridiagonalMatrix(
+        lower, main, upper, allow_materialise=preferred == jnp.int32
+    )
     make_dense = lambda l, m, u: jnp.diag(m) + jnp.diag(l, -1) + jnp.diag(u, 1)
     dense = (
         jax.vmap(make_dense)(lower, main, upper)
@@ -180,3 +184,38 @@ def test_preferred_element_type_random(dtype, preferred, batched, jit):
             )
         )
         assert jnp.allclose(actual, expected, rtol=8 * eps, atol=8 * eps * magnitude)
+
+
+@pytest.mark.parametrize("size", [3, 8, 33])
+@pytest.mark.parametrize("sign", [-1, 1])
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("jit", [False, True])
+@pytest.mark.parametrize("allow_materialise", [False, True])
+def test_preferred_integer_cancellation(size, sign, batched, jit, allow_materialise):
+    batch = (2,) if batched else ()
+    lower = jnp.full((*batch, size - 1), sign * 1e8, jnp.float32)
+    main = jnp.full((*batch, size), -sign * 1e8, jnp.float32)
+    upper = jnp.full((*batch, size - 1), sign * 1.5, jnp.float32)
+    rhs = jnp.ones((*batch, size), jnp.float32)
+    tri = structured_matrices.TridiagonalMatrix(
+        lower, main, upper, allow_materialise=allow_materialise
+    )
+    dn = (((2,), (1,)), ((0,), (0,))) if batched else (((1,), (0,)), ((), ()))
+
+    def dot(a, b):
+        return jax.lax.dot_general(a, b, dn, preferred_element_type=jnp.int32)
+
+    run = quax.quaxify(dot)
+    if jit:
+        run = jax.jit(run)
+    if not allow_materialise:
+        with pytest.raises(RuntimeError, match="Refusing to materialise"):
+            run(tri, rhs)
+    else:
+        make_dense = lambda l, m, u: jnp.diag(m) + jnp.diag(l, -1) + jnp.diag(u, 1)
+        dense = (
+            jax.vmap(make_dense)(lower, main, upper)
+            if batched
+            else make_dense(lower, main, upper)
+        )
+        assert jnp.array_equal(run(tri, rhs), dot(dense, rhs))
