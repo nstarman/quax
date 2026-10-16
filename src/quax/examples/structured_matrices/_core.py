@@ -74,25 +74,16 @@ def _tridiagonal_matvec(
     assert size1 == size2 - 1
     assert size3 == size2 - 1
     assert size4 == size2
-    if preferred_element_type is not None:
-        diagonals = jnp.stack(
-            (jnp.pad(lower_diag, (1, 0)), main_diag, jnp.pad(upper_diag, (0, 1))),
-            axis=1,
-        )
-        windows = jnp.stack(
-            (jnp.pad(vector[:-1], (1, 0)), vector, jnp.pad(vector[1:], (0, 1))),
-            axis=1,
-        )
-        return lax.dot_general(
-            diagonals,
-            windows,
-            (((1,), (1,)), ((0,), (0,))),
-            preferred_element_type=preferred_element_type,
-        )
+    dtype = jnp.result_type(lower_diag, main_diag, upper_diag, vector)
+    out = dtype if preferred_element_type is None else preferred_element_type
+    acc = jnp.promote_types(dtype, out)
+    lower_diag, main_diag, upper_diag, vector = (
+        x.astype(acc) for x in (lower_diag, main_diag, upper_diag, vector)
+    )
     a = lower_diag * vector[:-1]
     b = main_diag * vector
     c = upper_diag * vector[1:]
-    return b.at[:-1].add(c).at[1:].add(a)
+    return b.at[:-1].add(c).at[1:].add(a).astype(out)
 
 
 @quax.register(lax.dot_general_p)
