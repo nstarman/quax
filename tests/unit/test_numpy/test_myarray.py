@@ -11,6 +11,7 @@ from .._markers import (
     mark_nomd,
     mark_todo,
     skip_removed_jax_0_10_0,
+    skip_removed_jax_0_12_0,
     xfail_deprecated_jax_0_9_0,
     xfail_quax58,
 )
@@ -151,6 +152,7 @@ def _run_and_compare(module, func_name, args, kw, expect_myarray=None):
         ("cosh", (x,), {}, True),
         ("count_nonzero", (x,), {}, True),
         ("cov", (x,), {}, True),
+        pytest.param("cross", (x, y), {}, True, marks=skip_removed_jax_0_12_0),
         ("csingle", (x,), {}, True),
         ("cumprod", (x,), {}, True),
         ("cumsum", (x,), {}, True),
