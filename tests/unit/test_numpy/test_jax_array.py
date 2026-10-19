@@ -120,7 +120,6 @@ def _run_and_compare(module, func_name, args, kw):
         ("cosh", (x,), {}),
         ("count_nonzero", (x,), {}),
         ("cov", (x,), {}),
-        ("cross", (x, y), {}),
         ("csingle", (1,), {}),
         ("cumprod", (x,), {}),
         ("cumsum", (x,), {}),

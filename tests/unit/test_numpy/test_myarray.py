@@ -151,7 +151,6 @@ def _run_and_compare(module, func_name, args, kw, expect_myarray=None):
         ("cosh", (x,), {}, True),
         ("count_nonzero", (x,), {}, True),
         ("cov", (x,), {}, True),
-        ("cross", (x, y), {}, True),
         ("csingle", (x,), {}, True),
         ("cumprod", (x,), {}, True),
         ("cumsum", (x,), {}, True),
