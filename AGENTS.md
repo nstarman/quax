@@ -21,6 +21,7 @@ uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 | [_values.py](src/quax/_values.py) | `Value` (base `eqx.Module`; requires `aval()` and `materialise()`), `ArrayValue` (exposes `.shape`, `.dtype`, `.ndim`, `.size`), internal `_DenseArrayValue` |
 | [_quaxify.py](src/quax/_quaxify.py) | `quaxify(fn)` and `_Quaxify`; wraps any JAX function to enable quax dispatch |
 | [_dispatch.py](src/quax/_dispatch.py) | `register(primitive)`, the plum rule table, and the dispatch cache |
+| [_dispatchable.py](src/quax/_dispatchable.py) | `quax.dispatchable`, `DispatchableFunction` and `dispatch_call_p`: whole-function dispatch. The batching rule records inner `vmap`s as `n_batch`; the quax rule `dispatch_call_quax` lives in `_primitives.py` |
 | [_primitives.py](src/quax/_primitives.py) | Handlers for `jit_p`, `while_p`, `cond_p`, `scan_p`, and their jaxpr caches |
 | [_trace.py](src/quax/_trace.py) | `_QuaxTrace`/`_QuaxTracer`; the interpreter that dispatches via plum |
 | [_module.py](src/quax/_module.py) | `_FastModuleMeta`; skips equinox per-instance validation on hot paths |
@@ -64,6 +65,8 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **Name every registered rule** — `@quax.register` handlers are named after the primitive and the
   types they dispatch on (`add_unitful_unitful`, `convert_element_type_zero`, `cond_quax`), never
   `def _`. Dispatch ignores the name; tracebacks, plum's ambiguity errors, and profiles do not.
+- **Registering a `jax.custom_jvp` mutates it globally** — `quax.register(cjvp)` sets `cjvp.fun` to a `DispatchableFunction` and calls `jax.clear_caches()`. Tests that register one must use a `custom_jvp` private to that test module.
+- **`dispatch_call_p` params must be hashable and stable** — `fn` is the `DispatchableFunction` itself, never a per-call lambda, or jit caches miss. No primitive param may be named `key`: on JAX 0.7.2 it collides with an internal cache's argument.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
 - **hijax under `jit` trips the leak checker on JAX 0.10.2 and 0.11.0** — consuming a hi value reports a false `JAX_CHECK_TRACER_LEAKS` failure. A JAX regression, reproducible without quax, fixed in 0.11.1; `tests/usage/test_hijax.py` disables the check on those two versions only, so a recurrence on a fixed version fails the suite.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.

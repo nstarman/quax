@@ -14,6 +14,8 @@ A developer of a library built on Quax (e.g. if you wanted to write your own lib
 
 ::: quax.register
 
+::: quax.dispatchable
+
 ::: quax.Value
     options:
         members:
