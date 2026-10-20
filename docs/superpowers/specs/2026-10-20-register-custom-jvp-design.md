@@ -1,141 +1,178 @@
-# `quax.register` for `jax.custom_jvp` functions — design
+# Dispatchable functions and `custom_jvp` overrides — design
+
+Revised 2026-10-20. Supersedes the first version of this spec (rules keyed by a
+`custom_jvp`'s source location), which a whole-branch review showed to be
+unsound under a `vmap` inside `quaxify`.
 
 ## Problem
 
 On JAX 0.12, `jnp.hypot` is `jit(lambda x1, x2: _hypot(x1, x2)[0])`, where
-`_hypot` is a `jax.custom_jvp`. `_QuaxTrace.process_custom_jvp_call` never
-consults the rule table: it re-binds `custom_jvp_call` on the parent trace with
-the body wrapped, so each primitive in the body is dispatched individually. A
-Value type has no way to say "this is `_hypot`; here is my implementation".
+`_hypot` is a `jax.custom_jvp`. Its body compares `max(|x1|, |x2|)` against bare
+constants and mixes bare constants into `select_n`, which a unit-carrying type
+(unxt `Quantity`, `quax.examples.unitful.Unitful`) cannot allow without becoming
+unit-unsafe. A Value type needs to replace the whole function, not each primitive
+in it.
 
-The body cannot be made to work instead. `_hypot` compares `max(|x1|, |x2|)`
-against bare constants (`ge e 9.2e18`, `eq c inf`) and mixes bare constants into
-`select_n`, which a unit-carrying type (unxt `Quantity`, `quax.examples.unitful.Unitful`)
-cannot allow without becoming unit-unsafe. Its JVP rule needs further rules.
+## Root cause any design must respect
+
+A rule that replaces a *function* is correct only if every transform between
+`quaxify` and the call sees the replacement. Primitive rules get this for free:
+an inner `vmap` rewrites `add` into another `add` with moved axes. A JAX
+`custom_jvp` does not: an inner `vmap` rewrites its *body* but keeps its
+*identity* (same `DebugInfo`, and in the staged path no recorded transform). So
+no rule keyed on a JAX-owned identity can be sound — the first version of this
+design returned `[[5, 10], [15, 20]]` instead of `[[5, 13.4], [12.0, 20]]` for
+`quaxify(vmap(jnp.hypot, in_axes=(0, 1)))`.
+
+The fix is for quax to own the call: a primitive whose batching rule turns an
+inner `vmap` into a parameter quax can read.
 
 ## Goal and success criteria
 
-A rule registered once for a `custom_jvp` replaces it for the Value types it
-dispatches on:
-
-- `quaxify(jnp.hypot)(q1, q2)` works for `Unitful`, eagerly, under
-  `quaxify(jit(...))` and `jit(quaxify(...))`, under `vmap`, and under an outer
-  `jax.grad` (gradient of the rule, which uses JAX's own derivative when the rule
-  calls JAX ops on plain arrays).
-- A `custom_jvp` without a matching rule behaves exactly as today.
+- A per-example rule registered once for a function replaces it for the Value
+  types it dispatches on, under any composition of `jit`, `vmap` (any `in_axes`,
+  nested, either side of `quaxify`) and `grad` (either side of `quaxify`).
+- `quaxify(jnp.hypot)` works for `Unitful` on JAX ≥ 0.12 in all of the above,
+  given ordinary `Unitful` rules for `sub`, `div`, `transpose`,
+  `broadcast_in_dim`.
+- With no matching rule, behaviour is exactly as today.
+- Plain JAX (no quax) is unaffected in value, derivative and lowering.
 - Supported on every JAX version quax supports (0.7.2 onwards).
 
-Out of scope: `custom_vjp`; `jax.jvp`/`grad` taken *inside* `quaxify` (JAX's
-`JVPTrace` sits below quax and consumes the `custom_jvp` before quax sees it —
-no quax-level hook can intercept it).
+Out of scope: `custom_vjp` (the same body swap would work; not needed yet);
+keyword arguments to dispatchable functions; bodies with side effects
+(`jax.debug.print`, callbacks).
 
 ## Alternatives considered
 
-Prototyped in throwaway scripts against a common harness:
-
 | | Approach | Outcome |
 |---|---|---|
-| D | Teach the Value type every primitive in the body | Needs unit-unsafe rules (Quantity vs bare constant comparisons and `select_n`); grad still fails. Rejected. |
-| C | Rule on `jit_p` keyed on `params["name"] == "hypot"` | Works with no quax change, but captures every jitted call with that type signature, needs a hand-written fallback to `jit_quax`, collides with any user jit named `hypot`, and becomes ambiguous when two libraries register `jit_p`. Only works because JAX happens to wrap `hypot` in `jit`. A possible downstream stopgap, not a design. |
-| A | Dispatch `custom_jvp_call_p` through the rule table; rule checks `fun.debug_info.func_name` and returns `NotImplemented` to decline | Works, but keys on a private, collision-prone name and invents a decline convention. |
-| F | Bind with materialised Values | Not viable; `Unitful`/`Quantity` refuse to materialise. |
-| **B** | `quax.register(custom_jvp_obj)`, keyed by source location | **Chosen.** Precise key, plum miss falls back to today's behaviour, same API shape as primitive rules. |
+| D | Teach the Value type every primitive in the body | Needs unit-unsafe rules; grad still fails. Rejected. |
+| C | `jit_p` rule keyed on `name == "hypot"` | Captures every jitted call of that signature; collides; identity-keyed, so also wrong under inner `vmap`. Rejected. |
+| A | Generic `custom_jvp_call_p` rule checking `func_name` | Private name key; identity-keyed. Rejected. |
+| B | `register(custom_jvp)` keyed by `func_src_info` | Implemented first. Silently wrong under inner `vmap`; callables without source info collide. Rejected. |
+| B+guard | B, plus fall back unless `fun`'s jaxpr equals the registered function's | Sound but conservative: inner `vmap` and inner `grad` fail loudly; brittle jaxpr comparison. Rejected in favour of the below. |
+| Upstream | JAX marks transformed `custom_jvp`s | Outside our control. |
+| **P** | **quax-owned dispatch primitive + `custom_jvp` body swap** | **Chosen.** Prototype passes every case above, including inner `vmap` with misaligned axes and inner `grad` on JAX 0.12's `jnp.hypot`. |
 
 ## Design
 
 ### API
 
 ```python
-@quax.register(jax._src.numpy.ufuncs._hypot)
-def hypot_unitful_unitful(x1: Unitful, x2: Unitful):
-    h = jnp.hypot(x1.array, x2.array)
-    return [Unitful(h, x1.units), Unitful(x1.array / h, {}), Unitful(x2.array / h, {})]
+@quax.dispatchable                         # a function you own
+def myhypot(x, y): ...
+
+@quax.register(myhypot)                    # per-example rule
+def myhypot_unitful_unitful(x: Unitful, y: Unitful) -> Unitful: ...
+
+@quax.register(jax._src.numpy.ufuncs._hypot)   # a JAX-owned custom_jvp
+def hypot_unitful_unitful(x1: Unitful, x2: Unitful) -> tuple[Unitful, Unitful, Unitful]: ...
 ```
 
-- `register(primitive, /, *, precedence=0)` accepts a `jexc.Primitive`
-  (unchanged) or a `jax.custom_jvp` instance. Anything else, including a
-  `jax.custom_vjp`, raises `TypeError`.
-- The rule's positional arguments are the `custom_jvp`'s inputs, flattened to
-  leaves. `nondiff_argnums` arguments are closed over by JAX and never passed.
-- No keyword arguments are passed.
-- The rule returns a sequence: the `custom_jvp`'s output, flattened to leaves
-  (`[out]` for a single array output).
-- Dispatch, `precedence` and ambiguity behave as for primitive rules.
+- `quax.dispatchable(fn) -> DispatchableFunction`. Calling it binds
+  `quax_dispatch_call`; outside quax its value, derivative and lowering are
+  `fn`'s. Positional arguments only; keyword arguments raise `TypeError`.
+- `quax.register(target, /, *, precedence=0)` accepts a `jexc.Primitive`
+  (unchanged), a `DispatchableFunction`, or a `jax.custom_jvp`. Anything else
+  raises `TypeError`.
+- A rule has the function's signature: it takes the function's arguments as
+  pytrees and returns the function's output pytree. Rules are **per-example**:
+  quax applies any `vmap` between `quaxify` and the call, so a rule is never
+  shown a batch axis. Rules must therefore be vmappable (JAX operations; Values
+  are pytrees).
+- Dispatch and `precedence` behave as for primitive rules; each
+  `DispatchableFunction` has its own plum table.
 
-### Key
+### The primitive
 
-At registration, `fun_sourceinfo(cjvp.fun)` (from `jax._src.api_util`, imported
-through `_compat.py`) gives a string such as
-`"_hypot at …/jax/_src/numpy/ufuncs.py:3984"`. It is the key into the existing
-`_rules` dict, whose key type widens to `jexc.Primitive | str`. No synthetic
-primitive is created. If `fun_sourceinfo` returns `None`, registration raises
-`ValueError`.
+`quax_dispatch_call_p` (multiple results). `bind(*operands, fn, in_tree, static,
+n_batch)` means: rebuild the arguments from `in_tree`, the array operands and the
+non-array `static` leaves, and apply `fn` vmapped `n_batch` times over leading
+axes; outputs are the flattened output leaves.
 
-At call time the same string is `fun.debug_info.func_src_info`. Verified to be
-present and identical on JAX 0.7.2 and 0.12 in all three cases: eager call,
-`custom_jvp` already staged into a jaxpr (`quaxify(jit(f))`), and `jit(quaxify(f))`.
-Because the key is computed from the live object, it tracks JAX's line numbers
-across versions.
+- Arguments: array-like leaves are operands; other leaves (Python scalars,
+  strings, other hashable data) go into `static` as a hashable tuple of
+  `(position, value)`.
+- impl and lowering (`mlir.lower_fun`): `vmap^n_batch` of the body.
+- abstract eval: `jax.eval_shape` of the same, cached on
+  `(fn, operand avals, static, n_batch)`; the output treedef is recorded with it.
+- batching: move each operand's batch axis to the front, broadcast unbatched
+  operands to the batch size, re-bind with `n_batch + 1`, report output dims 0.
+  The new axis is the outermost vmap level.
+- JVP: `jax.jvp` of `vmap^n_batch` of the body — the body's own derivative. For a
+  swapped `custom_jvp`, JAX's `custom_jvp` rule sits outside the body and takes
+  precedence, so the function keeps its own derivative rule.
+- No transpose rule (the primitive is not linear).
 
-### Call path
+### quax side
 
-`process_custom_jvp_call` (both JAX-version branches) first calls one helper,
-`_custom_jvp_rule(self, fun, tracers)`, which returns output tracers or `None`:
+One generic rule is registered on `quax_dispatch_call_p`:
 
-1. `_rules.get(getattr(fun.debug_info, "func_src_info", None))`; no entry → `None`.
-2. Convert tracers to values exactly as `process_primitive` does; resolve a plum
-   method. `NotFoundLookupError` → `None`.
-3. `jax.eval_shape(fun.call_wrapped, *ShapeDtypeStruct(aval) for each input)`,
-   where the aval of a Value is `Value.aval()`. This is required, not just a
-   check: on an eager `custom_jvp` call JAX reads the output tree from a store
-   filled only when `fun` runs, so skipping it raises
-   `StoreException: neither store occupied`. It also yields the expected output
-   count.
-4. Call the method under `core.set_current_trace(self.parent_trace)`, as
-   primitive rules are called.
-5. If the number of outputs differs from step 3, raise `ValueError` naming the
-   `custom_jvp` and both counts. Otherwise wrap each output with
-   `_wrap_if_array` in a `_QuaxTracer`.
+1. No operand is a `quax.Value`: bind on the parent trace (plain JAX).
+2. Otherwise unflatten the per-example arguments' types and resolve the
+   function's plum table. Miss: return `quaxify(vmap^n_batch(body))(*args)` —
+   today's behaviour of running the body under quax.
+3. Hit: run `vmap^n_batch(rule)` on the Values (unflattened via `in_tree` and
+   `static`), flatten the output.
+4. Check the rule's per-example output treedef, and each leaf's shape and dtype
+   (a Value's via `aval()`), against the cached abstract eval. Mismatch:
+   `ValueError` naming the function, the expected and the actual.
 
-`None` falls through to the existing inline path, unchanged.
+The first version's interpreter hook is removed: `_QuaxTrace._custom_jvp_rule`,
+`_compat.fun_sourceinfo`, `str` keys in `_rules`, and the `eval_shape` step;
+`process_custom_jvp_call` returns to its previous form.
 
-No dispatch cache on this path: `custom_jvp` calls are far rarer than primitive
-binds, and `process_primitive`'s hot path is left untouched. Add a cache if a
-profile shows the need.
+### The `custom_jvp` body swap
 
-### Semantics to document
+On the first `register` of a given `jax.custom_jvp`, quax wraps its body:
+`d = dispatchable(cjvp.fun)`, `cjvp.fun = d`, records `cjvp -> d`, and calls
+`jax.clear_caches()` so no jit cache keeps the old body. Later registrations reuse
+`d`. Rules are registered into `d`'s table.
 
-- The rule replaces the function and its derivative. Under an outer `grad` the
-  rule's own computation is differentiated; writing the rule with JAX ops on
-  plain arrays (`jnp.hypot(x.array, …)`) keeps JAX's derivative rule.
-- `jvp`/`grad` inside `quaxify` does not reach the rule.
-- `custom_jvp`s built by one factory share a source location and therefore a
-  rule.
-- Targets such as `ufuncs._hypot` are private JAX objects that exist only on some
-  versions; register them behind `getattr(module, name, None)`.
+Consequences, to document:
+
+- Every later trace of the function contains `quax_dispatch_call`, also outside
+  quax. Values, derivatives and lowering are unchanged; jaxpr-walking tools see a
+  primitive they do not know.
+- JAX's own JVP rule (`_hypot_jvp`) still applies, now on Values, so the type
+  needs rules for the arithmetic in it (`sub`, `div`, `mul`, …).
+- An inner `vmap` with misaligned axes binds `transpose` / `broadcast_in_dim` on
+  Values, so the type needs those rules.
+- Targets such as `ufuncs._hypot` are private and version-dependent; register
+  them behind `getattr(module, name, None)`.
 
 ## Testing
 
-`tests/unit/test_custom_jvp.py`, using the `MyArray` fixture:
+`tests/unit/test_dispatchable.py`, with the `MyArray` fixture, each case comparing
+against the same computation on plain arrays:
 
-- rule applies: eager, `quaxify(jit(f))`, `jit(quaxify(f))`, `vmap`, outer `grad`;
-- unregistered `custom_jvp` and a type miss both fall back to inline;
-- wrong output count raises `ValueError`;
-- registering a non-primitive/non-`custom_jvp`, or a `custom_vjp`, raises `TypeError`;
-- `nondiff_argnums` arguments are not passed to the rule;
-- `precedence` picks between overlapping rules.
+- rule applies: eager; `jit(quaxify)`; `quaxify(jit)`; `vmap(quaxify)`;
+  `quaxify(vmap)` with `in_axes` `(0, 0)`, `(0, 1)`, `(1, 0)`, `(0, None)`; nested
+  `vmap`; `quaxify(vmap(jit))`; `quaxify(jit(vmap))`; outer `grad`;
+- plain JAX unaffected: eager, `jit`, `grad`, `vmap`;
+- pytree input and output; a Python-scalar static argument;
+- no rule for the types: falls back to the body under quax;
+- output treedef / shape / dtype mismatch raises `ValueError`;
+- `register` rejects other objects and `custom_vjp` with `TypeError`;
+  keyword arguments raise `TypeError`; `precedence` picks between rules;
+- `custom_jvp` swap: rule applies; JAX's derivative rule is still used (plain
+  `grad` matches); inner `grad` (`quaxify(grad(f))`) works; registering twice
+  swaps once.
 
-`src/quax/examples/unitful`: register `hypot_unitful_unitful` when
-`jax._src.numpy.ufuncs` has `_hypot`, with a usage test in `tests/usage/`
-(skipped on JAX < 0.12) covering eager, jit, outer grad, and a units mismatch.
+`src/quax/examples/unitful`: add `sub_p`, `div_p` (Unitful/array combinations)
+and `transpose_p` rules; `hypot_unitful_unitful` returns `_hypot`'s 3-tuple,
+registered when `ufuncs._hypot` is a `jax.custom_jvp`. Usage tests (skipped on
+JAX < 0.12): eager, both jit orders, `quaxify(vmap(jnp.hypot, in_axes=(0, 1)))`,
+outer and inner `grad`, units mismatch eagerly and under `jit`.
 
 ## Docs
 
-- `register` docstring: the `custom_jvp` form, rule signature, output contract.
-- `skills/quax/SKILL.md`: a section on overriding a `custom_jvp` (code blocks run
-  under Sybil).
-- `docs/autodiff.md`: short note in the custom-derivative section (also run
-  under Sybil).
-- `AGENTS.md`: pitfall noting the key is JAX's private source-info string, and
-  correct the Doctests bullet, which lists only README.md and SKILL.md as
-  Sybil-run although `conftest.py` also runs several `docs/` pages.
+- `quax.dispatchable` and `quax.register` docstrings: per-example rule contract,
+  the body swap and its consequences.
+- `skills/quax/SKILL.md`: section on replacing a whole function, with a runnable
+  `quax.dispatchable` example and the `custom_jvp` swap (run under Sybil).
+- `docs/autodiff.md`: note that a replaced function keeps its own JVP rule and
+  works with `grad` on either side of `quaxify` (run under Sybil).
+- `AGENTS.md`: pitfall on the body swap (global, clears jit caches); keep the
+  corrected Doctests bullet.
