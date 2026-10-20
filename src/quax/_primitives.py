@@ -9,6 +9,7 @@ import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.tree_util as jtu
+import plum
 from jaxtyping import ArrayLike
 
 from ._compat import (
@@ -16,9 +17,18 @@ from ._compat import (
     is_early_inline,
     jit_p,
     scan_bind_params,
+    typeof,
     unpack_scan_args,
 )
-from ._dispatch import register
+from ._dispatch import _rules, register
+from ._dispatchable import (
+    dispatch_call_p,
+    DispatchableFunction,
+    flat_body,
+    out_info,
+    rebuild,
+    vmapped,
+)
 from ._quaxify import _Quaxify, quaxify
 from ._values import _is_value, _make_cache_finalizer, ArrayValue
 
@@ -351,3 +361,60 @@ def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
     )
 
     return jtu.tree_unflatten(out_tree, out_flat)
+
+
+@register(dispatch_call_p)
+def dispatch_call_quax(
+    *operands: ArrayValue | ArrayLike,
+    fn: DispatchableFunction,
+    in_tree: Any,
+    static: tuple[tuple[int, Any], ...],
+    n_batch: int,
+) -> list[Any]:
+    """Dispatch a whole [`quax.dispatchable`][] function on its argument types.
+
+    Rules are per-example; `n_batch` counts the `vmap`s between `quaxify` and the
+    call (see `_dispatchable.py`), which are applied here to the rule.
+    """
+    params = dict(fn=fn, in_tree=in_tree, static=static, n_batch=n_batch)
+    if not any(_is_value(x) for x in operands):
+        return dispatch_call_p.bind(*operands, **params)
+
+    method = None
+    if (rule := _rules.get(fn)) is not None:
+        try:
+            method, _ = rule.resolve_method(rebuild(in_tree, static, operands))
+        except plum.NotFoundLookupError:
+            pass
+    if method is None:  # No rule for these types: run the body under Quax.
+        body = vmapped(flat_body(fn, in_tree, static), n_batch)
+        return _Quaxify(body, True, dynamic=False)(*operands)
+
+    trees: list[Any] = []
+
+    def per_example(*ops: Any) -> list[Any]:
+        leaves, tree = jtu.tree_flatten(
+            method(*rebuild(in_tree, static, ops)), is_leaf=_is_value
+        )
+        trees.append(tree)
+        return leaves
+
+    out = vmapped(per_example, n_batch)(*operands)
+
+    avals = tuple(type(x).aval(x) if _is_value(x) else typeof(x) for x in operands)
+    expected_tree, expected_avals = out_info(fn, in_tree, static, n_batch, avals)
+    name = getattr(fn, "__name__", repr(fn))
+    if trees[0] != expected_tree:
+        raise ValueError(
+            f"quax rule for {name!r} returned an output with structure {trees[0]}; "
+            f"expected {expected_tree}."
+        )
+    for i, (x, expected) in enumerate(zip(out, expected_avals, strict=True)):
+        got: Any = type(x).aval(x) if _is_value(x) else typeof(x)
+        if (got.shape, got.dtype) != (expected.shape, expected.dtype):
+            raise ValueError(
+                f"quax rule for {name!r} returned output leaf {i} with shape "
+                f"{got.shape} and dtype {got.dtype}; expected {expected.shape} "
+                f"and {expected.dtype}."
+            )
+    return out

@@ -10,10 +10,12 @@ import jax.extend.core as jexc
 import plum
 from jaxtyping import ArrayLike
 
+from ._dispatchable import DispatchableFunction
 from ._values import _dense, _is_value, CT, Value, ValueLike
 
 
-_rules: dict[jexc.Primitive, plum.Function] = {}
+# Keyed by primitive, or by a `quax.dispatchable` function.
+_rules: dict[jexc.Primitive | DispatchableFunction, plum.Function] = {}
 
 # Cache resolved dispatch methods keyed by (primitive, arg-types).
 # Sentinel for "no matching rule; fall through to _default_process".
@@ -22,9 +24,10 @@ _dispatch_cache: dict[tuple, Any] = {}
 
 
 def register(
-    primitive: jexc.Primitive, /, *, precedence: int = 0
+    primitive: jexc.Primitive | DispatchableFunction, /, *, precedence: int = 0
 ) -> Callable[[CT], CT]:
-    """Registers a multiple dispatch implementation for this JAX primitive.
+    """Registers a multiple dispatch implementation for this JAX primitive, or for
+    a whole [`quax.dispatchable`][] function.
 
     !!! Example
 
@@ -44,7 +47,10 @@ def register(
     **Arguments:**
 
     - `primitive`: The `jax.extend.core.Primitive` to provide a multiple
-      dispatch implementation for.
+      dispatch implementation for. Alternatively a [`quax.dispatchable`][]
+      function: the rule then replaces the whole function for the types it
+      dispatches on, and has the function's signature. See
+      [`quax.dispatchable`][] for the contract.
 
     - `precedence`: The precedence of this rule.
         See `plum.Dispatcher.dispatch` for details.
@@ -54,6 +60,13 @@ def register(
     A decorator for registering a multiple dispatch rule with the specified primitive.
     """
 
+    if not isinstance(primitive, (jexc.Primitive, DispatchableFunction)):
+        raise TypeError(
+            "`quax.register` takes a `jax.extend.core.Primitive` or a "
+            f"`quax.dispatchable` function, not {type(primitive).__name__!r}."
+        )
+    name = getattr(primitive, "__name__", str(primitive))
+
     def _register(rule: CT, /) -> CT:
         try:
             existing_rule = _rules[primitive]
@@ -62,8 +75,8 @@ def register(
             def new_rule():
                 raise NotImplementedError("Abstract primitive")  # pragma: no cover
 
-            new_rule.__name__ = f"{primitive}_dispatcher"
-            new_rule.__qualname__ = f"{primitive}_dispatcher"
+            new_rule.__name__ = f"{name}_dispatcher"
+            new_rule.__qualname__ = f"{name}_dispatcher"
             existing_rule = plum.Dispatcher().abstract(new_rule)
 
             _rules[primitive] = existing_rule
