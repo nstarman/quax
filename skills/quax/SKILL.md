@@ -241,6 +241,43 @@ rule mutates a global dispatch table and commits you to an implementation for a
 combination you may not understand. Order matters — the outer quaxify sees the
 type it selects last.
 
+### Replacing a `jax.custom_jvp` function
+
+Some functions cannot be expressed with your type's primitive rules, because
+their body does something your type must refuse — comparing a length against a
+bare constant, say. If the function is a `jax.custom_jvp`, register the function
+itself, and the rule replaces it for your type, both eagerly and inside an
+already-staged `jax.jit`:
+
+```python
+from quax.examples.unitful import meters, Unitful
+
+
+@jax.custom_jvp
+def clip_huge(x):
+    return jnp.where(x > 1e30, 1e30, x)  # compares against a bare number
+
+
+clip_huge.defjvp(lambda p, t: (clip_huge(p[0]), jnp.where(p[0] > 1e30, 0.0, t[0])))
+
+
+@quax.register(clip_huge)
+def clip_huge_unitful(x: Unitful) -> list[Unitful]:
+    return [Unitful(clip_huge(x.array), x.units)]
+
+
+print(quax.quaxify(clip_huge)(Unitful(jnp.array(2.0), meters)).units)  # {m: 1}
+```
+
+- The rule takes the function's inputs flattened to leaves (not
+  `nondiff_argnums`), and returns a **list** of its outputs flattened to leaves.
+- It replaces the derivative too: under an outer `jax.grad`, the rule is what gets
+  differentiated, so build it from JAX operations on plain arrays, as above. A
+  `jax.grad` taken *inside* `quaxify` never reaches the rule.
+- JAX 0.12 builds `jnp.hypot` on the private `custom_jvp` `_hypot`;
+  `quax.examples.unitful` registers it. Private targets come and go between
+  JAX versions, so look them up with `getattr(module, "_name", None)`.
+
 ## Overriding Value.default
 
 `default` is a rule for *every* primitive at once, keyed only on your type. Use

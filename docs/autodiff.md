@@ -99,6 +99,11 @@ Two constraints follow from the rules being *yours*:
   used to pick a branch, say — stay Python values rather than becoming traced
   arrays, so `if` on them still works.
 
+A rule registered for the `custom_jvp` function itself with
+[`quax.register`][] takes the place of both its body and its derivative rule: under an outer
+`jax.grad` the registered rule is what gets differentiated, while a `jax.grad`
+taken inside `quaxify` never reaches it.
+
 ## What is not supported
 
 Forward-over-reverse and reverse-over-reverse compose as JAX does; nothing in
