@@ -6,17 +6,14 @@ from collections.abc import Callable, Sequence
 from typing import Any, cast, TypeAlias
 
 import equinox as eqx
-import jax
 import jax.extend.core as jexc
 import plum
 from jaxtyping import ArrayLike
 
-from ._compat import fun_sourceinfo
 from ._values import _dense, _is_value, CT, Value, ValueLike
 
 
-# Keyed by primitive, or -- for a `jax.custom_jvp` -- by its source-info string.
-_rules: dict[jexc.Primitive | str, plum.Function] = {}
+_rules: dict[jexc.Primitive, plum.Function] = {}
 
 # Cache resolved dispatch methods keyed by (primitive, arg-types).
 # Sentinel for "no matching rule; fall through to _default_process".
@@ -25,10 +22,9 @@ _dispatch_cache: dict[tuple, Any] = {}
 
 
 def register(
-    primitive: jexc.Primitive | jax.custom_jvp, /, *, precedence: int = 0
+    primitive: jexc.Primitive, /, *, precedence: int = 0
 ) -> Callable[[CT], CT]:
-    """Registers a multiple dispatch implementation for this JAX primitive, or for
-    a function decorated with `jax.custom_jvp`.
+    """Registers a multiple dispatch implementation for this JAX primitive.
 
     !!! Example
 
@@ -48,8 +44,7 @@ def register(
     **Arguments:**
 
     - `primitive`: The `jax.extend.core.Primitive` to provide a multiple
-      dispatch implementation for. Alternatively a `jax.custom_jvp` function, whose
-      body and derivative rule the registered rule then replaces (see below).
+      dispatch implementation for.
 
     - `precedence`: The precedence of this rule.
         See `plum.Dispatcher.dispatch` for details.
@@ -57,56 +52,21 @@ def register(
     **Returns:**
 
     A decorator for registering a multiple dispatch rule with the specified primitive.
-
-    !!! Info "Registering a `jax.custom_jvp`"
-
-        Normally Quax runs a `custom_jvp` function's body, dispatching each primitive
-        in it. Registering the function instead replaces it, for the types the rule
-        dispatches on, wherever it is called under [`quax.quaxify`][] -- eagerly or
-        already staged inside a `jax.jit`:
-
-        - The rule takes the function's inputs, flattened to leaves, positionally.
-          Arguments in `nondiff_argnums` are not passed. No keyword arguments.
-        - It returns a list or tuple of the function's outputs, flattened to leaves
-          (`[out]` for a single array).
-        - It replaces the derivative too: under an outer `jax.grad`, the rule itself
-          is differentiated. Write it with JAX operations on plain arrays to keep
-          JAX's own derivative rules.
-        - A `jax.jvp` or `jax.grad` taken *inside* `quaxify` never reaches the rule:
-          JAX differentiates the function before Quax sees it.
-        - Rules are matched by the function's source location, so `custom_jvp`s built
-          by one factory share a rule.
     """
-    if isinstance(primitive, jexc.Primitive):
-        key: jexc.Primitive | str = primitive
-        name = str(primitive)
-    elif isinstance(primitive, jax.custom_jvp):
-        name = getattr(primitive, "__name__", repr(primitive))
-        src = fun_sourceinfo(primitive.fun)
-        if not src:  # pragma: no cover -- JAX falls back to the function's name
-            raise ValueError(
-                f"Cannot register {name}: JAX has no source location for it."
-            )
-        key = src
-    else:
-        raise TypeError(
-            "`quax.register` takes a `jax.extend.core.Primitive` or a "
-            f"`jax.custom_jvp` function, not {type(primitive).__name__!r}."
-        )
 
     def _register(rule: CT, /) -> CT:
         try:
-            existing_rule = _rules[key]
+            existing_rule = _rules[primitive]
         except KeyError:
 
             def new_rule():
                 raise NotImplementedError("Abstract primitive")  # pragma: no cover
 
-            new_rule.__name__ = f"{name}_dispatcher"
-            new_rule.__qualname__ = f"{name}_dispatcher"
+            new_rule.__name__ = f"{primitive}_dispatcher"
+            new_rule.__qualname__ = f"{primitive}_dispatcher"
             existing_rule = plum.Dispatcher().abstract(new_rule)
 
-            _rules[key] = existing_rule
+            _rules[primitive] = existing_rule
         existing_rule.dispatch(rule, precedence=precedence)
         # Invalidate all cached dispatch decisions so newly registered rules
         # are picked up on the next call.  Registration is rare (import-time)

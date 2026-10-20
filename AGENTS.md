@@ -70,7 +70,6 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
 - **Doctests are not collected.** `testpaths` lists `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `src/` docstrings and most `docs/` pages are never run. Verify them by hand when you change them. The exceptions are [README.md](README.md), [skills/quax/SKILL.md](skills/quax/SKILL.md), and the `docs/` pages listed in [conftest.py](conftest.py)'s Sybil `patterns` (e.g. `autodiff.md`, `how-to/*.md`), whose `python` blocks are executed as individual tests.
-- **`custom_jvp` rules are keyed by a private JAX string** — `quax.register(some_custom_jvp)` keys `_rules` by `_compat.fun_sourceinfo(fn)` and `process_custom_jvp_call` matches it against `fun.debug_info.func_src_info`. If JAX changes either, every `custom_jvp` rule silently stops firing; `tests/unit/test_register_custom_jvp.py` catches it.
 
 ## Dependencies
 

@@ -10,7 +10,6 @@ __all__ = (
     "JAX_GE_0_11_0",
     # Features
     "ClosedJaxpr",
-    "fun_sourceinfo",
     "hi_aval",
     "jit_p",
     "is_early_inline",
@@ -62,12 +61,6 @@ if _BEARTYPE_GE_0_23_0 and not _PLUM_GE_2_10_0:
 # JAX 0.12 merged `ClosedJaxpr` into `Jaxpr` and removed it from
 # `jax._src.core`; `jax.extend.core` keeps a public alias across versions.
 ClosedJaxpr = jexc.ClosedJaxpr  # pyright: ignore[reportPrivateImportUsage]
-
-# The "name at file:line" string JAX stores as `DebugInfo.func_src_info`; quax
-# keys `custom_jvp` rules by it. Present, unchanged, from 0.7.2 through 0.12.
-fun_sourceinfo: Callable[[Callable[..., Any]], str | None] = (
-    jax._src.api_util.fun_sourceinfo  # pyright: ignore[reportAttributeAccessIssue]
-)
 
 # `jit_p` was renamed from `pjit_p` in JAX 0.7.0, before the supported floor.
 jit_p: jexc.Primitive = jax._src.pjit.jit_p  # pyright: ignore[reportAttributeAccessIssue]

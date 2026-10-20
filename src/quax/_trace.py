@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Any, Final, overload
 
 import equinox as eqx
-import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
@@ -215,49 +214,6 @@ class _QuaxTrace(
         # Default: wrap arrays into a Value and return a tracer.
         return _QuaxTracer(self, _wrap_if_array(val))
 
-    def _custom_jvp_rule(
-        self, fun: lu.WrappedFun, tracers: Sequence[Any]
-    ) -> "list[_QuaxTracer] | None":
-        """Run a rule registered for this `custom_jvp`, if one matches; else `None`.
-
-        See `quax.register` for the rule contract.
-        """
-        rule = _rules.get(getattr(fun.debug_info, "func_src_info", None))  # pyright: ignore[reportArgumentType]
-        if rule is None:
-            return None
-        values = tuple(
-            (x.array if type(x := self.to_value(t)) is _DenseArrayValue else x)
-            for t in tracers
-        )
-        try:
-            method, _ = rule.resolve_method(values)
-        except plum.NotFoundLookupError:
-            return None
-        # Trace the body abstractly. Required, not just a check: an eager
-        # `custom_jvp.__call__` reads its output tree from a store that only
-        # running `fun` fills. It also gives the output count to check against.
-        avals: list[Any] = [
-            type(v).aval(v) if _is_value(v) else typeof(v) for v in values
-        ]
-        expected = jax.eval_shape(
-            lambda *a: fun.call_wrapped(*a),
-            *[jax.ShapeDtypeStruct(a.shape, a.dtype) for a in avals],
-        )
-        with core.set_current_trace(self.parent_trace):
-            out = method(*values)
-        name = fun.debug_info.func_name
-        if not isinstance(out, (list, tuple)):
-            raise TypeError(
-                f"quax rule for custom_jvp {name!r} must return a list or tuple of "
-                f"output leaves, not {type(out).__name__!r}."
-            )
-        if len(out) != len(expected):
-            raise ValueError(
-                f"quax rule for custom_jvp {name!r} returned {len(out)} outputs; "
-                f"expected {len(expected)}."
-            )
-        return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]
-
     if JAX_GE_0_9_2:
         # In JAX v0.9.2+ (PR https://github.com/jax-ml/jax/pull/35730) JAX was
         # changed to have an extra argument -- `avals` -- in bind_with_trace
@@ -266,8 +222,6 @@ class _QuaxTrace(
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
         ) -> "list[_QuaxTracer]":
-            if (out := self._custom_jvp_rule(fun, tracers)) is not None:
-                return out
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
             in_leaves, in_treedef = jtu.tree_flatten(
@@ -289,8 +243,6 @@ class _QuaxTrace(
         def process_custom_jvp_call(
             self, primitive, fun, jvp, tracers, *, symbolic_zeros
         ) -> "list[_QuaxTracer]":
-            if (out := self._custom_jvp_rule(fun, tracers)) is not None:
-                return out
             # Each `t.value` will be some `Value`, and thus a PyTree. Here we
             # flatten the `Value`-ness away.
             in_leaves, in_treedef = jtu.tree_flatten(
