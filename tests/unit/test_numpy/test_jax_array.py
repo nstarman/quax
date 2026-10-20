@@ -7,7 +7,12 @@ import pytest
 
 from quax import quaxify
 
-from .._markers import mark_todo, skip_removed_jax_0_10_0, xfail_deprecated_jax_0_9_0
+from .._markers import (
+    mark_todo,
+    skip_removed_jax_0_10_0,
+    skip_removed_jax_0_12_0,
+    xfail_deprecated_jax_0_9_0,
+)
 
 
 x = jnp.array([[1, 2], [3, 4]], dtype=float)
@@ -120,7 +125,7 @@ def _run_and_compare(module, func_name, args, kw):
         ("cosh", (x,), {}),
         ("count_nonzero", (x,), {}),
         ("cov", (x,), {}),
-        ("cross", (x, y), {}),
+        pytest.param("cross", (x, y), {}, marks=skip_removed_jax_0_12_0),
         ("csingle", (1,), {}),
         ("cumprod", (x,), {}),
         ("cumsum", (x,), {}),

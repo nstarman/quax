@@ -582,8 +582,8 @@ def erf_p(x: MyArray) -> MyArray:
 
 
 @quax.register(lax.erfc_p)
-def erfc_p(x: MyArray) -> MyArray:
-    return replace(x, array=lax.erfc(x.array))
+def erfc_p(x: MyArray, /, **kw: Any) -> MyArray:
+    return replace(x, array=lax.erfc_p.bind(x.array, **kw))
 
 
 # ==============================================================================
@@ -922,6 +922,17 @@ def pmin_p() -> MyArray:
 @quax.register(lax.polygamma_p)
 def polygamma_p(a: float | int, x: MyArray) -> MyArray:
     return replace(x, array=lax.polygamma_p.bind(a, x.array))
+
+
+# ==============================================================================
+
+
+if JAX_VERSION >= Version("0.12.0"):
+    # `jnp.sinc` (among others) lowers to `polynomial_p` from JAX 0.12.0.
+
+    @quax.register(lax.polynomial_p)
+    def polynomial_p(x: MyArray, /, *coeffs: ArrayLike, **kw: Any) -> MyArray:
+        return replace(x, array=lax.polynomial_p.bind(x.array, *coeffs, **kw))
 
 
 # ==============================================================================
