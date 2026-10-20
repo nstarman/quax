@@ -19,6 +19,7 @@ A developer of a library built on Quax (e.g. if you wanted to write your own lib
 ::: quax.Value
     options:
         members:
+            - batch_leaves
             - aval
             - default
             - materialise

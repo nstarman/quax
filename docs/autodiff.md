@@ -101,8 +101,9 @@ Two constraints follow from the rules being *yours*:
 
 A whole function can also be replaced for your type, with
 [`quax.dispatchable`][] or by registering a `jax.custom_jvp` with
-[`quax.register`][]. A replaced `custom_jvp` keeps its own JVP rule, which then
-runs on your type, and that holds for `jax.grad` on either side of `quaxify`.
+[`quax.register`][]. Derivatives, on either side of `quaxify`, are then those of
+your rule — except for a replaced `custom_jvp`, which keeps its own JVP rule
+(now run on your type).
 
 ## What is not supported
 

@@ -270,18 +270,21 @@ columns = quax.quaxify(jax.vmap(clip_huge, in_axes=1))(lengths)  # the rule, per
 - The rule has the function's signature: its positional arguments (pytrees
   allowed; dispatch is on each top-level argument's type) and its output pytree.
 - Rules are **per-example**. Quax applies any `jax.vmap` between `quaxify` and
-  the call to the rule itself, so build rules from JAX operations. A `vmap` with
-  `in_axes` other than 0 moves axes with `transpose` and `broadcast_in_dim`, so
-  your type needs rules for those.
-- Outside `quaxify` a dispatchable function behaves exactly as its body. Under an
-  outer `jax.grad`, the rule is what gets differentiated.
+  the call to the rule itself, so build rules from JAX operations. It does so
+  only for types that set `batch_leaves = True` — one array of the aval's shape
+  plus static data, like `Unitful` — and otherwise runs the function's body,
+  which is always correct. A `vmap` with `in_axes` other than 0 moves axes with
+  `transpose` and `broadcast_in_dim`, so your type needs rules for those.
+- Outside `quaxify` a dispatchable function behaves exactly as its body. Under
+  `quaxify`, derivatives on either side (`jax.grad(quaxify(f))`,
+  `quaxify(jax.grad(f))`, forward or reverse mode) are derivatives of the rule.
 
 For a `jax.custom_jvp` you don't own, `@quax.register(the_custom_jvp)` does the
 same. The first registration swaps the function's body for a dispatchable one,
 globally: every later trace of it contains a `quax_dispatch_call`, with or
 without Quax, and `jax.clear_caches()` is called. The function keeps its own JVP
-rule, which then runs on your type, so your type needs rules for the arithmetic
-in it. JAX 0.12 builds `jnp.hypot` on the private `custom_jvp` `_hypot`, and
+rule — its derivative is that rule's, not your rule's — which then runs on your
+type, so your type needs rules for the arithmetic in it. JAX 0.12 builds `jnp.hypot` on the private `custom_jvp` `_hypot`, and
 `quax.examples.unitful` registers it this way. Private targets come and go
 between JAX versions, so look them up with `getattr(module, "_name", None)`.
 

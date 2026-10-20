@@ -53,6 +53,8 @@ class Unitful(quax.ArrayValue):
         exponent -- e.g. `{meters: 1, seconds: -2}` for an acceleration.
     """
 
+    batch_leaves = True  # one array of the aval's shape, plus static data
+
     array: ArrayLike
     units: dict[Dimension, int] = eqx.field(static=True, converter=_dim_to_unit)
 

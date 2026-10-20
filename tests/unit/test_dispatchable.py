@@ -252,3 +252,96 @@ def test_rule_with_plain_array_arg():
     assert jnp.allclose(quax.quaxify(m)(A, b).array, ref(a, b))
     out = quax.quaxify(jax.vmap(m, in_axes=(0, 1)))(A, b)
     assert jnp.allclose(out.array, jax.vmap(ref, in_axes=(0, 1))(a, b))
+
+
+class Outer(quax.ArrayValue):
+    """`u[:, None] * v[None, :]`: two leaves, not batched along the aval's axis 0."""
+
+    u: jax.Array
+    v: jax.Array
+
+    def aval(self) -> jax.core.ShapedArray:
+        return jax.core.ShapedArray((*self.u.shape, *self.v.shape[-1:]), self.u.dtype)
+
+    def materialise(self) -> jax.Array:
+        return self.u[..., :, None] * self.v[..., None, :]
+
+
+@quax.dispatchable
+def rowsum(x):
+    return jnp.sum(x, axis=-1)
+
+
+@quax.register(rowsum)
+def rowsum_outer(x: Outer) -> jax.Array:
+    return x.u * jnp.sum(x.v)
+
+
+def test_inner_vmap_without_batch_leaves_runs_body():
+    """A Value that has not opted in to `batch_leaves` is never vmapped leaf-wise."""
+    u, v = jnp.array([1.0, 2.0, 3.0]), jnp.array([10.0, 20.0, 30.0])
+    expected = jnp.sum(u[:, None] * v[None, :], axis=1)  # [60, 120, 180]
+    assert jnp.allclose(quax.quaxify(rowsum)(Outer(u, v)), expected)  # the rule
+    out = quax.quaxify(jax.vmap(rowsum))(Outer(u, v))  # the body, per row
+    out = out.materialise() if isinstance(out, quax.Value) else out
+    assert jnp.allclose(out, expected)
+
+
+def test_inner_jvp_uses_rule():
+    def jvp_f(x, y):
+        return jax.jvp(f, (x, y), (x, y))
+
+    primal, tangent = quax.quaxify(jvp_f)(A, B)
+    expected_primal, expected_tangent = jax.jvp(ref, (a, b), (a, b))
+    assert jnp.allclose(primal.array, expected_primal)
+    assert jnp.allclose(tangent.array, expected_tangent)
+
+
+def test_inner_second_order_uses_rule():
+    def second(fn, x, y):
+        def first(t):
+            return jax.jvp(lambda s: fn(s, y), (t,), (t,))[1]
+
+        return jax.jvp(first, (x,), (x,))
+
+    primal, tangent = quax.quaxify(lambda x, y: second(f, x, y))(A, B)
+    expected_primal, expected_tangent = second(ref, a, b)
+    assert jnp.allclose(primal.array, expected_primal)
+    assert jnp.allclose(tangent.array, expected_tangent)
+
+
+def test_inner_grad_uses_rule():
+    grad = quax.quaxify(jax.grad(lambda x, y: f(x, y).sum()))(A, B)
+    grad = grad.array if isinstance(grad, MyArray) else grad
+    assert jnp.allclose(grad, jax.grad(lambda x: ref(x, b).sum())(a))
+
+
+@quax.dispatchable
+def centred(x):
+    return x - jax.lax.pmean(x, "i")
+
+
+def test_vmap_axis_name_collectives():
+    x = jnp.array([1.0, 2.0, 3.0])
+    expected = x - jnp.mean(x)
+    assert jnp.allclose(jax.vmap(centred, axis_name="i")(x), expected)
+    assert jnp.allclose(jax.jit(jax.vmap(centred, axis_name="i"))(x), expected)
+
+
+def test_plain_jax_higher_order_unchanged():
+    def g(fn):
+        return lambda x: jnp.sum(fn(x, b) ** 2)
+
+    assert jnp.allclose(jax.hessian(g(f))(a), jax.hessian(g(body))(a))  # fwd-over-rev
+
+    def rev_rev(fn):
+        return jax.grad(lambda x: jnp.sum(jax.grad(g(fn))(x) ** 2))
+
+    assert jnp.allclose(rev_rev(f)(a), rev_rev(body)(a))
+    _, f_vjp = jax.vjp(lambda x: f(x, b), a)
+    _, body_vjp = jax.vjp(lambda x: body(x, b), a)
+    assert jnp.allclose(f_vjp(b)[0], body_vjp(b)[0])
+    assert jnp.allclose(jax.jit(jax.grad(g(f)))(a), jax.grad(g(body))(a))
+    assert jnp.allclose(
+        jax.vmap(jax.grad(g(f)))(a[None]), jax.vmap(jax.grad(g(body)))(a[None])
+    )

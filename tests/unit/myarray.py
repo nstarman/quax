@@ -43,6 +43,8 @@ class MyArray(quax.ArrayValue):
     `quax` will not attempt to convert it to a JAX array.
     """
 
+    batch_leaves = True  # one array of the aval's shape, plus static data
+
     array: jax.Array = eqx.field(converter=jnp.asarray)
 
     def materialise(self) -> jax.Array:
