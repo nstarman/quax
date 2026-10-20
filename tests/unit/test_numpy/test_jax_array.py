@@ -15,6 +15,10 @@ skip_removed_jax_0_10_0 = pytest.mark.skipif(
     JAX_VERSION >= Version("0.10"),
     reason="removed in JAX v0.10.0",
 )
+skip_removed_jax_0_12_0 = pytest.mark.skipif(
+    JAX_VERSION >= Version("0.12"),
+    reason="removed in JAX v0.12.0",
+)
 xfail_deprecated_jax_0_9_0 = (
     pytest.mark.xfail(
         Version("0.9") <= JAX_VERSION < Version("0.10"),
@@ -126,7 +130,7 @@ xbool = jnp.array([True, False, True], dtype=bool)
         ("cosh", (x,), {}),
         ("count_nonzero", (x,), {}),
         ("cov", (x,), {}),
-        ("cross", (x, y), {}),
+        pytest.param("cross", (x, y), {}, marks=skip_removed_jax_0_12_0),
         ("csingle", (1,), {}),
         ("cumprod", (x,), {}),
         ("cumsum", (x,), {}),

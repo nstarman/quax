@@ -11,7 +11,13 @@ import jax.extend.core as jexc
 import jax.tree_util as jtu
 from jaxtyping import ArrayLike
 
-from ._compat import is_early_inline, jit_p, scan_bind_params, unpack_scan_args
+from ._compat import (
+    ClosedJaxpr,
+    is_early_inline,
+    jit_p,
+    scan_bind_params,
+    unpack_scan_args,
+)
 from ._dispatch import register
 from ._quaxify import _Quaxify, quaxify
 from ._values import _is_value, _make_cache_finalizer, ArrayValue
@@ -144,9 +150,9 @@ def _check_carry_stable(before: Any, after: Any, primitive: str) -> None:
 def while_quax(
     *args: ArrayValue | ArrayLike,
     cond_nconsts: int,
-    cond_jaxpr: core.ClosedJaxpr,
+    cond_jaxpr: ClosedJaxpr,
     body_nconsts: int,
-    body_jaxpr: core.ClosedJaxpr,
+    body_jaxpr: ClosedJaxpr,
 ) -> tuple[ArrayValue | ArrayLike, ...]:
     body_end = cond_nconsts + body_nconsts
     cond_consts = args[:cond_nconsts]
@@ -216,7 +222,7 @@ _sentinel = object()
 def cond_quax(
     index: ArrayLike,
     *args: ArrayValue | ArrayLike,
-    branches: tuple[core.ClosedJaxpr, ...],
+    branches: tuple[ClosedJaxpr, ...],
     linear: tuple[bool, ...] | object = _sentinel,
     branches_platforms: tuple[str, ...] | object = _sentinel,
 ) -> Any:
@@ -224,7 +230,7 @@ def cond_quax(
 
     out_trees: list[Any] = []
 
-    def _make_quax_branch(jaxpr: core.ClosedJaxpr, /) -> core.ClosedJaxpr:
+    def _make_quax_branch(jaxpr: ClosedJaxpr, /) -> ClosedJaxpr:
         def flat_quax_call(flat_args: list[Any]) -> list[Any]:
             _args = jtu.tree_unflatten(in_tree, flat_args)
             flat_out, out_tree = jtu.tree_flatten(
