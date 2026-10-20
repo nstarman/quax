@@ -99,6 +99,12 @@ Two constraints follow from the rules being *yours*:
   used to pick a branch, say — stay Python values rather than becoming traced
   arrays, so `if` on them still works.
 
+A whole function can also be replaced for your type, with
+[`quax.dispatchable`][] or by registering a `jax.custom_jvp` with
+[`quax.register`][]. Derivatives, on either side of `quaxify`, are then those of
+your rule — except for a replaced `custom_jvp`, which keeps its own JVP rule
+(now run on your type).
+
 ## What is not supported
 
 Forward-over-reverse and reverse-over-reverse compose as JAX does; nothing in

@@ -85,3 +85,94 @@ def test_select_n_three_cases_checks_every_pair():
     # the message names the two mismatching unit dicts, as `add_p`'s does
     with pytest.raises(ValueError, match=r"units \{m: 1\} and \{s: 1\}"):
         quax.quaxify(jax.lax.select_n)(which, a, b, bad)
+
+
+def _value(x):
+    return x.array if isinstance(x, Unitful) else x
+
+
+def test_sub_requires_matching_units():
+    out = quax.quaxify(jax.lax.sub)(
+        Unitful(jnp.array(3.0), meters), Unitful(jnp.array(1.0), meters)
+    )
+    assert out.units == {meters: 1}
+    assert out.array == 2.0
+    with pytest.raises(ValueError, match="units"):
+        quax.quaxify(jax.lax.sub)(
+            Unitful(jnp.array(3.0), meters), Unitful(jnp.array(1.0), seconds)
+        )
+
+
+def test_div_combines_units():
+    m, s = Unitful(jnp.array(6.0), meters), Unitful(jnp.array(2.0), seconds)
+    div = quax.quaxify(jax.lax.div)
+    assert div(m, s).units == {meters: 1, seconds: -1}
+    assert div(m, s).array == 3.0
+    assert div(m, m).units == {}
+    assert div(m, jnp.array(2.0)).units == {meters: 1}
+    assert div(jnp.array(2.0), s).units == {seconds: -1}
+
+
+def test_transpose_keeps_units():
+    x = Unitful(jnp.arange(6.0).reshape(2, 3), meters)
+    out = quax.quaxify(jnp.transpose)(x)
+    assert out.units == {meters: 1}
+    assert jnp.array_equal(out.array, jnp.arange(6.0).reshape(2, 3).T)
+
+
+# From JAX 0.12, `jnp.hypot` is built on the `custom_jvp` function `_hypot`, which
+# the example registers.
+needs_hypot_custom_jvp = pytest.mark.skipif(
+    not isinstance(
+        getattr(jax._src.numpy.ufuncs, "_hypot", None),  # pyright: ignore[reportAttributeAccessIssue]
+        jax.custom_jvp,
+    ),
+    reason="jnp.hypot is not built on a custom_jvp before JAX 0.12",
+)
+_a = jnp.array([[3.0, 6.0], [9.0, 12.0]])
+_b = jnp.array([[4.0, 8.0], [12.0, 16.0]])
+
+
+@needs_hypot_custom_jvp
+def test_hypot_keeps_units():
+    out = quax.quaxify(jnp.hypot)(Unitful(_a, meters), Unitful(_b, meters))
+    assert out.units == {meters: 1}
+    assert jnp.allclose(out.array, jnp.hypot(_a, _b))
+
+
+@needs_hypot_custom_jvp
+def test_hypot_under_jit():
+    x, y = Unitful(_a, meters), Unitful(_b, meters)
+    assert jnp.allclose(jax.jit(quax.quaxify(jnp.hypot))(x, y).array, jnp.hypot(_a, _b))
+    assert jnp.allclose(quax.quaxify(jax.jit(jnp.hypot))(x, y).array, jnp.hypot(_a, _b))
+
+
+@needs_hypot_custom_jvp
+def test_hypot_inner_vmap_misaligned():
+    expected = jax.vmap(jnp.hypot, in_axes=(0, 1))(_a, _b)
+    hypot = quax.quaxify(jax.vmap(jnp.hypot, in_axes=(0, 1)))
+    out = hypot(Unitful(_a, meters), Unitful(_b, meters))
+    assert out.units == {meters: 1}
+    assert jnp.allclose(out.array, expected)
+
+
+@needs_hypot_custom_jvp
+def test_hypot_outer_grad():
+    y = Unitful(jnp.array(4.0), meters)
+    grad = jax.grad(lambda t: quax.quaxify(jnp.hypot)(Unitful(t, meters), y).array)
+    assert jnp.allclose(grad(3.0), 0.6)
+
+
+@needs_hypot_custom_jvp
+def test_hypot_inner_grad():
+    x, y = Unitful(jnp.array(3.0), meters), Unitful(jnp.array(4.0), meters)
+    assert jnp.allclose(_value(quax.quaxify(jax.grad(jnp.hypot))(x, y)), 0.6)
+
+
+@needs_hypot_custom_jvp
+def test_hypot_units_mismatch():
+    x, y = Unitful(jnp.array(3.0), meters), Unitful(jnp.array(4.0), seconds)
+    with pytest.raises(ValueError, match="units"):
+        quax.quaxify(jnp.hypot)(x, y)
+    with pytest.raises(ValueError, match="units"):
+        jax.jit(quax.quaxify(jnp.hypot))(x, y)
