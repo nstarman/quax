@@ -132,3 +132,24 @@ def select_n_unitful(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
             )
     arrays = [c.array for c in cases]
     return Unitful(jax.lax.select_n_p.bind(which, *arrays, **kw), units)
+
+
+# From JAX 0.12, `jnp.hypot` is built on the `custom_jvp` function `_hypot`, whose
+# body compares its inputs against bare constants -- not something a unit-aware
+# rule can allow. So replace `_hypot` as a whole. Earlier versions have no `_hypot`.
+_hypot = getattr(jax._src.numpy.ufuncs, "_hypot", None)  # pyright: ignore[reportAttributeAccessIssue]
+if isinstance(_hypot, jax.custom_jvp):
+
+    @quax.register(_hypot)
+    def hypot_unitful_unitful(x1: Unitful, x2: Unitful) -> list[Unitful]:
+        if x1.units != x2.units:
+            raise ValueError(
+                f"Cannot take hypot of arrays with units {x1.units} and {x2.units}."
+            )
+        # `_hypot` returns `(hypot, x1 / hypot, x2 / hypot)`.
+        h = jnp.hypot(x1.array, x2.array)
+        return [
+            Unitful(h, x1.units),
+            Unitful(x1.array / h, {}),
+            Unitful(x2.array / h, {}),
+        ]
