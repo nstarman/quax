@@ -124,6 +124,13 @@ jobs:
       - name: Test package
         run: uv run --no-sync pytest
 
+      - name: Test package with jax_custom_jvp3
+        # JAX >= 0.12's opt-in, hijax-based `jax.custom_jvp`, which reaches
+        # quax as a hi primitive rather than through `process_custom_jvp_call`.
+        run: uv run --no-sync pytest
+        env:
+          JAX_CUSTOM_JVP3: "1"
+
   integration:
     name: Integration tests
     runs-on: ubuntu-latest

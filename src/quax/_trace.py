@@ -10,10 +10,21 @@ import jax.extend.linear_util as lu
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import plum
+from jax._src import ad_util, api_util
+from jax._src.custom_derivatives import custom_jvp_call_p
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
 
-from ._compat import hi_aval, JAX_GE_0_9_2, JAX_GE_0_11_0, to_ct_aval, typeof
+from ._compat import (
+    call_hi_primitive_p,
+    custom_jvp3_enabled,
+    CustomJVPTraced,
+    hi_aval,
+    JAX_GE_0_9_2,
+    JAX_GE_0_11_0,
+    to_ct_aval,
+    typeof,
+)
 from ._dispatch import (
     _default_process,
     _dispatch_cache,
@@ -80,12 +91,19 @@ class _QuaxTracer(core.Tracer):
 class _QuaxTrace(
     core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportGeneralTypeIssues, reportInvalidTypeArguments]
 ):
-    __slots__ = ("tag", "parent_trace")
+    __slots__ = ("tag", "parent_trace", "hi_prims")
 
     def __init__(self, parent_trace: core.Trace | None, tag: core.TraceTag) -> None:
         self.tag = tag
         self.parent_trace = parent_trace
         super().__init__()
+        # With `jax_custom_jvp3` on, have `bind` hand hijax primitives to
+        # `process_primitive` instead of lowering them first, so that a
+        # `custom_jvp` call arrives intact. `_process_hi_primitive` lowers every
+        # other hi primitive itself, as `bind` would have done.
+        self.hi_prims = custom_jvp3_enabled()
+        if self.hi_prims:
+            self.requires_low = False
 
     def to_value(self, val: Any) -> Any:
         if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:  # type: ignore[attr-defined]
@@ -97,7 +115,7 @@ class _QuaxTrace(
 
     def process_primitive(
         self, primitive: jexc.Primitive, tracers: Sequence[Any], params: dict[str, Any]
-    ) -> "_QuaxTracer | list[_QuaxTracer]":
+    ) -> Any:
         """Processes a primitive with the given tracers and parameters.
 
         This is the main entry point for processing primitives in JAX. It is
@@ -112,9 +130,20 @@ class _QuaxTrace(
 
         **Returns:**
         A ``_QuaxTracer`` (or list thereof) representing the result of
-        processing the primitive.
+        processing the primitive. A lowered hijax primitive (see
+        `_process_hi_primitive`) may instead return hi values, as `bind` does.
 
         """
+        if (
+            self.hi_prims
+            and primitive not in _rules
+            and primitive.is_high(
+                *(t.aval if isinstance(t, core.Tracer) else typeof(t) for t in tracers),
+                **params,
+            )
+        ):
+            return self._process_hi_primitive(primitive, tracers, params)
+
         # ── O1: fast path for all-dense inputs with no registered rule ──────
         # When every input is one of *our* _QuaxTracer wrappers around a plain
         # JAX array (_DenseArrayValue) and there is no registered quax rule for
@@ -299,6 +328,52 @@ class _QuaxTrace(
         out_treedef = aux if fst else aux[0]
         out_values = jtu.tree_unflatten(out_treedef, out_leaves)
         return [_QuaxTracer(self, x) for x in out_values]
+
+    def _process_hi_primitive(
+        self, primitive: jexc.Primitive, tracers: Sequence[Any], params: dict
+    ) -> Any:
+        """Handle a hijax primitive; only reached with `jax_custom_jvp3` on.
+
+        That flag makes `jax.custom_jvp` bind `call_hi_primitive_p` with a
+        `CustomJVPTraced`, which holds the body pre-traced to a jaxpr and the
+        user's JVP rule. Unpack both and hand them to `process_custom_jvp_call`,
+        exactly as a classic `custom_jvp_call` would arrive: the body's jaxpr is
+        then evaluated under quax, and the JVP rule is used for differentiation.
+        Any other hi primitive is lowered, as `bind` does when `requires_low`.
+        """
+        prim: Any = params.get("_prim")
+        if primitive is not call_hi_primitive_p or type(prim) is not CustomJVPTraced:
+            with core.set_current_trace(self):
+                return primitive.to_lojax(*tracers, **params)
+
+        in_tree, out_tree = prim.in_tree, prim.out_tree
+        body = jexc.jaxpr_as_fun(prim.traced.jaxpr)
+
+        def jvp(*primals_and_tangents):
+            split = len(primals_and_tangents) // 2
+            primals = in_tree.unflatten(primals_and_tangents[:split])
+            tangents = in_tree.unflatten(primals_and_tangents[split:])
+            out, out_dot = prim.jvp_rule(primals, tangents)
+            # The rule turns symbolic-zero outputs into `ad_util.Zero`, which the
+            # classic `custom_jvp_call` doesn't accept back.
+            out_dot = map(ad_util.instantiate, out_tree.flatten_up_to(out_dot))
+            return [*out_tree.flatten_up_to(out), *out_dot]
+
+        args = tuple(tracers)
+        fun = lu.wrap_init(
+            body, debug_info=api_util.debug_info("custom_jvp fun", body, args, {})
+        )
+        jvp_fun = lu.wrap_init(
+            jvp,
+            debug_info=api_util.debug_info("custom_jvp jvp", jvp, args + args, {}),
+        )
+        return self.process_custom_jvp_call(
+            custom_jvp_call_p,
+            fun,
+            jvp_fun,
+            tracers,
+            symbolic_zeros=prim.symbolic_zeros,
+        )
 
     # TODO: add other process_* rules
 
