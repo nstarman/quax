@@ -22,7 +22,7 @@ def _config(target):
     [
         pytest.param("symlink", False, False, True, id="symlink-no-plugin"),
         pytest.param("symlink", False, True, True, id="symlink-explicit-no-plugin"),
-        pytest.param("symlink", True, True, None, id="symlink-explicit-plugin"),
+        pytest.param("symlink", True, False, True, id="symlink-with-plugin"),
         pytest.param("canonical", True, False, True, id="ordinary-with-plugin"),
         pytest.param("other", False, False, None, id="unrelated-directory"),
     ],
@@ -50,5 +50,5 @@ def test_benchmark_collection_paths(
     elif path_kind == "other":
         path = here.parent / "unit" / "test_core.py"
     monkeypatch.setattr(module, "_benchmark_plugin_available", lambda: plugin_available)
-    config = _config(path.parent if explicit else here.parent)
+    config = _config(path.parent if explicit else path.parents[1])
     assert module.pytest_ignore_collect(path, config) is expected
