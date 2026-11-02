@@ -8,7 +8,7 @@ Quax provides multiple dispatch in JAX via custom interpreters, enabling custom 
 uv run pytest                # run all tests (doctests included)
 uv run pytest tests/unit/    # unit tests only
 uv run pytest tests/usage/   # integration/usage tests
-uv run mkdocs serve          # build and serve docs locally
+uv run zensical serve        # build and serve docs locally (run nbconvert first, see CONTRIBUTING.md)
 uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 ```
 
@@ -79,7 +79,7 @@ Read [pyproject.toml](pyproject.toml) for the full list. Key dependencies includ
 - `equinox` (base class and utilities)
 - `plum` (multiple dispatch)
 - `pytest` (testing)
-- `mkdocs` (documentation)
+- `zensical` (documentation)
 
 ## Further Reading
 

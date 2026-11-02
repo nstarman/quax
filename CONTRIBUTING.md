@@ -74,7 +74,8 @@ Make your changes. You can then build the documentation by doing
 **Using uv:**
 
 ```bash
-uv run mkdocs serve
+uv run jupyter nbconvert --to markdown docs/examples/*.ipynb --output-dir docs/examples/
+uv run zensical serve
 ```
 
 **Using pip:**
