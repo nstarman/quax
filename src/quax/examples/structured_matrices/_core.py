@@ -94,7 +94,12 @@ def dot_general_tridiagonal_matrix_array_like(
         rhs_unused = [i for i in range(rhs_ndim) if i not in rhs_used]
         del lhs_used, rhs_used
         matvec = _tridiagonal_matvec
-        for lhs_i, rhs_i in zip(lhs_batch, rhs_batch):
+        for k, (lhs_i, rhs_i) in enumerate(zip(lhs_batch, rhs_batch)):
+            # Later vmaps wrap this one, so their mapped axes have already
+            # been removed when this vmap receives its arguments. Account for
+            # those removals before indexing the remaining batch axes.
+            lhs_i -= sum(i < lhs_i for i in (*lhs_batch[k + 1 :], *lhs_unused))
+            rhs_i -= sum(i < rhs_i for i in (*rhs_batch[k + 1 :], *rhs_unused))
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, rhs_i))
         for lhs_i in lhs_unused:
             matvec = jax.vmap(matvec, in_axes=(lhs_i, lhs_i, lhs_i, None))
