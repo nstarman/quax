@@ -43,9 +43,9 @@ dev = [
   { include-group = "tests" },
 ]
 docs = [
-  "mkdocstrings[python]==1.0.6",
+  "mkdocstrings[python]==1.0.8",
   "nbconvert>=7",
-  "pymdown-extensions==12.1",
+  "pymdown-extensions==12.3",
   "zensical",
 ]
 ide = ["ipykernel>=7.2.0"]
