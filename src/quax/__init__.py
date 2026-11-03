@@ -2,6 +2,8 @@
 
 __all__ = (
     "register",
+    "dispatchable",
+    "DispatchableFunction",
     "quaxify",
     "Value",
     "ArrayValue",
@@ -17,6 +19,10 @@ import importlib.metadata
 # These are registered at module import time
 from . import _compat as _compat  # noqa: F401
 from ._dispatch import register as register
+from ._dispatchable import (
+    dispatchable as dispatchable,
+    DispatchableFunction as DispatchableFunction,
+)
 from ._primitives import *  # noqa: F401, F403
 from ._quaxify import quaxify as quaxify
 from ._values import ArrayValue as ArrayValue, Value as Value

@@ -1,6 +1,6 @@
 import abc
 from collections.abc import Callable, Sequence
-from typing import Any, cast, final, TypeAlias, TypeGuard, TypeVar, Union
+from typing import Any, cast, ClassVar, final, TypeAlias, TypeGuard, TypeVar, Union
 
 import equinox as eqx
 import jax._src.core as core
@@ -22,6 +22,19 @@ class Value(eqx.Module, metaclass=_FastModuleMeta):
     In practice you will almost always want to inherit from [`quax.ArrayValue`][]
     instead, which represents specifically an array-ish object that can be used for
     multiple dispatch.
+    """
+
+    batch_leaves: ClassVar[bool] = False
+    """Whether batching every array leaf of this value along its axis 0 batches the
+    array it represents along its axis 0.
+
+    True for a value that is one array of its `aval()`'s shape plus static
+    metadata (units, say). False -- the default -- for anything else: several
+    arrays with different layouts, or a shape held as static data. A rule for a
+    [`quax.dispatchable`][] function is applied under a `jax.vmap` inside
+    [`quax.quaxify`][] only when every value argument sets this, as Quax then
+    vmaps the rule over the values' leaves; otherwise the function's own body runs
+    under Quax instead.
     """
 
     @abc.abstractmethod

@@ -241,6 +241,53 @@ rule mutates a global dispatch table and commits you to an implementation for a
 combination you may not understand. Order matters — the outer quaxify sees the
 type it selects last.
 
+### Replacing a whole function
+
+Some functions cannot be expressed with your type's primitive rules, because
+their body does something your type must refuse, such as comparing a length
+against a bare number. Then replace the function as a whole. For a function you
+own, make it `quax.dispatchable` and register a rule for it:
+
+```python
+from quax.examples.unitful import meters, Unitful
+
+
+@quax.dispatchable
+def clip_huge(x):
+    return jnp.where(x > 1e30, 1e30, x)  # compares against a bare number
+
+
+@quax.register(clip_huge)
+def clip_huge_unitful(x: Unitful) -> Unitful:
+    return Unitful(clip_huge(x.array), x.units)
+
+
+lengths = Unitful(jnp.array([[1.0, 2.0], [3.0, 4.0]]), meters)
+print(quax.quaxify(clip_huge)(lengths).units)  # {m: 1}
+columns = quax.quaxify(jax.vmap(clip_huge, in_axes=1))(lengths)  # the rule, per column
+```
+
+- The rule has the function's signature: its positional arguments (pytrees
+  allowed; dispatch is on each top-level argument's type) and its output pytree.
+- Rules are **per-example**. Quax applies any `jax.vmap` between `quaxify` and
+  the call to the rule itself, so build rules from JAX operations. It does so
+  only for types that set `batch_leaves = True` — one array of the aval's shape
+  plus static data, like `Unitful` — and otherwise runs the function's body,
+  which is always correct. A `vmap` with `in_axes` other than 0 moves axes with
+  `transpose` and `broadcast_in_dim`, so your type needs rules for those.
+- Outside `quaxify` a dispatchable function behaves exactly as its body. Under
+  `quaxify`, derivatives on either side (`jax.grad(quaxify(f))`,
+  `quaxify(jax.grad(f))`, forward or reverse mode) are derivatives of the rule.
+
+For a `jax.custom_jvp` you don't own, `@quax.register(the_custom_jvp)` does the
+same. The first registration swaps the function's body for a dispatchable one,
+globally: every later trace of it contains a `quax_dispatch_call`, with or
+without Quax, and `jax.clear_caches()` is called. The function keeps its own JVP
+rule — its derivative is that rule's, not your rule's — which then runs on your
+type, so your type needs rules for the arithmetic in it. JAX 0.12 builds `jnp.hypot` on the private `custom_jvp` `_hypot`, and
+`quax.examples.unitful` registers it this way. Private targets come and go
+between JAX versions, so look them up with `getattr(module, "_name", None)`.
+
 ## Overriding Value.default
 
 `default` is a rule for *every* primitive at once, keyed only on your type. Use
