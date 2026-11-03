@@ -78,3 +78,54 @@ def test_dot_general_batched_axis_order(batch, rhs_shape, dn):
     assert out.shape == ref.shape
     atol = 1e-5 * jnp.max(jax.lax.dot_general(jnp.abs(dense), jnp.abs(rhs), dn))
     assert jnp.allclose(out, ref, atol=atol)
+
+
+@pytest.mark.parametrize("transform", ["eager", "jit", "grad"])
+@pytest.mark.parametrize(
+    ("batch", "rhs_shape", "dn"),
+    [
+        ((2, 3), (3, 4), (((3,), (1,)), ((1,), (0,)))),
+        ((2, 3), (4, 3, 5), (((3,), (0,)), ((1,), (1,)))),
+        ((2, 3), (3, 2, 4), (((3,), (2,)), ((1, 0), (0, 1)))),
+        ((2, 3), (3, 2, 4), (((3,), (2,)), ((0, 1), (1, 0)))),
+        ((2, 3, 5), (7, 5, 4, 2), (((4,), (2,)), ((2, 0), (1, 3)))),
+        ((2, 3, 5), (7, 2, 4, 5), (((4,), (2,)), ((2, 0), (3, 1)))),
+        ((2, 3), (3, 5, 4), (((3,), (2,)), ((), ()))),
+        ((2, 3), (2, 3, 4), (((3,), (2,)), ((0, 1), (0, 1)))),
+    ],
+)
+def test_dot_general_interleaved_batch_axes(batch, rhs_shape, dn, transform):
+    """Mapped axes retain their meaning after enclosing vmaps remove other axes."""
+    lower, main, upper = _tridiag(jr.PRNGKey(12), batch, 4)
+    rhs = jr.normal(jr.PRNGKey(13), rhs_shape)
+
+    def structured(lower, main, upper, rhs):
+        tri = structured_matrices.TridiagonalMatrix(lower, main, upper)
+        return quax.quaxify(lambda a, b: jax.lax.dot_general(a, b, dn))(tri, rhs)
+
+    def dense(lower, main, upper, rhs):
+        matrix = structured_matrices.TridiagonalMatrix(
+            lower, main, upper, allow_materialise=True
+        ).materialise()
+        return jax.lax.dot_general(matrix, rhs, dn)
+
+    if transform == "jit":
+        structured = jax.jit(structured)
+        dense = jax.jit(dense)
+    elif transform == "grad":
+        structured_fn, dense_fn = structured, dense
+        structured = jax.grad(
+            lambda *args: jnp.sum(structured_fn(*args) ** 2), argnums=(0, 1, 2, 3)
+        )
+        dense = jax.grad(
+            lambda *args: jnp.sum(dense_fn(*args) ** 2), argnums=(0, 1, 2, 3)
+        )
+
+    actual = structured(lower, main, upper, rhs)
+    expected = dense(lower, main, upper, rhs)
+    for result, reference in zip(
+        jax.tree.leaves(actual), jax.tree.leaves(expected), strict=True
+    ):
+        assert result.shape == reference.shape
+        assert result.dtype == reference.dtype
+        assert jnp.allclose(result, reference, rtol=2e-5, atol=2e-5)
