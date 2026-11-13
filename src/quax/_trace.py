@@ -1,14 +1,17 @@
+import contextvars
 import functools as ft
 import itertools as it
 from collections.abc import Sequence
 from typing import Any, Final, overload
 
 import equinox as eqx
+import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
@@ -80,15 +83,11 @@ class _QuaxTracer(core.Tracer):
 class _QuaxTrace(
     core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportGeneralTypeIssues, reportInvalidTypeArguments]
 ):
-    __slots__ = ("tag", "parent_trace", "rules_running")
+    __slots__ = ("tag", "parent_trace")
 
     def __init__(self, parent_trace: core.Trace | None, tag: core.TraceTag) -> None:
         self.tag = tag
         self.parent_trace = parent_trace
-        # How many rules of child quax traces are running with this trace current.
-        # `quaxify` joins a current quax trace only from user code, not from a rule
-        # (see `_Quaxify.__call__`).
-        self.rules_running = 0
         super().__init__()
 
     def to_value(self, val: Any) -> Any:
@@ -163,40 +162,29 @@ class _QuaxTrace(
         cache_key = (primitive, tuple(type(v) for v in values))
         cached = _dispatch_cache.get(cache_key)
 
-        # Rules run with the parent trace current. When that parent is itself a
-        # quax trace, mark it, so a `quaxify` called by the rule starts its own
-        # trace rather than joining the parent's.
-        parent = self.parent_trace
-        nested = type(parent) is _QuaxTrace
-        if nested:
-            parent.rules_running += 1  # pyright: ignore[reportAttributeAccessIssue]
-        try:
-            with core.set_current_trace(parent):
-                if cached is _DISPATCH_MISS:
-                    out = _default_process(primitive, values, params)
-                elif cached is not None:
-                    out = cached(*values, **params)
-                elif (rule := _rules.get(primitive)) is None:
-                    # First time seeing this (primitive, types) combination.
-                    _dispatch_cache[cache_key] = _DISPATCH_MISS
+        with core.set_current_trace(self.parent_trace):
+            if cached is _DISPATCH_MISS:
+                out = _default_process(primitive, values, params)
+            elif cached is not None:
+                out = cached(*values, **params)
+            elif (rule := _rules.get(primitive)) is None:
+                # First time seeing this (primitive, types) combination.
+                _dispatch_cache[cache_key] = _DISPATCH_MISS
+                out = _default_process(primitive, values, params)
+            else:
+                # Like plum, cache by type only if every registered signature is
+                # faithful: an unfaithful type's `isinstance` depends on the
+                # value, so another value of the same type may resolve elsewhere.
+                try:
+                    method, _ = rule.resolve_method(values)
+                except plum.NotFoundLookupError:
+                    if rule._resolver.is_faithful:
+                        _dispatch_cache[cache_key] = _DISPATCH_MISS
                     out = _default_process(primitive, values, params)
                 else:
-                    # Like plum, cache by type only if every registered signature is
-                    # faithful: an unfaithful type's `isinstance` depends on the
-                    # value, so another value of the same type may resolve elsewhere.
-                    try:
-                        method, _ = rule.resolve_method(values)
-                    except plum.NotFoundLookupError:
-                        if rule._resolver.is_faithful:
-                            _dispatch_cache[cache_key] = _DISPATCH_MISS
-                        out = _default_process(primitive, values, params)
-                    else:
-                        if rule._resolver.is_faithful:
-                            _dispatch_cache[cache_key] = method
-                        out = method(*values, **params)
-        finally:
-            if nested:
-                parent.rules_running -= 1  # pyright: ignore[reportAttributeAccessIssue]
+                    if rule._resolver.is_faithful:
+                        _dispatch_cache[cache_key] = method
+                    out = method(*values, **params)
 
         # Post-process the output
         if primitive.multiple_results:
@@ -316,6 +304,32 @@ class _QuaxTrace(
         return [_QuaxTracer(self, x) for x in out_values]
 
     # TODO: add other process_* rules
+
+
+# The quax trace whose user code is running, set by `quaxify` while it runs the
+# function it wraps. A `quaxify` called by that code joins this trace (see
+# `_Quaxify.__call__`). A rule runs with its trace's parent current but leaves this
+# unchanged, so a `quaxify` called by a rule never finds the current trace here, and
+# starts its own.
+_user_trace: contextvars.ContextVar[_QuaxTrace | None] = contextvars.ContextVar(
+    "quax_user_trace", default=None
+)
+
+
+class _as_user_trace:  # noqa: N801
+    """Set `_user_trace` for a `with` block. A class rather than a
+    `contextlib.contextmanager`, as it runs on every inlined `jit` in a trace."""
+
+    __slots__ = ("_token", "_trace")
+
+    def __init__(self, trace: _QuaxTrace | None) -> None:
+        self._trace = trace
+
+    def __enter__(self) -> None:
+        self._token = _user_trace.set(self._trace)
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        _user_trace.reset(self._token)
 
 
 class _held_trace:  # noqa: N801
@@ -586,3 +600,42 @@ def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
         # `JAX_CHECK_TRACER_LEAKS` to report them as leaked.
         return aval.raise_val(*[_unwrap_tracer(trace, v) for v in aval.lower_val(x)])
     return x
+
+
+def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
+    """Replace a dense tracer of `trace` by the array it wraps."""
+    if not (isinstance(leaf, _QuaxTracer) and leaf._trace.tag is trace.tag):
+        return leaf
+    # Dense: `_join_trace` checked that before lowering.
+    arr = leaf.value.array  # pyright: ignore[reportAttributeAccessIssue]
+    # A constant may be held as a JAX typed literal (e.g. `TypedFloat`) or a Python
+    # scalar, but a Value's field expects an array.
+    if not isinstance(arr, (jax.Array, np.ndarray)):
+        arr = jnp.asarray(arr, dtype=getattr(arr, "dtype", None))
+    return arr
+
+
+def _join_trace(trace: _QuaxTrace, tree: Any, /) -> Any | None:
+    """Wrap the Values in `tree` as tracers of the existing `trace`.
+
+    A Value built under `trace` from a traced operand holds tracers of `trace` in its
+    fields. Wrapping it as is would put the trace inside itself, so each such tracer
+    is first lowered to the array it wraps. Returns `None` if one wraps another Value
+    instead, which has no array to lower to.
+    """
+    values = [x for x in jtu.tree_leaves(tree, is_leaf=_is_value) if _is_value(x)]
+    if any(
+        isinstance(leaf, _QuaxTracer)
+        and leaf._trace.tag is trace.tag
+        and type(leaf.value) is not _DenseArrayValue
+        for value in values
+        for leaf in jtu.tree_leaves(value)
+    ):
+        return None
+    lower = ft.partial(_lower_leaf, trace)
+    with core.set_current_trace(trace.parent_trace):
+        return jtu.tree_map(
+            lambda x: _QuaxTracer(trace, jtu.tree_map(lower, x)) if _is_value(x) else x,
+            tree,
+            is_leaf=_is_value,
+        )

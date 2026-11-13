@@ -98,3 +98,37 @@ follows from that.
 And a transform can only intercept operations that actually reach it. A library
 allocating its own buffers, or calling `jnp.zeros_like` on your value, never binds
 a primitive against you at all.
+
+## A quaxify inside a quaxified function
+
+Code inside a quaxified function can call another quaxified function, often
+without knowing it: a `Value`'s `__mul__` may itself be built on `quaxify`. The
+inner call joins the trace that is already running, so it sees the outer values
+with their real types:
+
+```python
+import jax.numpy as jnp
+import quax
+from quax.examples.unitful import Unitful, meters
+
+mul = quax.quaxify(jnp.multiply)
+
+
+def area(side):
+    return mul(side, Unitful(jnp.array(2.0), meters))
+
+
+out = quax.quaxify(area)(Unitful(jnp.array(3.0), meters))
+print(out.array, out.units)  # 6.0 {m: 2}
+```
+
+Some calls start a trace of their own instead, and see the outer values as plain
+arrays:
+
+- A `quaxify` with a custom `filter_spec`, and a `quaxify` called directly by
+  one. These leave values for a nested `quaxify` to handle on its own; see
+  [Quaxify only some arguments](how-to/quaxify-part-of-a-function.md).
+- A `quaxify` called by a rule.
+- A `quaxify` with another transform between it and the outer one: inside
+  `jax.jit`, `jax.vmap`, the body of `lax.cond`, `lax.scan` or `lax.while_loop`,
+  or the body of a `jax.custom_jvp` or `jax.custom_vjp` function.

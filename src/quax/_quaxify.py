@@ -3,49 +3,20 @@ from collections.abc import Callable
 from typing import Any, cast, Generic, Union
 
 import equinox as eqx
-import jax
 import jax._src.core as core
-import jax.numpy as jnp
 import jax.tree_util as jtu
-import numpy as np
 from jaxtyping import PyTree
 
 from ._module import _FastModuleMeta
-from ._trace import _QuaxTrace, _QuaxTracer, _unwrap_tracer, _wrap_tracer
-from ._values import _DenseArrayValue, _is_value, CT
-
-
-class _NotJoinable(Exception):
-    """A Value holds a non-dense tracer of the trace it would join."""
-
-
-def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
-    # A Value built inside a quaxified function, from a traced operand, holds
-    # tracers of that function's trace in its fields. Wrapping it into the same
-    # trace would put the trace inside itself, so replace each such tracer by
-    # the array it wraps. A tracer wrapping another Value has no array to use.
-    if isinstance(leaf, _QuaxTracer) and leaf._trace.tag is trace.tag:
-        if type(leaf.value) is not _DenseArrayValue:
-            raise _NotJoinable
-        arr = leaf.value.array
-        # A constant may be held as a JAX typed literal (e.g. `TypedFloat`) or a
-        # Python scalar; the Value's field expects an array.
-        if not isinstance(arr, (jax.Array, np.ndarray)):
-            arr = jnp.asarray(arr, dtype=getattr(arr, "dtype", None))
-        return arr
-    return leaf
-
-
-def _join_trace(tree: Any, trace: _QuaxTrace) -> Any:
-    """Wrap the Values in ``tree`` as tracers of the existing ``trace``."""
-
-    def wrap(x: Any) -> Any:
-        if not _is_value(x):
-            return x
-        return _wrap_tracer(trace, jtu.tree_map(ft.partial(_lower_leaf, trace), x))
-
-    with core.set_current_trace(trace.parent_trace):
-        return jtu.tree_map(wrap, tree, is_leaf=_is_value)
+from ._trace import (
+    _as_user_trace,
+    _join_trace,
+    _QuaxTrace,
+    _unwrap_tracer,
+    _user_trace,
+    _wrap_tracer,
+)
+from ._values import _is_value, CT
 
 
 def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
@@ -103,36 +74,30 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
         ):
             return self.fn(*args, **kwargs)
         with core.take_current_trace() as parent_trace:
-            # Called from user code already running under a quax trace (a
-            # quaxified function calling another, e.g. a `__mul__` built on
-            # `quaxify`): join that trace. A fresh inner trace would see the outer
-            # tracers as plain arrays and dispatch the new Values against them as
-            # such -- a Unitful times an outer Unitful came back as
-            # Unitful(Unitful(...)). A rule of a nested quax trace also runs with a
-            # quax trace current, its parent; it must not join, or the nesting's
-            # dispatch order is lost, so `rules_running` excludes it.
-            if (
-                self.filter_spec is True
-                and isinstance(parent_trace, _QuaxTrace)
-                and not parent_trace.rules_running
-            ):
-                try:
-                    fn, args, kwargs = _join_trace(
-                        (self.fn, args, kwargs), parent_trace
-                    )
-                except _NotJoinable:
-                    pass  # keep the fresh inner trace below
-                else:
+            # Called by the user code of the current quax trace, e.g. a quaxified
+            # function calling a `__mul__` built on `quaxify`: run in that trace, so
+            # the outer Values keep their types. See `_user_trace`.
+            if self.filter_spec is True and parent_trace is _user_trace.get():
+                joined = _join_trace(parent_trace, (self.fn, args, kwargs))
+                if joined is not None:
+                    fn, args, kwargs = joined
                     with core.set_current_trace(parent_trace):
                         return fn(*args, **kwargs)
-            trace = _QuaxTrace(parent_trace, core.TraceTag())
-            fn, args, kwargs = _partition_and_wrap(
-                (self.fn, args, kwargs), self.filter_spec, trace
-            )
-            with core.set_current_trace(trace):
-                out = fn(*args, **kwargs)
-            out = jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
-            return out
+            return self._call_in_new_trace(parent_trace, args, kwargs)
+
+    def _call_in_new_trace(
+        self, parent_trace: core.Trace, args: Any, kwargs: Any, /
+    ) -> Any:
+        trace = _QuaxTrace(parent_trace, core.TraceTag())
+        fn, args, kwargs = _partition_and_wrap(
+            (self.fn, args, kwargs), self.filter_spec, trace
+        )
+        # A custom `filter_spec` leaves Values for a nested `quaxify` to handle on
+        # its own (see the redispatch tutorial), so its trace is never joined.
+        user_trace = trace if self.filter_spec is True else None
+        with _as_user_trace(user_trace), core.set_current_trace(trace):
+            out = fn(*args, **kwargs)
+        return jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
 
     def __get__(
         self, instance: object | None, owner: Any
