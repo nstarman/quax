@@ -6,6 +6,7 @@ import jax.core
 import jax.extend.core as jexc
 import jax.lax as lax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 from jaxtyping import Array
 
@@ -553,3 +554,62 @@ def test_outer_filter_spec_is_not_joined():
         _A(jnp.array(1.0)), _B(jnp.array(2.0))
     )
     assert jnp.array_equal(got, 21.0)
+
+
+def test_nested_quaxify_on_local_values_returns_values():
+    """A quaxified call on Values made inside a quaxified function gets none of the
+    outer Values, so it runs in its own trace and returns a Value, which the code
+    can then inspect. Joining would hand back a tracer of the outer trace."""
+    mul = quax.quaxify(jnp.multiply)
+    seen = []
+
+    def f(a):
+        local = Unitful(jnp.array(2.0), meters)
+        r = mul(local, local)
+        assert isinstance(r, Unitful)
+        assert r.units == {meters: 2}
+        seen.append(True)
+        return a
+
+    quax.quaxify(f)(Unitful(jnp.array(3.0), meters))
+    jax.jit(quax.quaxify(f))(Unitful(jnp.array(3.0), meters))
+    assert len(seen) == 2
+
+
+@pytest.mark.filterwarnings("error")
+def test_join_lowers_scalar_fields():
+    """A field of the joined Value that is a dense tracer of a Python or NumPy
+    scalar (here returned by a rule) is lowered to an array, without a dtype
+    warning when x64 is off. `S.aval` reads `.shape`, which a Python float lacks."""
+
+    class S(quax.ArrayValue):
+        array: Array
+
+        def materialise(self):
+            return self.array
+
+        def aval(self):
+            return jax.core.ShapedArray(self.array.shape, self.array.dtype)
+
+    @quax.register(lax.reduce_sum_p)
+    def _(x: S, **kw: Any):
+        return np.float64(1.5)
+
+    @quax.register(lax.reduce_max_p)
+    def _(x: S, **kw: Any):
+        return 7.0
+
+    mul = quax.quaxify(jnp.multiply)
+    add = quax.quaxify(jnp.add)
+
+    def f(x, u):
+        # `u` and `x` are outer Values, so these calls join; `jnp.sum(x)` and
+        # `jnp.max(x)` are dense tracers holding a NumPy and a Python scalar.
+        r1 = mul(u, Unitful(jnp.sum(x), meters))
+        r2 = add(x, S(jnp.max(x)))
+        return r1, r2
+
+    r1, r2 = quax.quaxify(f)(S(jnp.ones(3)), Unitful(jnp.array(2.0), meters))
+    assert r1.units == {meters: 2}
+    assert jnp.array_equal(r1.array, 3.0)
+    assert jnp.array_equal(r2, jnp.full(3, 8.0))

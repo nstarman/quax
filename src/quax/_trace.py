@@ -602,6 +602,15 @@ def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
     return x
 
 
+def _wraps_value_of(trace: _QuaxTrace, x: Any, /) -> bool:
+    """Whether `x` is a tracer of `trace` that wraps a Value, not a plain array."""
+    return (
+        isinstance(x, _QuaxTracer)
+        and x._trace.tag is trace.tag
+        and type(x.value) is not _DenseArrayValue
+    )
+
+
 def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
     """Replace a dense tracer of `trace` by the array it wraps."""
     if not (isinstance(leaf, _QuaxTracer) and leaf._trace.tag is trace.tag):
@@ -609,26 +618,33 @@ def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
     # Dense: `_join_trace` checked that before lowering.
     arr = leaf.value.array  # pyright: ignore[reportAttributeAccessIssue]
     # A constant may be held as a JAX typed literal (e.g. `TypedFloat`) or a Python
-    # scalar, but a Value's field expects an array.
+    # or NumPy scalar, but a Value's field expects an array. No explicit dtype: it
+    # would ask for float64 from a NumPy scalar, which warns when x64 is off.
     if not isinstance(arr, (jax.Array, np.ndarray)):
-        arr = jnp.asarray(arr, dtype=getattr(arr, "dtype", None))
+        arr = jnp.asarray(arr)
     return arr
 
 
 def _join_trace(trace: _QuaxTrace, tree: Any, /) -> Any | None:
     """Wrap the Values in `tree` as tracers of the existing `trace`.
 
+    Returns `None`, and wraps nothing, unless `tree` holds a Value of `trace`: a
+    fresh trace would see that Value as a plain array, and joining is what lets it
+    dispatch as itself. Without one, a fresh trace gives the right answer and
+    returns Values, where a join would return tracers of `trace`.
+
     A Value built under `trace` from a traced operand holds tracers of `trace` in its
     fields. Wrapping it as is would put the trace inside itself, so each such tracer
-    is first lowered to the array it wraps. Returns `None` if one wraps another Value
+    is first lowered to the array it wraps. Also returns `None` if one wraps a Value
     instead, which has no array to lower to.
     """
-    values = [x for x in jtu.tree_leaves(tree, is_leaf=_is_value) if _is_value(x)]
+    leaves = jtu.tree_leaves(tree, is_leaf=_is_value)
+    if not any(_wraps_value_of(trace, x) for x in leaves):
+        return None
     if any(
-        isinstance(leaf, _QuaxTracer)
-        and leaf._trace.tag is trace.tag
-        and type(leaf.value) is not _DenseArrayValue
-        for value in values
+        _wraps_value_of(trace, leaf)
+        for value in leaves
+        if _is_value(value)
         for leaf in jtu.tree_leaves(value)
     ):
         return None

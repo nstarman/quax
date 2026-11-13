@@ -102,9 +102,9 @@ a primitive against you at all.
 ## A quaxify inside a quaxified function
 
 Code inside a quaxified function can call another quaxified function, often
-without knowing it: a `Value`'s `__mul__` may itself be built on `quaxify`. The
-inner call joins the trace that is already running, so it sees the outer values
-with their real types:
+without knowing it: a `Value`'s `__mul__` may itself be built on `quaxify`. When
+the inner call is given one of the outer function's values, it joins the trace
+that is already running, so it sees that value with its real type:
 
 ```python
 import jax.numpy as jnp
@@ -122,12 +122,29 @@ out = quax.quaxify(area)(Unitful(jnp.array(3.0), meters))
 print(out.array, out.units)  # 6.0 {m: 2}
 ```
 
-Some calls start a trace of their own instead, and see the outer values as plain
-arrays:
+The joined call returns the result as part of the outer computation, like any
+other operation on the outer values.
+
+A call that gets none of the outer values runs in a trace of its own and returns
+a `Value` you can inspect, as it would outside:
+
+```python
+def f(side):
+    local = Unitful(jnp.array(2.0), meters)
+    print(mul(local, local).units)  # {m: 2}
+    return side
+
+
+quax.quaxify(f)(Unitful(jnp.array(3.0), meters))
+```
+
+Some calls start a trace of their own even when given outer values, and see them
+as plain arrays:
 
 - A `quaxify` with a custom `filter_spec`, and a `quaxify` called directly by
   one. These leave values for a nested `quaxify` to handle on its own; see
-  [Quaxify only some arguments](how-to/quaxify-part-of-a-function.md).
+  [Quaxify only some arguments](how-to/quaxify-part-of-a-function.md). Any
+  `filter_spec` other than `True` counts, even one that selects everything.
 - A `quaxify` called by a rule.
 - A `quaxify` with another transform between it and the outer one: inside
   `jax.jit`, `jax.vmap`, the body of `lax.cond`, `lax.scan` or `lax.while_loop`,

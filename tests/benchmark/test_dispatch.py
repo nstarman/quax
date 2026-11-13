@@ -96,7 +96,8 @@ def test_materialise_fallback(bench):
 
 @pytest.mark.benchmark(group="dispatch")
 def test_nested_quaxify_add(benchmark):
-    """Nested `quaxify(quaxify(add))(MyArray)` — two dispatch layers."""
+    """Nested `quaxify(quaxify(add))(MyArray)`: the inner call gets the outer
+    trace's Values, so it joins that trace rather than dispatching a second time."""
     outer = quax.quaxify(quax.quaxify(lambda a, b: a + b))
     outer(_xm, _ym)  # warm both dispatch layers (plum resolution + cache)
     benchmark(lambda: outer(_xm, _ym))

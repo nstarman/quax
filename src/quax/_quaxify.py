@@ -49,19 +49,19 @@ def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
 
 
 def _call_in_new_trace(
-    q: "_Quaxify[Any]", parent_trace: core.Trace, args: Any, kwargs: Any, /
+    fn: Any, filter_spec: Any, parent_trace: core.Trace, args: Any, kwargs: Any, /
 ) -> Any:
-    """Run `q` in a new quax trace under `parent_trace`.
+    """Run `fn` in a new quax trace under `parent_trace`.
 
     A function rather than a method of `_Quaxify`: an `eqx.Module` builds a bound
     method object on every attribute access, which costs more than the call itself
     on this path (it runs for every inlined `jit` in a trace).
     """
     trace = _QuaxTrace(parent_trace, core.TraceTag())
-    fn, args, kwargs = _partition_and_wrap((q.fn, args, kwargs), q.filter_spec, trace)
+    fn, args, kwargs = _partition_and_wrap((fn, args, kwargs), filter_spec, trace)
     # A custom `filter_spec` leaves Values for a nested `quaxify` to handle on its
     # own (see the redispatch tutorial), so its trace is never joined.
-    user_trace = trace if q.filter_spec is True else None
+    user_trace = trace if filter_spec is True else None
     with _as_user_trace(user_trace), core.set_current_trace(trace):
         out = fn(*args, **kwargs)
     return jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
@@ -81,6 +81,9 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
         return self.fn
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        # Read the fields once: each read of an `eqx.Module` field goes through its
+        # `__getattribute__`, and this runs for every inlined `jit` in a trace.
+        fn, filter_spec = self.fn, self.filter_spec
         # If nothing being quaxified is a quax Value, there is no multiple dispatch
         # to perform, so behave exactly like `self.fn` and skip the trace entirely.
         # Besides saving the trace overhead, this avoids wrapping plain arrays in
@@ -88,21 +91,22 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
         # an operand concretely, e.g. `jnp.compress` reading its boolean mask (#58).
         # Only the default `filter_spec is True` (wrap every Value) is short-cut; a
         # custom filter_spec may deliberately pass Values through, so leave it be.
-        if self.filter_spec is True and not any(
-            map(_is_value, jtu.tree_leaves((self.fn, args, kwargs), is_leaf=_is_value))
+        if filter_spec is True and not any(
+            map(_is_value, jtu.tree_leaves((fn, args, kwargs), is_leaf=_is_value))
         ):
-            return self.fn(*args, **kwargs)
+            return fn(*args, **kwargs)
         with core.take_current_trace() as parent_trace:
-            # Called by the user code of the current quax trace, e.g. a quaxified
-            # function calling a `__mul__` built on `quaxify`: run in that trace, so
-            # the outer Values keep their types. See `_user_trace`.
-            if self.filter_spec is True and parent_trace is _user_trace.get():
-                joined = _join_trace(parent_trace, (self.fn, args, kwargs))
+            # Called by the user code of the current quax trace with one of its
+            # Values, e.g. a quaxified function calling a `__mul__` built on
+            # `quaxify`: run in that trace, so the outer Values keep their types.
+            # See `_user_trace` and `_join_trace`.
+            if filter_spec is True and parent_trace is _user_trace.get():
+                joined = _join_trace(parent_trace, (fn, args, kwargs))
                 if joined is not None:
-                    fn, args, kwargs = joined
+                    jfn, jargs, jkwargs = joined
                     with core.set_current_trace(parent_trace):
-                        return fn(*args, **kwargs)
-            return _call_in_new_trace(self, parent_trace, args, kwargs)
+                        return jfn(*jargs, **jkwargs)
+            return _call_in_new_trace(fn, filter_spec, parent_trace, args, kwargs)
 
     def __get__(
         self, instance: object | None, owner: Any
