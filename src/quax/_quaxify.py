@@ -3,13 +3,49 @@ from collections.abc import Callable
 from typing import Any, cast, Generic, Union
 
 import equinox as eqx
+import jax
 import jax._src.core as core
+import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 from jaxtyping import PyTree
 
 from ._module import _FastModuleMeta
-from ._trace import _QuaxTrace, _unwrap_tracer, _wrap_tracer
-from ._values import _is_value, CT
+from ._trace import _QuaxTrace, _QuaxTracer, _unwrap_tracer, _wrap_tracer
+from ._values import _DenseArrayValue, _is_value, CT
+
+
+class _NotJoinable(Exception):
+    """A Value holds a non-dense tracer of the trace it would join."""
+
+
+def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
+    # A Value built inside a quaxified function, from a traced operand, holds
+    # tracers of that function's trace in its fields. Wrapping it into the same
+    # trace would put the trace inside itself, so replace each such tracer by
+    # the array it wraps. A tracer wrapping another Value has no array to use.
+    if isinstance(leaf, _QuaxTracer) and leaf._trace.tag is trace.tag:
+        if type(leaf.value) is not _DenseArrayValue:
+            raise _NotJoinable
+        arr = leaf.value.array
+        # A constant may be held as a JAX typed literal (e.g. `TypedFloat`) or a
+        # Python scalar; the Value's field expects an array.
+        if not isinstance(arr, (jax.Array, np.ndarray)):
+            arr = jnp.asarray(arr, dtype=getattr(arr, "dtype", None))
+        return arr
+    return leaf
+
+
+def _join_trace(tree: Any, trace: _QuaxTrace) -> Any:
+    """Wrap the Values in ``tree`` as tracers of the existing ``trace``."""
+
+    def wrap(x: Any) -> Any:
+        if not _is_value(x):
+            return x
+        return _wrap_tracer(trace, jtu.tree_map(ft.partial(_lower_leaf, trace), x))
+
+    with core.set_current_trace(trace.parent_trace):
+        return jtu.tree_map(wrap, tree, is_leaf=_is_value)
 
 
 def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
@@ -66,9 +102,24 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
             map(_is_value, jtu.tree_leaves((self.fn, args, kwargs), is_leaf=_is_value))
         ):
             return self.fn(*args, **kwargs)
-        tag = core.TraceTag()
         with core.take_current_trace() as parent_trace:
-            trace = _QuaxTrace(parent_trace, tag)
+            # Called from code already running under a quax trace (a quaxified
+            # function calling another, e.g. a `__mul__` built on `quaxify`): join
+            # that trace. A fresh inner trace would see the outer tracers as plain
+            # arrays and dispatch the new Values against them as such -- a Unitful
+            # times an outer Unitful came back as Unitful(Unitful(...)). Rules run
+            # under the trace's parent, so this only applies to user code.
+            if self.filter_spec is True and isinstance(parent_trace, _QuaxTrace):
+                try:
+                    fn, args, kwargs = _join_trace(
+                        (self.fn, args, kwargs), parent_trace
+                    )
+                except _NotJoinable:
+                    pass  # keep the fresh inner trace below
+                else:
+                    with core.set_current_trace(parent_trace):
+                        return fn(*args, **kwargs)
+            trace = _QuaxTrace(parent_trace, core.TraceTag())
             fn, args, kwargs = _partition_and_wrap(
                 (self.fn, args, kwargs), self.filter_spec, trace
             )

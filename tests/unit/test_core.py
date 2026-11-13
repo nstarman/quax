@@ -237,3 +237,48 @@ def test_dispatch_cache_respects_unfaithful_types():
     assert not isinstance(f(small), Tagged)  # no rule: default materialises
     assert f(big).tag == "big"
     assert not isinstance(f(small), Tagged)
+
+
+def test_nested_quaxify_joins_the_outer_trace():
+    """A quaxified call inside a quaxified function sees the outer Values.
+
+    The inner call used to start its own trace, which saw the outer tracer as a
+    plain array: a `Unitful` built inside, times the outer `Unitful` input, came
+    back as `Unitful(Unitful(..., m), m)` instead of `Unitful(..., m**2)`.
+    """
+    from quax.examples.unitful import meters, Unitful
+
+    x = Unitful(jnp.array(3.0), meters)
+    mul = quax.quaxify(jnp.multiply)
+
+    got = quax.quaxify(lambda a: mul(a, Unitful(jnp.array(2.0), meters)))(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_under_jit_and_grad():
+    """Joining the outer trace still composes with `jit` and `grad`, also when
+    the inner Value is built inside the outer function from a traced operand.
+
+    Such a Value holds tracers of the outer quax trace in its fields; they are
+    lowered to their arrays before it joins that trace.
+    """
+    from quax.examples.unitful import meters, Unitful
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    def f(w):
+        # `w * 1.0` binds under the outer trace, so the inner Unitful's array
+        # field is an outer-trace tracer.
+        out = quax.quaxify(lambda a: mul(a, Unitful(w * 1.0, meters)))(x)
+        assert out.units == {meters: 2}
+        return out.array
+
+    assert jnp.array_equal(f(jnp.array(2.0)), 6.0)
+    assert jnp.array_equal(jax.jit(f)(jnp.array(2.0)), 6.0)
+    assert jnp.array_equal(jax.grad(f)(jnp.array(2.0)), 3.0)
+    assert jnp.array_equal(jax.jit(jax.grad(f))(jnp.array(2.0)), 3.0)
