@@ -48,6 +48,25 @@ def _partition_and_wrap(tree: Any, filter_spec: Any, trace: _QuaxTrace) -> Any:
     return eqx.combine(dynamic, static, is_leaf=_is_value)
 
 
+def _call_in_new_trace(
+    q: "_Quaxify[Any]", parent_trace: core.Trace, args: Any, kwargs: Any, /
+) -> Any:
+    """Run `q` in a new quax trace under `parent_trace`.
+
+    A function rather than a method of `_Quaxify`: an `eqx.Module` builds a bound
+    method object on every attribute access, which costs more than the call itself
+    on this path (it runs for every inlined `jit` in a trace).
+    """
+    trace = _QuaxTrace(parent_trace, core.TraceTag())
+    fn, args, kwargs = _partition_and_wrap((q.fn, args, kwargs), q.filter_spec, trace)
+    # A custom `filter_spec` leaves Values for a nested `quaxify` to handle on its
+    # own (see the redispatch tutorial), so its trace is never joined.
+    user_trace = trace if q.filter_spec is True else None
+    with _as_user_trace(user_trace), core.set_current_trace(trace):
+        out = fn(*args, **kwargs)
+    return jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
+
+
 class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
     # `_Quaxify` is re-constructed on the hot path: every inlined `pjit` in a
     # quaxified trace makes `jit_quax` build a fresh one (see `_primitives.py`).
@@ -83,21 +102,7 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
                     fn, args, kwargs = joined
                     with core.set_current_trace(parent_trace):
                         return fn(*args, **kwargs)
-            return self._call_in_new_trace(parent_trace, args, kwargs)
-
-    def _call_in_new_trace(
-        self, parent_trace: core.Trace, args: Any, kwargs: Any, /
-    ) -> Any:
-        trace = _QuaxTrace(parent_trace, core.TraceTag())
-        fn, args, kwargs = _partition_and_wrap(
-            (self.fn, args, kwargs), self.filter_spec, trace
-        )
-        # A custom `filter_spec` leaves Values for a nested `quaxify` to handle on
-        # its own (see the redispatch tutorial), so its trace is never joined.
-        user_trace = trace if self.filter_spec is True else None
-        with _as_user_trace(user_trace), core.set_current_trace(trace):
-            out = fn(*args, **kwargs)
-        return jtu.tree_map(ft.partial(_unwrap_tracer, trace), out)
+            return _call_in_new_trace(self, parent_trace, args, kwargs)
 
     def __get__(
         self, instance: object | None, owner: Any
