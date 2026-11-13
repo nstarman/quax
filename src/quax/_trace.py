@@ -80,11 +80,15 @@ class _QuaxTracer(core.Tracer):
 class _QuaxTrace(
     core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportGeneralTypeIssues, reportInvalidTypeArguments]
 ):
-    __slots__ = ("tag", "parent_trace")
+    __slots__ = ("tag", "parent_trace", "rules_running")
 
     def __init__(self, parent_trace: core.Trace | None, tag: core.TraceTag) -> None:
         self.tag = tag
         self.parent_trace = parent_trace
+        # How many rules of child quax traces are running with this trace current.
+        # `quaxify` joins a current quax trace only from user code, not from a rule
+        # (see `_Quaxify.__call__`).
+        self.rules_running = 0
         super().__init__()
 
     def to_value(self, val: Any) -> Any:
@@ -159,29 +163,40 @@ class _QuaxTrace(
         cache_key = (primitive, tuple(type(v) for v in values))
         cached = _dispatch_cache.get(cache_key)
 
-        with core.set_current_trace(self.parent_trace):
-            if cached is _DISPATCH_MISS:
-                out = _default_process(primitive, values, params)
-            elif cached is not None:
-                out = cached(*values, **params)
-            elif (rule := _rules.get(primitive)) is None:
-                # First time seeing this (primitive, types) combination.
-                _dispatch_cache[cache_key] = _DISPATCH_MISS
-                out = _default_process(primitive, values, params)
-            else:
-                # Like plum, cache by type only if every registered signature is
-                # faithful: an unfaithful type's `isinstance` depends on the
-                # value, so another value of the same type may resolve elsewhere.
-                try:
-                    method, _ = rule.resolve_method(values)
-                except plum.NotFoundLookupError:
-                    if rule._resolver.is_faithful:
-                        _dispatch_cache[cache_key] = _DISPATCH_MISS
+        # Rules run with the parent trace current. When that parent is itself a
+        # quax trace, mark it, so a `quaxify` called by the rule starts its own
+        # trace rather than joining the parent's.
+        parent = self.parent_trace
+        nested = type(parent) is _QuaxTrace
+        if nested:
+            parent.rules_running += 1  # pyright: ignore[reportAttributeAccessIssue]
+        try:
+            with core.set_current_trace(parent):
+                if cached is _DISPATCH_MISS:
+                    out = _default_process(primitive, values, params)
+                elif cached is not None:
+                    out = cached(*values, **params)
+                elif (rule := _rules.get(primitive)) is None:
+                    # First time seeing this (primitive, types) combination.
+                    _dispatch_cache[cache_key] = _DISPATCH_MISS
                     out = _default_process(primitive, values, params)
                 else:
-                    if rule._resolver.is_faithful:
-                        _dispatch_cache[cache_key] = method
-                    out = method(*values, **params)
+                    # Like plum, cache by type only if every registered signature is
+                    # faithful: an unfaithful type's `isinstance` depends on the
+                    # value, so another value of the same type may resolve elsewhere.
+                    try:
+                        method, _ = rule.resolve_method(values)
+                    except plum.NotFoundLookupError:
+                        if rule._resolver.is_faithful:
+                            _dispatch_cache[cache_key] = _DISPATCH_MISS
+                        out = _default_process(primitive, values, params)
+                    else:
+                        if rule._resolver.is_faithful:
+                            _dispatch_cache[cache_key] = method
+                        out = method(*values, **params)
+        finally:
+            if nested:
+                parent.rules_running -= 1  # pyright: ignore[reportAttributeAccessIssue]
 
         # Post-process the output
         if primitive.multiple_results:

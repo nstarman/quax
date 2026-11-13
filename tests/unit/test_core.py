@@ -387,3 +387,79 @@ def test_nested_quaxify_with_a_custom_filter_spec_keeps_a_fresh_trace(monkeypatc
     assert not isinstance(got.array, Unitful)
     assert got.units == {meters: 2}
     assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_filter_spec_redispatch_inside_inline_jit():
+    """The redispatch tutorial's nested `quaxify`, with a primitive under an
+    inlined `jit` as `jnp` functions are.
+
+    The inner trace's rule (here `jit_quax`) runs with the outer quax trace
+    current. A `quaxify` called there must not join the outer trace: that would
+    put both Values in one trace and make the lookup ambiguous, which is what the
+    nesting avoids.
+    """
+    prim = jexc.Primitive("redispatch_test")
+    prim.def_impl(lambda x, y: x + y)
+    prim.def_abstract_eval(lambda x, y: x)
+
+    class A(quax.ArrayValue):
+        array: Array
+
+        def materialise(self):
+            raise ValueError("Refusing to materialise A")
+
+        def aval(self):
+            return cast(jax.core.ShapedArray, typeof(self.array))
+
+    class B(quax.ArrayValue):
+        array: Array
+
+        def materialise(self):
+            raise ValueError("Refusing to materialise B")
+
+        def aval(self):
+            return cast(jax.core.ShapedArray, typeof(self.array))
+
+    @quax.register(prim)
+    def _(x: A, y: jax.typing.ArrayLike | quax.ArrayValue):
+        return quax.quaxify(prim.bind)(x.array, y)
+
+    @quax.register(prim)
+    def _(x: jax.typing.ArrayLike | quax.ArrayValue, y: B):
+        return x + 10 * y.array
+
+    f = jax.jit(prim.bind, inline=True)
+    a, b = A(jnp.array(1.0)), B(jnp.array(2.0))
+
+    # One level: both rules match, as the tutorial shows.
+    with pytest.raises(Exception, match="ambiguous"):
+        quax.quaxify(f)(a, b)
+
+    is_a = lambda x: isinstance(x, A)
+    is_b = lambda x: isinstance(x, B)
+    got = quax.quaxify(quax.quaxify(f, filter_spec=is_a), filter_spec=is_b)(a, b)
+    assert jnp.array_equal(got, 21.0)
+
+
+def test_nested_filter_spec_keeps_dispatch_order_through_jnp():
+    """With a `filter_spec` at each level, a `jnp` function and its `lax`
+    primitive give the same result.
+
+    `jnp.multiply` goes through an inlined `jit`, whose rule runs with the outer
+    quax trace current; joining it there dropped the units.
+    """
+    from quax.examples.unitful import meters, Unitful
+    from quax.examples.zero import Zero
+
+    is_unitful = lambda v: isinstance(v, Unitful)
+    is_zero = lambda v: isinstance(v, Zero)
+    x = Unitful(jnp.array(2.0), meters)
+    z = Zero((), jnp.float32)
+
+    for fn in (jnp.multiply, lax.mul):
+        got = quax.quaxify(
+            quax.quaxify(fn, filter_spec=is_unitful), filter_spec=is_zero
+        )(x, z)
+        assert isinstance(got, Unitful), fn
+        assert got.units == {meters: 1}
+        assert isinstance(got.array, Zero)

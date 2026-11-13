@@ -103,13 +103,19 @@ class _Quaxify(eqx.Module, Generic[CT], metaclass=_FastModuleMeta):
         ):
             return self.fn(*args, **kwargs)
         with core.take_current_trace() as parent_trace:
-            # Called from code already running under a quax trace (a quaxified
-            # function calling another, e.g. a `__mul__` built on `quaxify`): join
-            # that trace. A fresh inner trace would see the outer tracers as plain
-            # arrays and dispatch the new Values against them as such -- a Unitful
-            # times an outer Unitful came back as Unitful(Unitful(...)). Rules run
-            # under the trace's parent, so this only applies to user code.
-            if self.filter_spec is True and isinstance(parent_trace, _QuaxTrace):
+            # Called from user code already running under a quax trace (a
+            # quaxified function calling another, e.g. a `__mul__` built on
+            # `quaxify`): join that trace. A fresh inner trace would see the outer
+            # tracers as plain arrays and dispatch the new Values against them as
+            # such -- a Unitful times an outer Unitful came back as
+            # Unitful(Unitful(...)). A rule of a nested quax trace also runs with a
+            # quax trace current, its parent; it must not join, or the nesting's
+            # dispatch order is lost, so `rules_running` excludes it.
+            if (
+                self.filter_spec is True
+                and isinstance(parent_trace, _QuaxTrace)
+                and not parent_trace.rules_running
+            ):
                 try:
                     fn, args, kwargs = _join_trace(
                         (self.fn, args, kwargs), parent_trace
