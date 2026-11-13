@@ -282,3 +282,108 @@ def test_nested_quaxify_under_jit_and_grad():
     assert jnp.array_equal(jax.jit(f)(jnp.array(2.0)), 6.0)
     assert jnp.array_equal(jax.grad(f)(jnp.array(2.0)), 3.0)
     assert jnp.array_equal(jax.jit(jax.grad(f))(jnp.array(2.0)), 3.0)
+
+
+def test_nested_quaxify_joins_with_a_closed_over_value():
+    """A Value built outside the outer function has plain-array fields; it
+    joins the outer trace as is."""
+    from quax.examples.unitful import meters, Unitful
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+    y = Unitful(jnp.array(2.0), meters)
+
+    got = quax.quaxify(lambda a: mul(a, y))(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_three_levels():
+    """Each level joins the outermost trace."""
+    from quax.examples.unitful import meters, Unitful
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    got = quax.quaxify(
+        lambda a: quax.quaxify(lambda b: mul(b, Unitful(jnp.array(2.0), meters)))(a)
+    )(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_under_vmap():
+    """Joining the outer trace composes with `vmap`."""
+    from quax.examples.unitful import meters, Unitful
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    def f(w):
+        out = quax.quaxify(lambda a: mul(a, Unitful(w * 1.0, meters)))(x)
+        assert out.units == {meters: 2}
+        return out.array
+
+    ws = jnp.array([1.0, 2.0, 4.0])
+    assert jnp.array_equal(jax.vmap(f)(ws), 3.0 * ws)
+    assert jnp.array_equal(jax.jit(jax.vmap(f))(ws), 3.0 * ws)
+
+
+def test_nested_quaxify_falls_back_when_a_value_wraps_an_outer_value(monkeypatch):
+    """A Value whose field is an outer tracer wrapping another Value cannot
+    join the outer trace; the inner call uses a fresh trace, as before."""
+    import quax._quaxify as qq
+    from quax.examples.unitful import meters, Unitful
+
+    raised = []
+
+    class Spy(qq._NotJoinable):
+        def __init__(self, *args):
+            raised.append(True)
+            super().__init__(*args)
+
+    monkeypatch.setattr(qq, "_NotJoinable", Spy)
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    # `Unitful(a, meters)` holds the outer tracer `a`, which wraps a Unitful.
+    got = quax.quaxify(lambda a: mul(a, Unitful(a, meters)))(x)
+
+    assert raised
+    # The fresh inner trace sees `a` as an array, as before the join existed.
+    assert isinstance(got, Unitful)
+    assert got.units == {meters: 1}
+    assert isinstance(got.array, Unitful)
+    assert got.array.units == {meters: 2}
+    assert jnp.array_equal(got.array.array, 9.0)
+
+
+def test_nested_quaxify_with_a_custom_filter_spec_keeps_a_fresh_trace(monkeypatch):
+    """An inner `quaxify` with a custom `filter_spec` never joins the outer
+    trace, since it may pass Values through on purpose (see the redispatch
+    tutorial)."""
+    import quax._quaxify as qq
+    from quax.examples.unitful import meters, Unitful
+
+    def no_join(*args):
+        raise AssertionError("joined the outer trace")
+
+    monkeypatch.setattr(qq, "_join_trace", no_join)
+
+    inner = quax.quaxify(jnp.multiply, filter_spec=lambda v: isinstance(v, Unitful))
+    x = Unitful(jnp.array(3.0), meters)
+    y = Unitful(jnp.array(2.0), meters)
+
+    got = quax.quaxify(inner)(x, y)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
