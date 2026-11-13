@@ -6,11 +6,14 @@ import jax.core
 import jax.extend.core as jexc
 import jax.lax as lax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 from jaxtyping import Array
 
 import quax
 from quax._compat import typeof
+from quax.examples.unitful import kilograms, meters, Unitful
+from quax.examples.zero import Zero
 
 
 def test_jit_inline():
@@ -237,3 +240,376 @@ def test_dispatch_cache_respects_unfaithful_types():
     assert not isinstance(f(small), Tagged)  # no rule: default materialises
     assert f(big).tag == "big"
     assert not isinstance(f(small), Tagged)
+
+
+class _A(quax.ArrayValue):
+    """A Value for the nesting tests below. Never materialises."""
+
+    array: Array
+
+    def materialise(self):
+        raise ValueError("Refusing to materialise _A")
+
+    def aval(self):
+        return cast(jax.core.ShapedArray, typeof(self.array))
+
+
+class _B(quax.ArrayValue):
+    """A second Value type, to meet `_A` in one dispatch."""
+
+    array: Array
+
+    def materialise(self):
+        raise ValueError("Refusing to materialise _B")
+
+    def aval(self):
+        return cast(jax.core.ShapedArray, typeof(self.array))
+
+
+def _sum_primitive(name: str) -> jexc.Primitive:
+    """A private `x + y` primitive, so the rules a test registers on it end with it."""
+    prim = jexc.Primitive(name)
+    prim.def_impl(lambda x, y: x + y)
+    prim.def_abstract_eval(lambda x, y: x)
+    return prim
+
+
+def test_nested_quaxify_joins_the_outer_trace():
+    """A quaxified call inside a quaxified function sees the outer Values.
+
+    The inner call used to start its own trace, which saw the outer tracer as a
+    plain array: a `Unitful` built inside, times the outer `Unitful` input, came
+    back as `Unitful(Unitful(..., m), m)` instead of `Unitful(..., m**2)`.
+    """
+
+    x = Unitful(jnp.array(3.0), meters)
+    mul = quax.quaxify(jnp.multiply)
+
+    got = quax.quaxify(lambda a: mul(a, Unitful(jnp.array(2.0), meters)))(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_under_jit_and_grad():
+    """Joining the outer trace still composes with `jit` and `grad`, also when
+    the inner Value is built inside the outer function from a traced operand.
+
+    Such a Value holds tracers of the outer quax trace in its fields; they are
+    lowered to their arrays before it joins that trace.
+    """
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    def f(w):
+        # `w * 1.0` binds under the outer trace, so the inner Unitful's array
+        # field is an outer-trace tracer.
+        out = quax.quaxify(lambda a: mul(a, Unitful(w * 1.0, meters)))(x)
+        assert out.units == {meters: 2}
+        return out.array
+
+    assert jnp.array_equal(f(jnp.array(2.0)), 6.0)
+    assert jnp.array_equal(jax.jit(f)(jnp.array(2.0)), 6.0)
+    assert jnp.array_equal(jax.grad(f)(jnp.array(2.0)), 3.0)
+    assert jnp.array_equal(jax.jit(jax.grad(f))(jnp.array(2.0)), 3.0)
+
+
+def test_nested_quaxify_joins_with_a_closed_over_value():
+    """A Value built outside the outer function has plain-array fields; it
+    joins the outer trace as is."""
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+    y = Unitful(jnp.array(2.0), meters)
+
+    got = quax.quaxify(lambda a: mul(a, y))(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_three_levels():
+    """Each level joins the outermost trace."""
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    got = quax.quaxify(
+        lambda a: quax.quaxify(lambda b: mul(b, Unitful(jnp.array(2.0), meters)))(a)
+    )(x)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_quaxify_under_vmap():
+    """Joining the outer trace composes with `vmap`."""
+
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    def f(w):
+        out = quax.quaxify(lambda a: mul(a, Unitful(w * 1.0, meters)))(x)
+        assert out.units == {meters: 2}
+        return out.array
+
+    ws = jnp.array([1.0, 2.0, 4.0])
+    assert jnp.array_equal(jax.vmap(f)(ws), 3.0 * ws)
+    assert jnp.array_equal(jax.jit(jax.vmap(f))(ws), 3.0 * ws)
+
+
+def test_nested_quaxify_falls_back_when_a_value_wraps_an_outer_value():
+    """A Value whose field is an outer tracer wrapping another Value cannot
+    join the outer trace; the inner call uses a fresh trace, as before."""
+    mul = quax.quaxify(jnp.multiply)
+    x = Unitful(jnp.array(3.0), meters)
+
+    # `Unitful(a, meters)` holds the outer tracer `a`, which wraps a Unitful.
+    got = quax.quaxify(lambda a: mul(a, Unitful(a, meters)))(x)
+
+    # The fresh inner trace sees `a` as an array, as before the join existed.
+    assert isinstance(got, Unitful)
+    assert got.units == {meters: 1}
+    assert isinstance(got.array, Unitful)
+    assert got.array.units == {meters: 2}
+    assert jnp.array_equal(got.array.array, 9.0)
+
+
+def test_nested_quaxify_with_a_custom_filter_spec_keeps_a_fresh_trace(monkeypatch):
+    """An inner `quaxify` with a custom `filter_spec` never joins the outer
+    trace, since it may pass Values through on purpose (see the redispatch
+    tutorial)."""
+    import quax._quaxify as qq
+
+    def no_join(*args):
+        raise AssertionError("joined the outer trace")
+
+    monkeypatch.setattr(qq, "_join_trace", no_join)
+
+    inner = quax.quaxify(jnp.multiply, filter_spec=lambda v: isinstance(v, Unitful))
+    x = Unitful(jnp.array(3.0), meters)
+    y = Unitful(jnp.array(2.0), meters)
+
+    got = quax.quaxify(inner)(x, y)
+
+    assert isinstance(got, Unitful)
+    assert not isinstance(got.array, Unitful)
+    assert got.units == {meters: 2}
+    assert jnp.array_equal(got.array, 6.0)
+
+
+def test_nested_filter_spec_redispatch_inside_inline_jit():
+    """The redispatch tutorial's nested `quaxify`, with a primitive under an
+    inlined `jit` as `jnp` functions are.
+
+    The inner trace's rule (here `jit_quax`) runs with the outer quax trace
+    current. A `quaxify` called there must not join the outer trace: that would
+    put both Values in one trace and make the lookup ambiguous, which is what the
+    nesting avoids.
+    """
+    prim = _sum_primitive("redispatch_test")
+
+    @quax.register(prim)
+    def _(x: _A, y: jax.typing.ArrayLike | quax.ArrayValue):
+        return quax.quaxify(prim.bind)(x.array, y)
+
+    @quax.register(prim)
+    def _(x: jax.typing.ArrayLike | quax.ArrayValue, y: _B):
+        return x + 10 * y.array
+
+    f = jax.jit(prim.bind, inline=True)
+    a, b = _A(jnp.array(1.0)), _B(jnp.array(2.0))
+
+    # One level: both rules match, as the tutorial shows.
+    with pytest.raises(Exception, match="ambiguous"):
+        quax.quaxify(f)(a, b)
+
+    is_a = lambda x: isinstance(x, _A)
+    is_b = lambda x: isinstance(x, _B)
+    got = quax.quaxify(quax.quaxify(f, filter_spec=is_a), filter_spec=is_b)(a, b)
+    assert jnp.array_equal(got, 21.0)
+
+
+def test_nested_filter_spec_keeps_dispatch_order_through_jnp():
+    """With a `filter_spec` at each level, a `jnp` function and its `lax`
+    primitive give the same result.
+
+    `jnp.multiply` goes through an inlined `jit`, whose rule runs with the outer
+    quax trace current; joining it there dropped the units.
+    """
+
+    is_unitful = lambda v: isinstance(v, Unitful)
+    is_zero = lambda v: isinstance(v, Zero)
+    x = Unitful(jnp.array(2.0), meters)
+    z = Zero((), jnp.float32)
+
+    for fn in (jnp.multiply, lax.mul):
+        got = quax.quaxify(
+            quax.quaxify(fn, filter_spec=is_unitful), filter_spec=is_zero
+        )(x, z)
+        assert isinstance(got, Unitful), fn
+        assert got.units == {meters: 1}
+        assert isinstance(got.array, Zero)
+
+
+@pytest.mark.parametrize("wrap", ["direct", "custom_jvp", "custom_vjp"])
+def test_nested_filter_spec_rule_calls_custom_derivative_helper(wrap):
+    """A rule of a nested quax trace calls a helper whose body calls `quaxify`.
+
+    quax runs the body of a `custom_jvp` or `custom_vjp` function under a new trace
+    object with the current trace's tag. That object is not the trace whose user
+    code is running, so the `quaxify` in the body must not join it either.
+    """
+    prim = _sum_primitive("custom_helper_outer")
+    prim2 = _sum_primitive("custom_helper_inner")
+
+    def body(x, y):
+        return quax.quaxify(prim2.bind)(x, y)
+
+    if wrap == "custom_jvp":
+        helper = jax.custom_jvp(body)
+        helper.defjvp(lambda p, t: (helper(*p), helper(*p)))
+    elif wrap == "custom_vjp":
+        helper = jax.custom_vjp(body)
+        helper.defvjp(lambda x, y: (helper(x, y), None), lambda r, g: (None, None))
+    else:
+        helper = body
+
+    @quax.register(prim)
+    def _(x: _A, y: jax.typing.ArrayLike | quax.ArrayValue):
+        return helper(x, y)
+
+    @quax.register(prim2)
+    def _(x: _A, y: jax.typing.ArrayLike | quax.ArrayValue):
+        return prim2.bind(x.array, y)
+
+    @quax.register(prim2)
+    def _(x: jax.typing.ArrayLike | quax.ArrayValue, y: _B):
+        return x + 10 * y.array
+
+    is_a = lambda v: isinstance(v, _A)
+    is_b = lambda v: isinstance(v, _B)
+    got = quax.quaxify(quax.quaxify(prim.bind, filter_spec=is_a), filter_spec=is_b)(
+        _A(jnp.array(1.0)), _B(jnp.array(2.0))
+    )
+    assert jnp.array_equal(got, 21.0)
+
+
+def test_user_trace_marker_is_restored():
+    """The marker of which trace runs user code is reset when `quaxify` returns or
+    raises, so a failed call does not change what later calls do."""
+    from quax._trace import _user_trace
+
+    mul = quax.quaxify(jnp.multiply)
+    add = quax.quaxify(jnp.add)
+    x = Unitful(jnp.array(3.0), meters)
+
+    def nested(a):
+        return mul(a, Unitful(jnp.array(2.0), meters))
+
+    assert _user_trace.get() is None
+    quax.quaxify(nested)(x)
+    assert _user_trace.get() is None
+    jax.jit(quax.quaxify(nested))(x)
+    assert _user_trace.get() is None
+
+    # A rule raises inside a nested call: adding metres to kilograms.
+    with pytest.raises(ValueError, match="Cannot add"):
+        quax.quaxify(lambda a: add(a, Unitful(jnp.array(2.0), kilograms)))(x)
+    assert _user_trace.get() is None
+
+    got = quax.quaxify(nested)(x)
+    assert got.units == {meters: 2}
+
+
+def test_outer_filter_spec_is_not_joined():
+    """The pattern in docs/how-to/quaxify-part-of-a-function.md: the outer
+    `quaxify` leaves one Value alone, for a plain `quaxify` inside to handle.
+
+    That inner call must not join the outer trace: the two types would meet in one
+    dispatch, which is the ambiguity the pattern exists to avoid.
+    """
+    prim = _sum_primitive("outer_filter_spec_test")
+
+    @quax.register(prim)
+    def _(x: _A, y: jax.typing.ArrayLike | quax.ArrayValue):
+        return prim.bind(x.array, y)
+
+    @quax.register(prim)
+    def _(x: jax.typing.ArrayLike | quax.ArrayValue, y: _B):
+        return prim.bind(x, 10 * y.array)
+
+    def outer(a, b):
+        # `b` arrives here untouched, so the nested quaxify is what handles it.
+        return quax.quaxify(lambda bb: prim.bind(a, bb))(b)
+
+    got = quax.quaxify(outer, filter_spec=(False, (True, False), {}))(
+        _A(jnp.array(1.0)), _B(jnp.array(2.0))
+    )
+    assert jnp.array_equal(got, 21.0)
+
+
+def test_nested_quaxify_on_local_values_returns_values():
+    """A quaxified call on Values made inside a quaxified function gets none of the
+    outer Values, so it runs in its own trace and returns a Value, which the code
+    can then inspect. Joining would hand back a tracer of the outer trace."""
+    mul = quax.quaxify(jnp.multiply)
+    seen = []
+
+    def f(a):
+        local = Unitful(jnp.array(2.0), meters)
+        r = mul(local, local)
+        assert isinstance(r, Unitful)
+        assert r.units == {meters: 2}
+        seen.append(True)
+        return a
+
+    quax.quaxify(f)(Unitful(jnp.array(3.0), meters))
+    jax.jit(quax.quaxify(f))(Unitful(jnp.array(3.0), meters))
+    assert len(seen) == 2
+
+
+@pytest.mark.filterwarnings("error")
+def test_join_lowers_scalar_fields():
+    """A field of the joined Value that is a dense tracer of a Python or NumPy
+    scalar (here returned by a rule) is lowered to an array, without a dtype
+    warning when x64 is off. `S.aval` reads `.shape`, which a Python float lacks."""
+
+    class S(quax.ArrayValue):
+        array: Array
+
+        def materialise(self):
+            return self.array
+
+        def aval(self):
+            return jax.core.ShapedArray(self.array.shape, self.array.dtype)
+
+    @quax.register(lax.reduce_sum_p)
+    def _(x: S, **kw: Any):
+        return np.float64(1.5)
+
+    @quax.register(lax.reduce_max_p)
+    def _(x: S, **kw: Any):
+        return 7.0
+
+    mul = quax.quaxify(jnp.multiply)
+    add = quax.quaxify(jnp.add)
+
+    def f(x, u):
+        # `u` and `x` are outer Values, so these calls join; `jnp.sum(x)` and
+        # `jnp.max(x)` are dense tracers holding a NumPy and a Python scalar.
+        r1 = mul(u, Unitful(jnp.sum(x), meters))
+        r2 = add(x, S(jnp.max(x)))
+        return r1, r2
+
+    r1, r2 = quax.quaxify(f)(S(jnp.ones(3)), Unitful(jnp.array(2.0), meters))
+    assert r1.units == {meters: 2}
+    assert jnp.array_equal(r1.array, 3.0)
+    assert jnp.array_equal(r2, jnp.full(3, 8.0))

@@ -1,14 +1,17 @@
+import contextvars
 import functools as ft
 import itertools as it
 from collections.abc import Sequence
 from typing import Any, Final, overload
 
 import equinox as eqx
+import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.extend.linear_util as lu
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
 import plum
 from jax.custom_derivatives import SymbolicZero as SZ
 from jax.interpreters.ad import Zero
@@ -303,6 +306,32 @@ class _QuaxTrace(
     # TODO: add other process_* rules
 
 
+# The quax trace whose user code is running, set by `quaxify` while it runs the
+# function it wraps. A `quaxify` called by that code joins this trace (see
+# `_Quaxify.__call__`). A rule runs with its trace's parent current but leaves this
+# unchanged, so a `quaxify` called by a rule never finds the current trace here, and
+# starts its own.
+_user_trace: contextvars.ContextVar[_QuaxTrace | None] = contextvars.ContextVar(
+    "quax_user_trace", default=None
+)
+
+
+class _as_user_trace:  # noqa: N801
+    """Set `_user_trace` for a `with` block. A class rather than a
+    `contextlib.contextmanager`, as it runs on every inlined `jit` in a trace."""
+
+    __slots__ = ("_token", "_trace")
+
+    def __init__(self, trace: _QuaxTrace | None) -> None:
+        self._trace = trace
+
+    def __enter__(self) -> None:
+        self._token = _user_trace.set(self._trace)
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        _user_trace.reset(self._token)
+
+
 class _held_trace:  # noqa: N801
     """Make a new `_QuaxTrace` current, for a block that spans a `yield`.
 
@@ -571,3 +600,58 @@ def _unwrap_tracer(trace: _QuaxTrace, x: Any, /) -> Any:
         # `JAX_CHECK_TRACER_LEAKS` to report them as leaked.
         return aval.raise_val(*[_unwrap_tracer(trace, v) for v in aval.lower_val(x)])
     return x
+
+
+def _wraps_value_of(trace: _QuaxTrace, x: Any, /) -> bool:
+    """Whether `x` is a tracer of `trace` that wraps a Value, not a plain array."""
+    return (
+        isinstance(x, _QuaxTracer)
+        and x._trace.tag is trace.tag
+        and type(x.value) is not _DenseArrayValue
+    )
+
+
+def _lower_leaf(trace: _QuaxTrace, leaf: Any, /) -> Any:
+    """Replace a dense tracer of `trace` by the array it wraps."""
+    if not (isinstance(leaf, _QuaxTracer) and leaf._trace.tag is trace.tag):
+        return leaf
+    # Dense: `_join_trace` checked that before lowering.
+    arr = leaf.value.array  # pyright: ignore[reportAttributeAccessIssue]
+    # A constant may be held as a JAX typed literal (e.g. `TypedFloat`) or a Python
+    # or NumPy scalar, but a Value's field expects an array. No explicit dtype: it
+    # would ask for float64 from a NumPy scalar, which warns when x64 is off.
+    if not isinstance(arr, (jax.Array, np.ndarray)):
+        arr = jnp.asarray(arr)
+    return arr
+
+
+def _join_trace(trace: _QuaxTrace, tree: Any, /) -> Any | None:
+    """Wrap the Values in `tree` as tracers of the existing `trace`.
+
+    Returns `None`, and wraps nothing, unless `tree` holds a Value of `trace`: a
+    fresh trace would see that Value as a plain array, and joining is what lets it
+    dispatch as itself. Without one, a fresh trace gives the right answer and
+    returns Values, where a join would return tracers of `trace`.
+
+    A Value built under `trace` from a traced operand holds tracers of `trace` in its
+    fields. Wrapping it as is would put the trace inside itself, so each such tracer
+    is first lowered to the array it wraps. Also returns `None` if one wraps a Value
+    instead, which has no array to lower to.
+    """
+    leaves = jtu.tree_leaves(tree, is_leaf=_is_value)
+    if not any(_wraps_value_of(trace, x) for x in leaves):
+        return None
+    if any(
+        _wraps_value_of(trace, leaf)
+        for value in leaves
+        if _is_value(value)
+        for leaf in jtu.tree_leaves(value)
+    ):
+        return None
+    lower = ft.partial(_lower_leaf, trace)
+    with core.set_current_trace(trace.parent_trace):
+        return jtu.tree_map(
+            lambda x: _QuaxTracer(trace, jtu.tree_map(lower, x)) if _is_value(x) else x,
+            tree,
+            is_leaf=_is_value,
+        )
