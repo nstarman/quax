@@ -21,6 +21,7 @@ uv run prek run --all-files     # lint + format (ruff, pyright, taplo)
 | [_values.py](src/quax/_values.py) | `Value` (base `eqx.Module`; requires `aval()` and `materialise()`), `ArrayValue` (exposes `.shape`, `.dtype`, `.ndim`, `.size`), internal `_DenseArrayValue` |
 | [_quaxify.py](src/quax/_quaxify.py) | `quaxify(fn)` and `_Quaxify`; wraps any JAX function to enable quax dispatch |
 | [_dispatch.py](src/quax/_dispatch.py) | `register(primitive)`, the plum rule table, and the dispatch cache |
+| [_dispatchable.py](src/quax/_dispatchable.py) | `quax.dispatchable`, `DispatchableFunction` and `dispatch_call_p`: whole-function dispatch. The batching rule records inner `vmap`s in `batch_axes`; the JVP and transpose rules bind derived `jvp(f)` / `transpose(jvp(f))` functions so AD under quax follows the rule; the quax rule `dispatch_call_quax` lives in `_primitives.py` |
 | [_primitives.py](src/quax/_primitives.py) | Handlers for `jit_p`, `while_p`, `cond_p`, `scan_p`, and their jaxpr caches |
 | [_trace.py](src/quax/_trace.py) | `_QuaxTrace`/`_QuaxTracer`; the interpreter that dispatches via plum |
 | [_module.py](src/quax/_module.py) | `_FastModuleMeta`; skips equinox per-instance validation on hot paths |
@@ -64,12 +65,15 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **Name every registered rule** — `@quax.register` handlers are named after the primitive and the
   types they dispatch on (`add_unitful_unitful`, `convert_element_type_zero`, `cond_quax`), never
   `def _`. Dispatch ignores the name; tracebacks, plum's ambiguity errors, and profiles do not.
+- **Registering a `jax.custom_jvp` mutates it globally** — `quax.register(cjvp)` sets `cjvp.fun` to a `DispatchableFunction` and calls `jax.clear_caches()`. Tests that register one must use a `custom_jvp` private to that test module.
+- **`Value.batch_leaves` gates rules under an inner `vmap`** — `dispatch_call_quax` vmaps a rule over values' leaves only when every value argument sets it; otherwise it runs the body. Set it only for one-array-plus-static-data types (`MyArray`, `Unitful`); a multi-leaf type would be silently mis-sliced.
+- **`dispatch_call_p` params must be hashable and stable** — `fn` is the `DispatchableFunction` itself, never a per-call lambda, or jit caches miss. No primitive param may be named `key`: on JAX 0.7.2 it collides with an internal cache's argument.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
 - **hijax under `jit` trips the leak checker on JAX 0.10.2 and 0.11.0** — consuming a hi value reports a false `JAX_CHECK_TRACER_LEAKS` failure. A JAX regression, reproducible without quax, fixed in 0.11.1; `tests/usage/test_hijax.py` disables the check on those two versions only, so a recurrence on a fixed version fails the suite.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
 - **Tests import across modules** — e.g. `from ..myarray import MyArray`; keep internal test imports relative.
 - **Pre-commit Pyright runs only on `src/`** — the pre-commit hook excludes `tests/`, even though `[tool.pyright]` includes it.
-- **Doctests are not collected.** `testpaths` lists `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `docs/` and `src/` docstrings are never run. Verify them by hand when you change them. The exceptions are [README.md](README.md) and [skills/quax/SKILL.md](skills/quax/SKILL.md), whose `python` blocks are executed as individual tests by Sybil, wired up in [conftest.py](conftest.py).
+- **Doctests are not collected.** `testpaths` lists `docs`, but no `--doctest-glob`/`--doctest-modules` is set, so examples in `src/` docstrings and most `docs/` pages are never run. Verify them by hand when you change them. The exceptions are [README.md](README.md), [skills/quax/SKILL.md](skills/quax/SKILL.md), and the `docs/` pages listed in [conftest.py](conftest.py)'s Sybil `patterns` (e.g. `autodiff.md`, `how-to/*.md`), whose `python` blocks are executed as individual tests.
 
 ## Dependencies
 

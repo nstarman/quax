@@ -53,6 +53,8 @@ class Unitful(quax.ArrayValue):
         exponent -- e.g. `{meters: 1, seconds: -2}` for an acceleration.
     """
 
+    batch_leaves = True  # one array of the aval's shape, plus static data
+
     array: ArrayLike
     units: dict[Dimension, int] = eqx.field(static=True, converter=_dim_to_unit)
 
@@ -132,3 +134,67 @@ def select_n_unitful(which: ArrayLike, *cases: Unitful, **kw: Any) -> Unitful:
             )
     arrays = [c.array for c in cases]
     return Unitful(jax.lax.select_n_p.bind(which, *arrays, **kw), units)
+
+
+@quax.register(jax.lax.sub_p)
+def sub_unitful_unitful(x: Unitful, y: Unitful, **kw: Any) -> Unitful:
+    if x.units != y.units:
+        raise ValueError(
+            f"Cannot subtract two arrays with units {x.units} and {y.units}."
+        )
+    return Unitful(jax.lax.sub_p.bind(x.array, y.array, **kw), x.units)
+
+
+def _div_units(
+    x: dict[Dimension, int], y: dict[Dimension, int]
+) -> dict[Dimension, int]:
+    units = x.copy()
+    for k, v in y.items():
+        units[k] = units.get(k, 0) - v
+    return {k: v for k, v in units.items() if v != 0}
+
+
+@quax.register(jax.lax.div_p)
+def div_unitful_unitful(x: Unitful, y: Unitful, **kw: Any) -> Unitful:
+    return Unitful(
+        jax.lax.div_p.bind(x.array, y.array, **kw), _div_units(x.units, y.units)
+    )
+
+
+@quax.register(jax.lax.div_p)
+def div_unitful_array_like(x: Unitful, y: ArrayLike, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.div_p.bind(x.array, y, **kw), x.units)
+
+
+@quax.register(jax.lax.div_p)
+def div_array_like_unitful(x: ArrayLike, y: Unitful, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.div_p.bind(x, y.array, **kw), _div_units({}, y.units))
+
+
+@quax.register(jax.lax.transpose_p)
+def transpose_unitful(operand: Unitful, **kw: Any) -> Unitful:
+    return Unitful(jax.lax.transpose_p.bind(operand.array, **kw), operand.units)
+
+
+# From JAX 0.12, `jnp.hypot` is built on the `jax.custom_jvp` function `_hypot`,
+# whose body compares its inputs against bare numbers -- something a unit-aware
+# type must refuse. So replace `_hypot` as a whole; its own JVP rule still applies,
+# using the rules above. Earlier JAX versions have no `_hypot`.
+_hypot = getattr(jax._src.numpy.ufuncs, "_hypot", None)  # pyright: ignore[reportAttributeAccessIssue]
+if isinstance(_hypot, jax.custom_jvp):
+
+    @quax.register(_hypot)
+    def hypot_unitful_unitful(
+        x1: Unitful, x2: Unitful
+    ) -> tuple[Unitful, Unitful, Unitful]:
+        if x1.units != x2.units:
+            raise ValueError(
+                f"Cannot take hypot of arrays with units {x1.units} and {x2.units}."
+            )
+        # `_hypot` returns `(hypot, x1 / hypot, x2 / hypot)`.
+        h = jnp.hypot(x1.array, x2.array)
+        return (
+            Unitful(h, x1.units),
+            Unitful(x1.array / h, {}),
+            Unitful(x2.array / h, {}),
+        )
