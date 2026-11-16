@@ -279,6 +279,13 @@ boundary that fails, with `TypeError: unsupported operand type(s) for +:
 with (which of two nested quaxifies would own it?), so it never becomes a
 tracer. Build your values, *then* cross the boundary.
 
+**Closing over a Value does not cross the boundary either.** quaxify wraps the
+pytree leaves of `(fn, args, kwargs)`. A Value captured by a plain Python
+closure (`lambda x: x * y`) is not one of those leaves, so it reaches JAX
+unwrapped and fails the same way as one built inside, or JAX coerces it
+(`float(v)`, `np.asarray(v)`) before any rule sees it. Pass it as an argument,
+or close over it through a pytree: `quax.quaxify(eqx.Partial(f, y))(x)`.
+
 **Inside the boundary your type looks like an array.** That is the entire point,
 and it has a consequence for runtime typechecking: the jaxtyping/beartype import
 hook installs *inside* the quaxify, so annotations on the wrapped function must
@@ -408,7 +415,7 @@ Hard constraints, if you do reach for hijax:
 | `TypeError: Primitive ... operand ... neither a quax.Value nor array-like` | A genuine non-array operand (`None`, `str`) reached a primitive. Usually a bug in the calling code, not in the rule. |
 | `Gradient only defined for scalar-output functions` from `quaxify(jax.grad)(f)` | Transform nested wrongly. Write `quaxify(jax.grad(f))`. Never register `pytype_aval_mappings`. |
 | jaxtyping/beartype rejects your Value inside a quaxified function | Typechecking runs *inside* the boundary, where the Value presents as an array. Annotate arrays, not Value types. |
-| `TypeError: unsupported operand type(s) for +: '_QuaxTracer' and 'MyType'` | A Value was constructed *inside* the quaxified function; only values that crossed the boundary are tracers. Construct it outside and pass it in. |
+| `TypeError: unsupported operand type(s) for +: '_QuaxTracer' and 'MyType'` | A Value was constructed *inside* the quaxified function, or captured by a plain closure; only values that crossed the boundary are tracers. Construct it outside and pass it in, or close over it with `eqx.Partial`. |
 | `TypeError: got an unexpected keyword argument` in your rule | A JAX version added a primitive param. Accept `**kw` and forward it. |
 | Rule never fires for `jnp.zeros_like`/`empty_like` | Those lower to a broadcast of a fresh scalar, so your type is never an operand. There is nothing of yours to dispatch on. |
 | `jnp.compress`/boolean-mask style call fails under quaxify | Value-dependent output shape. Pass `size=`, as under `jit`. |
