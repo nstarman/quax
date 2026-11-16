@@ -40,6 +40,12 @@ _(Just like how `jax.vmap` takes a program, but reinterprets each operation as i
 pip install quax
 ```
 
+Quax runs on any JAX backend. To use an Apple Silicon GPU, also install
+[jax-graft](https://github.com/dfm/jax-graft) (`pip install jax-graft`). It
+does not support every JAX operation yet; `eig`, for example, is missing.
+Apple's own [jax-metal](https://developer.apple.com/metal/jax/) plugin has not
+been updated since JAX 0.4.34 and fails on the JAX versions Quax supports.
+
 ## What that looks like
 
 A few examples of `quax` propagating physical units through JAX code.
