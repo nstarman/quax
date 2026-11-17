@@ -323,12 +323,8 @@ def test_map() -> None:
         ("eigh", (x1225,), {}, True),
         ("hessenberg", (x1225,), {}, True),
         ("lu", (x1225,), {}, True),
-        (
-            "householder_product",
-            jtu.map(MyArray, lax.linalg.hessenberg(jnp.array([[1.0, 2], [2, 5]]))),
-            {},
-            True,
-        ),
+        # `hessenberg(x1225)`, written out; see test_jax_array.py.
+        ("householder_product", (x1225, MyArray(jnp.zeros(1))), {}, True),
         ("qdwh", (x1225,), {}, (True, True, False, True)),
         ("qr", (x1225,), {}, True),
         ("schur", (x1225,), {}, True),

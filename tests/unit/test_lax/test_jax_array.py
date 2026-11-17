@@ -244,11 +244,10 @@ x1225 = jnp.array([[1, 2], [2, 5]], dtype=float)
         ("eigh", (x1225,), {}),
         ("hessenberg", (x1225,), {}),
         ("lu", (x1225,), {}),
-        (
-            "householder_product",
-            lax.linalg.hessenberg(jnp.array([[1.0, 2], [2, 5]])),
-            {},
-        ),
+        # `hessenberg(x1225)`, written out: a 2x2 matrix is already upper
+        # Hessenberg. Calling it here would run at import and fail to collect
+        # on backends without a `hessenberg` lowering, such as jax-graft.
+        ("householder_product", (x1225, jnp.zeros(1)), {}),
         ("qdwh", (x1225,), {}),
         ("qr", (x1225,), {}),
         ("schur", (x1225,), {}),
