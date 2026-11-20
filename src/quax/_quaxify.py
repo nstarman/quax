@@ -118,6 +118,20 @@ def quaxify(
         jit_fn(*args)  # fast warm-call path
         ```
 
+    !!! Warning "Values must be passed in, not closed over"
+
+        Only the pytree leaves of `(fn, args, kwargs)` are quaxified. A
+        [`quax.Value`][] captured by a plain Python closure is not one of them, so
+        it reaches JAX unwrapped: it fails, or JAX coerces it to a plain array
+        before any rule sees it. Pass it as an argument, or close over it with a
+        pytree such as `eqx.Partial`:
+
+        ```python
+        quax.quaxify(lambda x: x * y)(x)  # wrong: `y` is never quaxified
+        quax.quaxify(lambda x, y: x * y)(x, y)  # right
+        quax.quaxify(eqx.Partial(lambda y, x: x * y, y))(x)  # right
+        ```
+
     !!! Tip "Only quaxifying some arguments"
 
         Calling `quax.quaxify(fn, filter_spec)(*args, **kwargs)` will under-the-hood run
