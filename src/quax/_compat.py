@@ -8,8 +8,12 @@ __all__ = (
     "JAX_GE_0_10_1",
     "JAX_GE_0_10_2",
     "JAX_GE_0_11_0",
+    "JAX_GE_0_12_0",
     # Features
     "ClosedJaxpr",
+    "CustomJVPTraced",
+    "call_hi_primitive_p",
+    "custom_jvp3_enabled",
     "hi_aval",
     "jit_p",
     "is_early_inline",
@@ -39,6 +43,7 @@ JAX_GE_0_9_2: Final = JAX_VERSION >= Version("0.9.2")
 JAX_GE_0_10_1: Final = JAX_VERSION >= Version("0.10.1")
 JAX_GE_0_10_2: Final = JAX_VERSION >= Version("0.10.2")
 JAX_GE_0_11_0: Final = JAX_VERSION >= Version("0.11.0")
+JAX_GE_0_12_0: Final = JAX_VERSION >= Version("0.12.0")
 
 # beartype 0.23 made `is_subhint(Any, T)` true for every `T`. plum < 2.10 ranks
 # methods with it, so an unannotated rule silently outranks a typed one and
@@ -61,6 +66,32 @@ if _BEARTYPE_GE_0_23_0 and not _PLUM_GE_2_10_0:
 # JAX 0.12 merged `ClosedJaxpr` into `Jaxpr` and removed it from
 # `jax._src.core`; `jax.extend.core` keeps a public alias across versions.
 ClosedJaxpr = jexc.ClosedJaxpr  # pyright: ignore[reportPrivateImportUsage]
+
+# JAX 0.12 added the opt-in `jax_custom_jvp3` flag. With it on,
+# `jax.custom_jvp.__call__` stops binding `custom_jvp_call_p` and instead binds
+# the hijax `call_hi_primitive_p` with a `CustomJVPTraced` as its `_prim`
+# parameter: the body pre-traced to a jaxpr, plus the user's JVP rule.
+# `None` below 0.12, where neither exists and the flag can't be set.
+CustomJVPTraced: type | None
+call_hi_primitive_p: jexc.Primitive | None
+if JAX_GE_0_12_0:
+    from jax._src.hijax import (  # pyright: ignore[reportMissingImports]
+        call_hi_primitive_p,
+        CustomJVPTraced,
+    )
+
+    def custom_jvp3_enabled() -> bool:
+        """Whether `jax.custom_jvp` is routed through `custom_jvp3`."""
+        return jax.config.jax_custom_jvp3  # pyright: ignore[reportAttributeAccessIssue]
+
+else:
+    CustomJVPTraced = None
+    call_hi_primitive_p = None
+
+    def custom_jvp3_enabled() -> bool:
+        """Whether `jax.custom_jvp` is routed through `custom_jvp3`."""
+        return False
+
 
 # `jit_p` was renamed from `pjit_p` in JAX 0.7.0, before the supported floor.
 jit_p: jexc.Primitive = jax._src.pjit.jit_p  # pyright: ignore[reportAttributeAccessIssue]
