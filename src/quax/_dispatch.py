@@ -6,14 +6,17 @@ from collections.abc import Callable, Sequence
 from typing import Any, cast, TypeAlias
 
 import equinox as eqx
+import jax
 import jax.extend.core as jexc
 import plum
 from jaxtyping import ArrayLike
 
+from ._dispatchable import dispatchable, DispatchableFunction
 from ._values import _dense, _is_value, CT, Value, ValueLike
 
 
-_rules: dict[jexc.Primitive, plum.Function] = {}
+# Keyed by primitive, or by a `quax.dispatchable` function.
+_rules: dict[jexc.Primitive | DispatchableFunction, plum.Function] = {}
 
 # Cache resolved dispatch methods keyed by (primitive, arg-types).
 # Sentinel for "no matching rule; fall through to _default_process".
@@ -22,9 +25,13 @@ _dispatch_cache: dict[tuple, Any] = {}
 
 
 def register(
-    primitive: jexc.Primitive, /, *, precedence: int = 0
+    primitive: jexc.Primitive | DispatchableFunction | jax.custom_jvp,
+    /,
+    *,
+    precedence: int = 0,
 ) -> Callable[[CT], CT]:
-    """Registers a multiple dispatch implementation for this JAX primitive.
+    """Registers a multiple dispatch implementation for this JAX primitive, or for
+    a whole [`quax.dispatchable`][] function or `jax.custom_jvp` function.
 
     !!! Example
 
@@ -44,7 +51,11 @@ def register(
     **Arguments:**
 
     - `primitive`: The `jax.extend.core.Primitive` to provide a multiple
-      dispatch implementation for.
+      dispatch implementation for. Alternatively a [`quax.dispatchable`][]
+      function: the rule then replaces the whole function for the types it
+      dispatches on, and has the function's signature. See
+      [`quax.dispatchable`][] for the contract. Or a `jax.custom_jvp` function:
+      see below.
 
     - `precedence`: The precedence of this rule.
         See `plum.Dispatcher.dispatch` for details.
@@ -52,7 +63,38 @@ def register(
     **Returns:**
 
     A decorator for registering a multiple dispatch rule with the specified primitive.
+
+    !!! Info "Registering a `jax.custom_jvp`"
+
+        The first registration for a `jax.custom_jvp` replaces its body with a
+        [`quax.dispatchable`][] one (`f.fun = quax.dispatchable(f.fun)`), and then
+        registers the rule for that, so the rule takes the function's positional
+        arguments -- including any `nondiff_argnums` ones -- and returns its
+        output. Its own JVP rule is kept, and keeps applying under `jax.grad` on
+        either side of [`quax.quaxify`][]: the rule replaces the function's value,
+        not its declared derivative.
+
+        This changes the function globally: every later trace of it, with or
+        without Quax, contains a `quax_dispatch_call`. Values, derivatives and
+        lowering are unchanged. It also calls `jax.clear_caches()`, so that no
+        `jax.jit` cache keeps a trace of the old body. For a private JAX function
+        (such as `jax._src.numpy.ufuncs._hypot`, which `jnp.hypot` is built on from
+        JAX 0.12), look it up with `getattr(module, name, None)`, as these come and
+        go between JAX versions.
     """
+    if isinstance(primitive, jax.custom_jvp):
+        if not isinstance(primitive.fun, DispatchableFunction):
+            primitive.fun = dispatchable(primitive.fun)
+            jax.clear_caches()
+        primitive = primitive.fun
+
+    if not isinstance(primitive, (jexc.Primitive, DispatchableFunction)):
+        raise TypeError(
+            "`quax.register` takes a `jax.extend.core.Primitive`, a "
+            "`quax.dispatchable` function or a `jax.custom_jvp` function, not "
+            f"{type(primitive).__name__!r}."
+        )
+    name = getattr(primitive, "__name__", str(primitive))
 
     def _register(rule: CT, /) -> CT:
         try:
@@ -62,8 +104,8 @@ def register(
             def new_rule():
                 raise NotImplementedError("Abstract primitive")  # pragma: no cover
 
-            new_rule.__name__ = f"{primitive}_dispatcher"
-            new_rule.__qualname__ = f"{primitive}_dispatcher"
+            new_rule.__name__ = f"{name}_dispatcher"
+            new_rule.__qualname__ = f"{name}_dispatcher"
             existing_rule = plum.Dispatcher().abstract(new_rule)
 
             _rules[primitive] = existing_rule
