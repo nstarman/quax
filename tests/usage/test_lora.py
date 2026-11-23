@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
 import pytest
-from jaxtyping import TypeCheckError
+from beartype.roar import BeartypeCallHintViolation
 from plum import NotFoundLookupError
 
 import quax
@@ -138,10 +138,12 @@ def test_regression_38(getkey):
     # wrong. Which error depends on how far it gets. With stackless tracers, JAX
     # canonicalises `bind`'s arguments before consulting the current trace, so it
     # raises TypeError without ever reaching quax's dispatch. Reaching dispatch gives
-    # TypeCheckError when jaxtyping is on, and NotFoundLookupError when it is off --
-    # which kicks over to the default process, itself raising RuntimeError when
-    # `allow_materialise` is False.
-    with pytest.raises((TypeError, TypeCheckError, NotFoundLookupError, RuntimeError)):
+    # BeartypeCallHintViolation when runtime checking is on, and NotFoundLookupError
+    # when it is off -- which kicks over to the default process, itself raising
+    # RuntimeError when `allow_materialise` is False.
+    with pytest.raises(
+        (TypeError, BeartypeCallHintViolation, NotFoundLookupError, RuntimeError)
+    ):
         _ = func(y)
 
 

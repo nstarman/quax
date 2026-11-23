@@ -11,17 +11,20 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.tree_util as jtu
 import numpy as np
-from jaxtyping import Array, ArrayLike, Float, Inexact, Integer, UInt, UInt32
+from bearshape import Scalar
+from bearshape.jax import Float, Inexact, IntegerLike, U32, UInt
+from jax.typing import ArrayLike
 
 import quax
 from quax._compat import JAX_GE_0_10_2
+
+from .._shapes import AnyShape, Two, VBatch
 
 
 if JAX_GE_0_10_2:
     _jax_threefry = importlib.import_module("jax._src.random.threefry2x32")
 else:
     _jax_threefry = importlib.import_module("jax._src.prng")
-
 
 RealArray: TypeAlias = ArrayLike
 
@@ -38,7 +41,7 @@ class PRNG(quax.ArrayValue):
         )
 
     @abc.abstractmethod
-    def random_bits(self, bit_width: int, shape: tuple[int, ...]) -> UInt[Array, "..."]:
+    def random_bits(self, bit_width: int, shape: tuple[int, ...]) -> UInt[AnyShape]:
         """Generate random bits from this PRNG. Must be implemented in subclasses."""
 
     @abc.abstractmethod
@@ -51,16 +54,16 @@ class PRNG(quax.ArrayValue):
 class ThreeFry(PRNG):
     """Implements a threefry PRNG."""
 
-    value: UInt32[Array, "*batch 2"]
+    value: U32[VBatch, Two]
 
-    def __init__(self, seed: Integer[ArrayLike, ""]):
+    def __init__(self, seed: IntegerLike[Scalar]):
         self.value = _jax_threefry.threefry_seed(jnp.asarray(seed))
 
     def aval(self):
         *shape, _ = self.value.shape
         return jax.core.ShapedArray(shape, jnp.uint32)
 
-    def random_bits(self, bit_width: int, shape: tuple[int, ...]) -> UInt[Array, "..."]:
+    def random_bits(self, bit_width: int, shape: tuple[int, ...]) -> UInt[AnyShape]:
         return _jax_threefry.threefry_random_bits(self.value, bit_width, shape)
 
     def split(self, num: int) -> Sequence["ThreeFry"]:
@@ -80,7 +83,7 @@ def uniform(
     dtype: Any = jnp.float_,
     minval: RealArray = 0.0,
     maxval: RealArray = 1.0,
-) -> Float[Array, "..."]:
+) -> Float[AnyShape]:
     """Samples a random number uniformly distributed over `[minval, maxval)`.
 
     Arguments as `jax.random.uniform`, except that the first argument must be one of our
@@ -126,7 +129,7 @@ def uniform(
 
 def normal(
     key: PRNG, shape: tuple[int, ...] = (), dtype: Any = jnp.float_
-) -> Inexact[Array, "..."]:
+) -> Inexact[AnyShape]:
     """Samples from a normal distribution.
 
     Arguments as `jax.random.normal`, except that the first argument must be one of our

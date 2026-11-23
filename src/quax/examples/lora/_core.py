@@ -1,4 +1,4 @@
-from typing import cast
+from typing import cast, TYPE_CHECKING, TypeAlias
 
 import equinox as eqx
 import jax.core
@@ -6,9 +6,32 @@ import jax.lax as lax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.tree_util as jtu
-from jaxtyping import Array, ArrayLike, PRNGKeyArray, PyTree, Shaped
+from bearshape import Dimension, DtypeSpec, make_array_type, Scalar
+from bearshape.jax import Shaped, Tree, U32
+from jax import Array
+from jax.typing import ArrayLike
 
 import quax
+
+from .._shapes import VBatch
+
+
+if TYPE_CHECKING:
+    X: TypeAlias = int
+    Y: TypeAlias = int
+    Z: TypeAlias = int
+    PRNGKeyArray: TypeAlias = Array
+else:
+    X, Y, Z = (Dimension(n) for n in ("x", "y", "z"))
+    # A typed key (scalar) or a legacy uint32[2] key, as `jaxtyping.PRNGKeyArray` was.
+    PRNGKeyArray = (
+        make_array_type(
+            Array,
+            DtypeSpec("Key", frozenset({"key<fry>", "key<rbg>", "key<unsafe_rbg>"})),
+        )[Scalar]
+        | U32[2]
+    )
+PyTree: TypeAlias = Tree[object]
 
 
 class LoraArray(quax.ArrayValue):
@@ -28,15 +51,15 @@ class LoraArray(quax.ArrayValue):
     to be computationally cheaper.
     """
 
-    _w: Shaped[Array, "*batch x y"]
-    a: Shaped[Array, "*batch x z"]
-    b: Shaped[Array, "*batch z y"]
+    _w: Shaped[VBatch, X, Y]
+    a: Shaped[VBatch, X, Z]
+    b: Shaped[VBatch, Z, Y]
     stop_gradient: bool = eqx.field(static=True)
     allow_materialise: bool = eqx.field(static=True)
 
     def __init__(
         self,
-        weight: Shaped[Array, "*batch x y"],
+        weight: Shaped[VBatch, X, Y],
         *,
         rank: int,
         scale: float = 0.01,
@@ -299,4 +322,4 @@ def dot_general_array_like_lora_array(
     n_rhs_uncontracted = rhs.aval().ndim - len(rhs_contract) - len(rhs_batch)
     src = tuple(range(n_sharedbatch, n_sharedbatch + n_rhs_uncontracted))
     dest = tuple(range(-n_rhs_uncontracted, 0))
-    return quax.quaxify(jnp.moveaxis)(out, src, dest)  # pyright: ignore[reportArgumentType,reportAssignmentType]
+    return quax.quaxify(jnp.moveaxis)(out, src, dest)  # pyright: ignore[reportArgumentType]

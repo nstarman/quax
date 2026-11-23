@@ -11,7 +11,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import quax
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 from typing import Any
 
 
@@ -85,7 +85,7 @@ Quaxify the method as you would any other function. `quax.quaxify(Type.method)`
 takes the instance as its first argument, so it behaves like the unbound
 function it is.
 
-## Why does `jaxtyping` reject my `Value` inside a quaxified function?
+## Why does the runtime type checker reject my `Value` inside a quaxified function?
 
 Because inside the `quaxify` your function is not handed the `Value` — it is
 handed a tracer, and the tracer presents as a plain array:
@@ -111,11 +111,11 @@ Annotate the array, not your type:
 
 ```python
 import beartype
-from jaxtyping import Array, Float, jaxtyped
+from bearshape.jax import Float
 
 
-@jaxtyped(typechecker=beartype.beartype)
-def double(x: Float[Array, "..."]) -> Float[Array, "..."]:
+@beartype.beartype
+def double(x: Float[...]) -> Float[...]:
     return x * 2.0
 
 

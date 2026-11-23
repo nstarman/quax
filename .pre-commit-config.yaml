@@ -18,7 +18,7 @@ repos:
     rev: v1.1.410
     hooks:
       - id: pyright
-        additional_dependencies: ["equinox", "pytest", "jax", "jaxtyping", "plum-dispatch", "sybil"]
+        additional_dependencies: ["equinox", "pytest", "jax", "bearshape @ git+https://github.com/beartype/bearshape", "plum-dispatch", "sybil"]
         exclude: "^tests/.*"
 
   - repo: https://github.com/ComPWA/taplo-pre-commit

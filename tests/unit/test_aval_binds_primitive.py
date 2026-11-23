@@ -14,7 +14,7 @@ import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
 import pytest
-from jaxtyping import Array
+from jax import Array
 
 import quax
 from quax._compat import typeof

@@ -37,7 +37,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import quax
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 
 class Tagged(quax.ArrayValue):

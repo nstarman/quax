@@ -111,7 +111,7 @@ nor array-like`.
 import jax
 import jax.numpy as jnp
 from jax import lax
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 
 class Meters(quax.ArrayValue):
@@ -287,10 +287,10 @@ unwrapped and fails the same way as one built inside, or JAX coerces it
 or close over it through a pytree: `quax.quaxify(eqx.Partial(f, y))(x)`.
 
 **Inside the boundary your type looks like an array.** That is the entire point,
-and it has a consequence for runtime typechecking: the jaxtyping/beartype import
+and it has a consequence for runtime typechecking: the beartype import
 hook installs *inside* the quaxify, so annotations on the wrapped function must
 describe arrays, not your Value type. A function annotated
-`q: Shaped[UnitfulArray, "3"]` will fail typechecking when quaxify hands it something
+`q: UnitfulArray` will fail typechecking when quaxify hands it something
 that presents as `f64[3]`.
 
 **`__array__` must not silently strip.** If your type carries information a bare
@@ -414,7 +414,7 @@ Hard constraints, if you do reach for hijax:
 | `AmbiguousLookupError: <prim>_dispatcher(...) is ambiguous` | Two registered rules match the call equally well. Add the specific `(MyType, MyType)` rule with `precedence=1`. |
 | `TypeError: Primitive ... operand ... neither a quax.Value nor array-like` | A genuine non-array operand (`None`, `str`) reached a primitive. Usually a bug in the calling code, not in the rule. |
 | `Gradient only defined for scalar-output functions` from `quaxify(jax.grad)(f)` | Transform nested wrongly. Write `quaxify(jax.grad(f))`. Never register `pytype_aval_mappings`. |
-| jaxtyping/beartype rejects your Value inside a quaxified function | Typechecking runs *inside* the boundary, where the Value presents as an array. Annotate arrays, not Value types. |
+| The runtime type checker (beartype) rejects your Value inside a quaxified function | Typechecking runs *inside* the boundary, where the Value presents as an array. Annotate arrays, not Value types. |
 | `TypeError: unsupported operand type(s) for +: '_QuaxTracer' and 'MyType'` | A Value was constructed *inside* the quaxified function, or captured by a plain closure; only values that crossed the boundary are tracers. Construct it outside and pass it in, or close over it with `eqx.Partial`. |
 | `TypeError: got an unexpected keyword argument` in your rule | A JAX version added a primitive param. Accept `**kw` and forward it. |
 | Rule never fires for `jnp.zeros_like`/`empty_like` | Those lower to a broadcast of a fresh scalar, so your type is never an operand. There is nothing of yours to dispatch on. |

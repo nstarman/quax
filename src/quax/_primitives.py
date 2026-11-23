@@ -3,13 +3,13 @@
 __all__ = ()
 
 import weakref
-from typing import Any, Final, no_type_check
+from typing import Any, Final
 
 import jax
 import jax._src.core as core
 import jax.extend.core as jexc
 import jax.tree_util as jtu
-from jaxtyping import ArrayLike
+from jax.typing import ArrayLike
 
 from ._compat import (
     ClosedJaxpr,
@@ -314,8 +314,7 @@ def scan_quax(*args: ArrayValue | ArrayLike, jaxpr, **kwargs: Any) -> Any:
         trace_in = (*consts_flat, *carry_flat, *xs_slices)
         fn = core.jaxpr_as_fun(jaxpr)
 
-        @no_type_check  # for beartype
-        def quax_fn(*flat: ArrayValue | ArrayLike) -> Any:
+        def quax_fn(*flat: Any) -> Any:
             consts = jtu.tree_unflatten(c_tree, flat[:nc])
             carry = jtu.tree_unflatten(v_tree, flat[nc : nc + nv])
             xs = jtu.tree_unflatten(x_tree, flat[nc + nv :])

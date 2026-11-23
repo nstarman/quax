@@ -17,10 +17,10 @@ classifiers = [
 ]
 dependencies = [
   "jax>=0.7.2",
-  "jaxtyping>=0.3.3",
+  "bearshape>=0.1.0rc1",
   "equinox>=0.13.3",
-  'plum-dispatch>=2.5.7; python_version < "3.14"',
-  'plum-dispatch>=2.9.0; python_version >= "3.14"',
+  # beartype>=0.23.1 (required by bearshape) needs plum>=2.10; see `quax/_compat.py`.
+  "plum-dispatch>=2.10.0",
   "packaging>=20.0",
 ]
 description = "Multiple dispatch in JAX via custom interpreters."
@@ -57,7 +57,7 @@ lint = ["prek>=0.3.11", "ruff>=0.15.9"]
 # in a dedicated job.
 test-integration = [{ include-group = "tests" }, "diffrax>=0.7.2"]
 tests = [
-  "beartype>=0.20.2",
+  "beartype>=0.23.1",
   "pytest>=8.3.5",
   "pytest-env>=1.1.5",
   "sybil>=9",
@@ -72,6 +72,11 @@ bench = [
   "pytest-benchmark>=5.1.0",
   "pytest-codspeed>=5.0.4",
 ]
+
+[tool.uv.sources]
+# bearshape 0.1.0 is not on PyPI yet. The released 0.0.1 pins `beartype<0.23`, under
+# which `beartype.claw` cannot instrument quax. Drop this once 0.1.0 is published.
+bearshape = { git = "https://github.com/beartype/bearshape" }
 
 [tool.hatch]
 build.hooks.vcs.version-file = "src/quax/_version.py"
@@ -100,14 +105,11 @@ describe_command = [
 packages = ["src/quax"]
 
 [tool.pytest.ini_options]
-addopts = [
-  "--jaxtyping-packages=quax,beartype.beartype(conf=beartype.BeartypeConf(strategy=beartype.BeartypeStrategy.On))",
-  "-ra",
-]
-log_level = "INFO"
+addopts    = ["-ra"]
+log_level  = "INFO"
 minversion = "8.3"
 pythonpath = ["src"]
-testpaths = ["README.md", "skills", "docs", "src/", "tests"]
+testpaths  = ["README.md", "skills", "docs", "src/", "tests"]
 
 [tool.pytest_env]
 JAX_CHECK_TRACER_LEAKS = 1

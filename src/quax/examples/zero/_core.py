@@ -5,7 +5,8 @@ import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike
+from jax import Array
+from jax.typing import ArrayLike
 
 import quax
 
@@ -183,7 +184,7 @@ def dot_general_zero_zero(lhs: Zero, rhs: Zero, **kwargs) -> Zero:
 def integer_pow_zero(x: Zero, *, y: int) -> Array | Zero:
     # Zero is a special case, because 0^0 = 1.
     if y == 0:
-        return jnp.ones(x.shape, x.dtype)  # pyright: ignore[reportArgumentType]
+        return jnp.ones(x.shape, x.dtype)
 
     if y < 0:
         return lax.integer_pow(x.materialise(), y)

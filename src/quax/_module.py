@@ -150,7 +150,7 @@ class _FastModuleMeta(_EqxModuleMeta):
         if _FASTPATH_AVAILABLE:
             # `cls` is an equinox.Module, which equinox has just turned into a frozen
             # dataclass in `super().__new__`, so `dataclasses.fields` is always valid.
-            fields = dataclasses.fields(cls)  # type: ignore[arg-type]
+            fields = dataclasses.fields(cls)
             # Converters must still be applied post-init (equinox does this
             # regardless of whether __init__ is dataclass-generated or custom).
             converters = tuple(
@@ -195,7 +195,7 @@ class _FastModuleMeta(_EqxModuleMeta):
         # (and equinox's slow path): a `Value` may override `__new__` to consume
         # them. For the common case where `__new__` is `object.__new__`, the extras
         # are ignored because every Module overrides `__init__`.
-        self: Any = cls.__new__(cls, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+        self: Any = cls.__new__(cls, *args, **kwargs)
         # As `type.__call__` does: if `__new__` returned something that isn't an
         # instance of `cls` (e.g. a cached singleton), skip `__init__` and the rest
         # of construction and return it unchanged.
@@ -210,7 +210,7 @@ class _FastModuleMeta(_EqxModuleMeta):
         # `_T` is unbounded, so the guard-set calls need a suppression.)
         _currently_initialising.add(self)  # pyright: ignore[reportArgumentType]
         try:
-            cls.__init__(self, *args, **kwargs)  # pyright: ignore[reportCallIssue]
+            cls.__init__(self, *args, **kwargs)
         finally:
             _currently_initialising.remove(self)  # pyright: ignore[reportArgumentType]
 

@@ -69,16 +69,16 @@ class _QuaxTracer(core.Tracer):
     def aval(self) -> core.AbstractValue:  # pyright: ignore[reportIncompatibleVariableOverride]
         return self._cached_aval
 
-    def full_lower(self) -> "core.Tracer | _QuaxTracer":  # pyright: ignore[reportIncompatibleVariableOverride]
+    def full_lower(self) -> "core.Tracer | _QuaxTracer":
         return (
-            core.full_lower(self.value.array)  # pyright: ignore[reportAttributeAccessIssue]
+            core.full_lower(self.value.array)
             if type(self.value) is _DenseArrayValue
             else self
         )
 
 
 class _QuaxTrace(
-    core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportGeneralTypeIssues, reportInvalidTypeArguments]
+    core.Trace if JAX_GE_0_9_2 else core.Trace[_QuaxTracer],  # pyright: ignore[reportInvalidTypeArguments]
 ):
     __slots__ = ("tag", "parent_trace")
 
@@ -88,7 +88,7 @@ class _QuaxTrace(
         super().__init__()
 
     def to_value(self, val: Any) -> Any:
-        if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:  # type: ignore[attr-defined]
+        if isinstance(val, _QuaxTracer) and val._trace.tag is self.tag:
             return val.value
         return _dense(val)
 
@@ -126,7 +126,7 @@ class _QuaxTrace(
             tag = self.tag
             arrays: list[Any] = []
             for t in tracers:
-                if not (isinstance(t, _QuaxTracer) and t._trace.tag is tag):  # type: ignore[attr-defined]
+                if not (isinstance(t, _QuaxTracer) and t._trace.tag is tag):
                     break
                 v = t.value
                 # `type() is` rather than `isinstance`: _DenseArrayValue is
@@ -141,8 +141,8 @@ class _QuaxTrace(
                 with core.set_current_trace(self.parent_trace):
                     out = primitive.bind(*arrays, **params)
                 if primitive.multiple_results:
-                    return [_QuaxTracer(self, _dense(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
-                return _QuaxTracer(self, _dense(out))  # pyright: ignore[reportArgumentType]
+                    return [_QuaxTracer(self, _dense(x)) for x in out]
+                return _QuaxTracer(self, _dense(out))
 
         # ── full dispatch path ───────────────────────────────────────────────
         # Parse the tracers into values, unpacking any _DenseArrayValues.
@@ -186,7 +186,7 @@ class _QuaxTrace(
         # Post-process the output
         if primitive.multiple_results:
             return [_QuaxTracer(self, _wrap_if_array(x)) for x in out]  # pyright: ignore[reportGeneralTypeIssues]
-        return _QuaxTracer(self, _wrap_if_array(out))  # pyright: ignore[reportArgumentType]
+        return _QuaxTracer(self, _wrap_if_array(out))
 
     def stage_value(self, val: Any) -> Any:
         """Lifts a value into this trace.
@@ -344,7 +344,7 @@ def _custom_jvp_fun_wrap(tag, in_treedef, *in_leaves):
         out_tracers = yield in_tracers, {}
         # The symbolic zero branch here will actually create a `quax.zero.Zero`!
         out_tracers = [
-            jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t  # pyright: ignore[reportAttributeAccessIssue]
+            jnp.zeros(t.aval.shape, t.aval.dtype) if type(t) is SZ else t
             for t in out_tracers
         ]
         out_values = [trace.to_value(t) for t in out_tracers]
