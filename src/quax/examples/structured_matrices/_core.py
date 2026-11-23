@@ -1,12 +1,25 @@
-from typing import cast
+from typing import cast, Literal, TYPE_CHECKING, TypeAlias
 
 import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, Shaped
+from bearshape import Dimension
+from bearshape.jax import Shaped
+from jax import Array
 
 import quax
+from quax._compat import ArrayLike
+
+from .._shapes import VBatch
+
+
+if TYPE_CHECKING:
+    Size: TypeAlias = int
+    SizePlus1: TypeAlias = Literal["size+1"]
+else:
+    Size = Dimension("size")
+    SizePlus1 = Size + 1
 
 
 class TridiagonalMatrix(quax.ArrayValue):
@@ -14,9 +27,9 @@ class TridiagonalMatrix(quax.ArrayValue):
     diagonals.
     """
 
-    lower_diag: Shaped[Array, "*batch size"]
-    main_diag: Shaped[Array, "*batch size+1"]
-    upper_diag: Shaped[Array, "*batch size"]
+    lower_diag: Shaped[VBatch, Size]
+    main_diag: Shaped[VBatch, SizePlus1]
+    upper_diag: Shaped[VBatch, Size]
     allow_materialise: bool = eqx.field(default=False, static=True)
 
     def __check_init__(self):

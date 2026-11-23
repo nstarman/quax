@@ -7,7 +7,7 @@ import jax.extend.core as jexc
 import jax.lax as lax
 import jax.numpy as jnp
 import pytest
-from jaxtyping import Array
+from jax import Array
 
 import quax
 from quax._compat import typeof
@@ -167,19 +167,18 @@ def test_default_process_rejects_non_array_operand(monkeypatch):
     exercised on every jax version; newer jax rejects the operand earlier,
     before quax is consulted.
 
-    quax's own test config runtime-typechecks ``_default_process`` (via
-    ``--jaxtyping-packages=quax,beartype``), which would reject the non-array
-    operand at the parameter boundary before this branch runs. Disable that
-    checking so the call takes the production path, where it is off.
+    quax's own test config runtime-typechecks ``_default_process`` (``beartype.claw``,
+    installed in ``conftest.py``), which would reject the non-array operand at the
+    parameter boundary before this branch runs. Call the undecorated function so the
+    call takes the production path, where checking is off.
     """
-    import jaxtyping
-
     from quax._dispatch import _default_process
 
-    monkeypatch.setattr(jaxtyping.config, "jaxtyping_disable", True)
+    # call the undecorated function: beartype.claw wrapped it
+    fn = getattr(_default_process, "__wrapped__", _default_process)
 
     with pytest.raises(TypeError, match="neither a quax.Value nor"):
-        _default_process(lax.add_p, ["not-an-array"], {})
+        fn(lax.add_p, ["not-an-array"], {})
 
 
 # See https://github.com/nstarman/quax/issues/58

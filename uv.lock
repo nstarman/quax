@@ -37,6 +37,15 @@ wheels = [
 ]
 
 [[package]]
+name = "bearshape"
+version = "0.1.0rc1"
+source = { git = "https://github.com/beartype/bearshape#8af59e01b0f17ce5513ad2b0d14d355c36c352a5" }
+dependencies = [
+    { name = "beartype" },
+    { name = "typing-extensions" },
+]
+
+[[package]]
 name = "beartype"
 version = "0.23.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1423,9 +1432,9 @@ wheels = [
 name = "quax"
 source = { editable = "." }
 dependencies = [
+    { name = "bearshape" },
     { name = "equinox" },
     { name = "jax" },
-    { name = "jaxtyping" },
     { name = "packaging" },
     { name = "plum-dispatch" },
 ]
@@ -1484,17 +1493,16 @@ tests = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bearshape", git = "https://github.com/beartype/bearshape" },
     { name = "equinox", specifier = ">=0.13.3" },
     { name = "jax", specifier = ">=0.7.2" },
-    { name = "jaxtyping", specifier = ">=0.3.3" },
     { name = "packaging", specifier = ">=20.0" },
-    { name = "plum-dispatch", marker = "python_full_version < '3.14'", specifier = ">=2.5.7" },
-    { name = "plum-dispatch", marker = "python_full_version >= '3.14'", specifier = ">=2.9.0" },
+    { name = "plum-dispatch", specifier = ">=2.10.0" },
 ]
 
 [package.metadata.requires-dev]
 bench = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.23.1" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-benchmark", specifier = ">=5.1.0" },
@@ -1503,7 +1511,7 @@ bench = [
     { name = "sybil", specifier = ">=9" },
 ]
 dev = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.23.1" },
     { name = "jax", extras = ["cpu"] },
     { name = "mkdocstrings", extras = ["python"], specifier = "==1.0.8" },
     { name = "nbconvert", specifier = ">=7" },
@@ -1527,7 +1535,7 @@ lint = [
     { name = "ruff", specifier = ">=0.15.9" },
 ]
 test-integration = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.23.1" },
     { name = "diffrax", specifier = ">=0.7.2" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
@@ -1535,7 +1543,7 @@ test-integration = [
     { name = "sybil", specifier = ">=9" },
 ]
 tests = [
-    { name = "beartype", specifier = ">=0.20.2" },
+    { name = "beartype", specifier = ">=0.23.1" },
     { name = "jax", extras = ["cpu"] },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-env", specifier = ">=1.1.5" },

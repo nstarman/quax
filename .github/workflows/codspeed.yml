@@ -46,12 +46,15 @@ jobs:
       # jit-compile/execute benchmarks are impractical under valgrind, so they stay
       # local-only (`pytest tests/benchmark --benchmark-only`).
       #
-      # `-o addopts=` drops the global jaxtyping/beartype runtime checking, and
-      # `-p no:env` stops pytest-env forcing `JAX_CHECK_TRACER_LEAKS=1`. Both are
-      # test-time aids that ~100x inflate and destabilise these numbers, so with
-      # them off the benchmarks measure production performance.
+      # `QUAX_NO_TYPECHECK=1` turns off the beartype runtime checking that
+      # `conftest.py` installs, and `-p no:env` stops pytest-env forcing
+      # `JAX_CHECK_TRACER_LEAKS=1`. Both are test-time aids that ~100x inflate and
+      # destabilise these numbers, so with them off the benchmarks measure production
+      # performance.
       - name: Run benchmarks under CodSpeed
         uses: CodSpeedHQ/action@78102a468f96d8e0ccb92d0ec49425753fc42062 # v5.6.0
+        env:
+          QUAX_NO_TYPECHECK: "1"
         with:
           mode: instrumentation
           run: >-
@@ -59,5 +62,5 @@ jobs:
             tests/benchmark/test_construction.py
             tests/benchmark/test_dispatch.py
             tests/benchmark/test_control_flow.py
-            --codspeed -o addopts= -p no:env
+            --codspeed -p no:env
           token: ${{ secrets.CODSPEED_TOKEN }}

@@ -38,9 +38,8 @@ from typing import Any, Final
 import jax
 import jax._src.core as jax_core
 import jax.extend.core as jexc
-from jaxtyping import ArrayLike
 
-from .._compat import hi_aval, JAX_VERSION
+from .._compat import ArrayLike, hi_aval, JAX_VERSION
 from .._dispatch import register
 from .._values import ArrayValue
 

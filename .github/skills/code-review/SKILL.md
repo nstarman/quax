@@ -204,7 +204,7 @@ checked.** What it cannot check, and what review must:
 - **Metadata semantics are invisible to `MyArray`**, which carries no units or
   axis names. Bugs like #180 live in `tests/usage/test_<name>.py` — a rule on an
   example type needs coverage there, not only in the unit tests.
-- The suite runs with `JAX_CHECK_TRACER_LEAKS=1` and jaxtyping/beartype enabled.
+- The suite runs with `JAX_CHECK_TRACER_LEAKS=1` and `beartype.claw` runtime checking enabled.
 
 ## Repo conventions
 

@@ -35,8 +35,8 @@ from typing import Any, TypeAlias
 import jax
 import jax._src.core as jax_core
 import jax.numpy as jnp
-from jaxtyping import ArrayLike
 
+from quax._compat import ArrayLike
 from quax.experimental.hijax import (
     HiPrim,
     HiType,
@@ -60,7 +60,7 @@ A `HiType` must be hashable, so units are a sorted tuple rather than the `dict`
 that [`quax.examples.unitful.Unitful`][] uses. `to_units` accepts either form.
 """
 
-UnitsLike: TypeAlias = "Dimension | dict[Dimension, int] | Units"
+UnitsLike: TypeAlias = Dimension | dict[Dimension, int] | Units
 
 
 def to_units(units: UnitsLike, /) -> Units:
@@ -186,7 +186,7 @@ class UnitfulArrayTy(HiType):
         return [value.array]
 
     def raise_val(self, array: ArrayLike) -> UnitfulArray:
-        return UnitfulArray(array, self.units)  # pyright: ignore[reportArgumentType]
+        return UnitfulArray(array, self.units)
 
     # -- autodiff.
     # A perturbation of a length is a length, so the tangent type is this type.
@@ -212,7 +212,7 @@ class UnitfulArrayTy(HiType):
         return UnitfulArrayTy(self.shape[1:], self.dtype, self.units)
 
     def inc_rank(self, size: int | None, spec: Any) -> "UnitfulArrayTy":
-        return UnitfulArrayTy((size, *self.shape), self.dtype, self.units)  # pyright: ignore[reportArgumentType]
+        return UnitfulArrayTy((size, *self.shape), self.dtype, self.units)
 
     def leading_axis_spec(self) -> UnitfulArraySpec:
         return UnitfulArraySpec()
@@ -335,7 +335,7 @@ class Wrap(HiPrim):
         super().__init__()
 
     def expand(self, x: ArrayLike) -> UnitfulArray:
-        return UnitfulArray(x, self.units)  # pyright: ignore[reportArgumentType]
+        return UnitfulArray(x, self.units)
 
     def jvp(self, primals: Any, tangents: Any) -> Any:
         (x,), (t,) = primals, tangents

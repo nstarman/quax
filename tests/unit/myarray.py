@@ -7,12 +7,12 @@ from typing import Any, final, Self, TypeGuard
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from bearshape.jax import Bool
 from jax import lax
-from jaxtyping import Array, ArrayLike, Bool
 from packaging.version import Version
 
 import quax
-from quax._compat import JAX_GE_0_10_1, JAX_GE_0_11_0, JAX_VERSION, typeof
+from quax._compat import ArrayLike, JAX_GE_0_10_1, JAX_GE_0_11_0, JAX_VERSION, typeof
 
 
 @final
@@ -70,19 +70,19 @@ class MyArray(quax.ArrayValue):
         """Get the length."""
         return self.array.shape[0] if self.array.ndim > 0 else 0
 
-    def __lt__(self, other: Any) -> Bool[Array, "..."]:
+    def __lt__(self, other: Any) -> Bool[...]:
         """Less than operator."""
         return self.array < other
 
-    def __le__(self, other: Any) -> Bool[Array, "..."]:
+    def __le__(self, other: Any) -> Bool[...]:
         """Less than or equal operator."""
         return self.array <= other
 
-    def __ge__(self, other: Any) -> Bool[Array, "..."]:
+    def __ge__(self, other: Any) -> Bool[...]:
         """Greater than or equal operator."""
         return self.array >= other
 
-    def __gt__(self, other: Any) -> Bool[Array, "..."]:
+    def __gt__(self, other: Any) -> Bool[...]:
         """Greater than operator."""
         return self.array > other
 

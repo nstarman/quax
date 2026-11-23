@@ -8,8 +8,8 @@ from typing import Any, cast, TypeAlias
 import equinox as eqx
 import jax.extend.core as jexc
 import plum
-from jaxtyping import ArrayLike
 
+from ._compat import ArrayLike
 from ._values import _dense, _is_value, CT, Value, ValueLike
 
 

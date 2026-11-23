@@ -25,9 +25,9 @@ import jax
 import jax.numpy as jnp
 import pytest
 from equinox.internal._loop.common import maybe_set_p, select_if_vmap_p
-from jaxtyping import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 from quax.examples.unitful import meters, Unitful
 
 

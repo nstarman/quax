@@ -20,10 +20,20 @@ A region needing an optional feature is bracketed instead:
     <!--- skip: end -->
 """
 
+import os
 from importlib.util import find_spec
 
+from beartype import BeartypeConf, BeartypeStrategy
+from beartype.claw import beartype_package
 from sybil import Sybil
 from sybil.parsers.markdown import PythonCodeBlockParser, SkipParser
+
+
+# Runtime-check every quax module while testing. This must run before the first
+# `import quax`. Benchmarks set `QUAX_NO_TYPECHECK=1`: checking inflates their numbers
+# by orders of magnitude, so they measure production behaviour with it off.
+if not os.environ.get("QUAX_NO_TYPECHECK"):
+    beartype_package("quax", conf=BeartypeConf(strategy=BeartypeStrategy.On))
 
 
 def _have_hijax() -> bool:

@@ -1,26 +1,37 @@
-from typing import Any, get_args
+from typing import Any, get_args, TYPE_CHECKING, TypeAlias
 
 import equinox as eqx
 import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
-from jaxtyping import Array, ArrayLike, Integer, Shaped
+from bearshape import Dimension
+from bearshape.jax import Integer, Shaped
 
 import quax
+from quax._compat import ArrayLike
+
+from .._shapes import VBatch
+
+
+if TYPE_CHECKING:
+    Nse: TypeAlias = int
+    NSparse: TypeAlias = int
+else:
+    Nse, NSparse = Dimension("nse"), Dimension("n_sparse")
 
 
 class BCOO(quax.ArrayValue):
     """Represents a sparse array stored in batch-coordinate format."""
 
-    data: Shaped[Array, "*batch nse"]
-    indices: Integer[Array, "*batch nse n_sparse"]
+    data: Shaped[VBatch, Nse]
+    indices: Integer[VBatch, Nse, NSparse]
     _shape: tuple[int, ...] = eqx.field(static=True)
     allow_materialise: bool = eqx.field(static=True)
 
     def __init__(
         self,
-        data: Shaped[Array, "*batch nse"],
-        indices: Integer[Array, "*batch nse n_sparse"],
+        data: Shaped[VBatch, Nse],
+        indices: Integer[VBatch, Nse, NSparse],
         shape: tuple[int, ...],
         allow_materialise: bool = False,
     ):

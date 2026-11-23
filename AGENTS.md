@@ -55,7 +55,7 @@ records why the two libraries are arranged this way.
 
 Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks: `xfail_quax58`, `mark_todo`, `mark_nomd`.
 
-`pytest` runs with `JAX_CHECK_TRACER_LEAKS=1` and jaxtyping/beartype enabled — type errors surface at test time.
+`pytest` runs with `JAX_CHECK_TRACER_LEAKS=1` and `beartype.claw` checking every `quax` module (installed in `conftest.py`, off with `QUAX_NO_TYPECHECK=1`) — type errors surface at test time.
 
 ## Key Pitfalls
 
@@ -64,6 +64,7 @@ Tests use `(func_name, args, kw, expect_myarray)` parameter tuples. Common marks
 - **Name every registered rule** — `@quax.register` handlers are named after the primitive and the
   types they dispatch on (`add_unitful_unitful`, `convert_element_type_zero`, `cond_quax`), never
   `def _`. Dispatch ignores the name; tracebacks, plum's ambiguity errors, and profiles do not.
+- **Shapes are written with `bearshape`, and Pyright rejects its runtime-only tokens.** `~B`, `N + 1`, `2` and `...` are invalid inside a type annotation, so `examples/_shapes.py` and the example modules bind each one to a plain static type under `TYPE_CHECKING` and to the real token at runtime. Do this rather than adding a `# type: ignore`.
 - **`_DenseArrayValue` is internal** — never instantiate or reference it from user code.
 - **hijax under `jit` trips the leak checker on JAX 0.10.2 and 0.11.0** — consuming a hi value reports a false `JAX_CHECK_TRACER_LEAKS` failure. A JAX regression, reproducible without quax, fixed in 0.11.1; `tests/usage/test_hijax.py` disables the check on those two versions only, so a recurrence on a fixed version fails the suite.
 - **`_compat.py` version gates** — use `typeof` from `_compat` (not `jax.core.get_aval` directly); `_primitives.py` and `_compat.py` carry dual branches for JAX API differences across versions.
@@ -77,6 +78,7 @@ Read [pyproject.toml](pyproject.toml) for the full list. Key dependencies includ
 
 - `jax` (core library)
 - `equinox` (base class and utilities)
+- `bearshape` (runtime shape annotations; checked by `beartype`)
 - `plum` (multiple dispatch)
 - `pytest` (testing)
 - `zensical` (documentation)
