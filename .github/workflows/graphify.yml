@@ -1,0 +1,51 @@
+name: Refresh code graph
+
+# Rebuilds graphify-out/graph.json and opens a PR if it drifted, e.g. because a
+# contributor committed without the prek hook.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1" # Every Monday at 7am UTC
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Rebuild graph
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: chore/refresh-graphify
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: Rebuild graph
+        # The version is pinned once, in the prek hook.
+        run: |
+          pin=$(grep -o 'graphifyy==[0-9.]*' .pre-commit-config.yaml)
+          PYTHONHASHSEED=0 uvx --from "$pin" graphify update .
+
+      - name: Open PR if the graph changed
+        run: |
+          git diff --quiet -- graphify-out/graph.json && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git add graphify-out/graph.json
+          git commit -m "chore: refresh graphify code graph"
+          git push --force origin "$BRANCH"
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$BRANCH" --base "${{ github.event.repository.default_branch }}" \
+              --title "chore: refresh graphify code graph" \
+              --body "Weekly rebuild of \`graphify-out/graph.json\`. The graph had drifted from the code."
+          fi

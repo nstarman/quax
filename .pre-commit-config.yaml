@@ -25,3 +25,14 @@ repos:
     rev: v0.9.3
     hooks:
       - id: taplo-format
+
+  # Keeps the committed code graph (graphify-out/graph.json) in step with the code.
+  # Like ruff --fix: if the graph changed, stage it and commit again.
+  - repo: local
+    hooks:
+      - id: graphify-update
+        name: graphify update
+        language: python
+        additional_dependencies: ["graphifyy==0.9.101"]
+        entry: env PYTHONHASHSEED=0 graphify update .
+        pass_filenames: false

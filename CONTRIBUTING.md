@@ -31,6 +31,24 @@ prek install  # `prek` is installed by `pip` on the previous line
 
 ---
 
+**Code graph (optional)**
+
+`graphify-out/graph.json` is a [graphify](https://graphify.com) map of the code
+that AI assistants query instead of grepping. `prek` rebuilds it on every
+commit; if it changed, `git add graphify-out/graph.json` and commit
+again. Register the merge driver once per clone so two branches that both
+changed the graph merge without a conflict:
+
+```bash
+uv tool install graphifyy
+git config merge.graphify.name "graphify graph.json union merge"
+git config merge.graphify.driver "\"$(sed -n '1s/^#!//p' "$(command -v graphify)")\" -m graphify merge-driver %O %A %B"
+```
+
+If a merge still conflicts in the graph, rebuild it: `rm graphify-out/graph.json && graphify update . && git add graphify-out/graph.json`.
+
+---
+
 **If you're making changes to the code:**
 
 Now make your changes. Make sure to include additional tests if necessary.

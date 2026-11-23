@@ -57,7 +57,7 @@ jobs:
         # Not a real commit -- no-commit-to-branch would always fail here.
         run: uv run --frozen prek run --all-files
         env:
-          SKIP: no-commit-to-branch
+          SKIP: no-commit-to-branch,graphify-update
 
   tests:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}

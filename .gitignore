@@ -17,3 +17,7 @@ examples/multipart_serialised.eqx
 /src/quax/_version.py
 test_timings.txt
 test_timings_full.log
+
+# graphify: track only the graph, everything else is rebuilt locally
+graphify-out/*
+!graphify-out/graph.json
