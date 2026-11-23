@@ -13,10 +13,9 @@ import jax.tree_util as jtu
 import numpy as np
 from bearshape import Scalar
 from bearshape.jax import Float, Inexact, IntegerLike, U32, UInt
-from jax.typing import ArrayLike
 
 import quax
-from quax._compat import JAX_GE_0_10_2
+from quax._compat import ArrayLike, JAX_GE_0_10_2
 
 from .._shapes import AnyShape, Two, VBatch
 

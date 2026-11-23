@@ -9,9 +9,9 @@ import jax.tree_util as jtu
 from bearshape import Dimension, DtypeSpec, make_array_type, Scalar
 from bearshape.jax import Shaped, Tree, U32
 from jax import Array
-from jax.typing import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 from .._shapes import VBatch
 

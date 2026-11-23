@@ -4,9 +4,9 @@ import equinox as eqx  # https://github.com/patrick-kidger/equinox
 import jax
 import jax.core as core
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 
 class Dimension:

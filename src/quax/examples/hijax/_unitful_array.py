@@ -35,8 +35,8 @@ from typing import Any, TypeAlias
 import jax
 import jax._src.core as jax_core
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 
+from quax._compat import ArrayLike
 from quax.experimental.hijax import (
     HiPrim,
     HiType,

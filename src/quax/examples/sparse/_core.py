@@ -6,9 +6,9 @@ import jax.lax as lax
 import jax.numpy as jnp
 from bearshape import Dimension
 from bearshape.jax import Integer, Shaped
-from jax.typing import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 from .._shapes import VBatch
 

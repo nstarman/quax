@@ -7,10 +7,9 @@ import jax.core
 import jax.extend as jex
 import jax.lax as lax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
 
 import quax
-from quax._compat import typeof
+from quax._compat import ArrayLike, typeof
 
 
 @dataclasses.dataclass(frozen=True, eq=False)

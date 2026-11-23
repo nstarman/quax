@@ -9,6 +9,7 @@ __all__ = (
     "JAX_GE_0_10_2",
     "JAX_GE_0_11_0",
     # Features
+    "ArrayLike",
     "ClosedJaxpr",
     "hi_aval",
     "jit_p",
@@ -21,12 +22,13 @@ __all__ = (
 
 from collections.abc import Callable, Sequence
 from importlib.metadata import version
-from typing import Any, Final
+from typing import Any, Final, TYPE_CHECKING, TypeAlias
 
 import jax
 import jax._src.core as jax_core
 import jax.extend.core as jexc
 import jax.numpy as jnp
+import jax.typing
 import plum
 from jax import Array
 from packaging.version import Version
@@ -57,6 +59,17 @@ if _BEARTYPE_GE_0_23_0 and not _PLUM_GE_2_10_0:
         f"See https://github.com/beartype/plum/issues/295."
     )
     raise ImportError(msg)
+
+# JAX 0.7.2 hands out `LiteralArray`s that `jax.typing.ArrayLike` leaves out
+# (https://github.com/jax-ml/jax/issues/31989). `jaxtyping.ArrayLike` added them for
+# that one version, and quax relied on it for rule dispatch and runtime checking, so
+# quax defines its own `ArrayLike` with the same fix.
+if TYPE_CHECKING or JAX_VERSION != Version("0.7.2"):
+    ArrayLike: TypeAlias = jax.typing.ArrayLike
+else:
+    from jax._src.literals import LiteralArray
+
+    ArrayLike = jax.typing.ArrayLike | LiteralArray
 
 # JAX 0.12 merged `ClosedJaxpr` into `Jaxpr` and removed it from
 # `jax._src.core`; `jax.extend.core` keeps a public alias across versions.

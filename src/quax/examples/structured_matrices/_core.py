@@ -7,9 +7,9 @@ import jax.numpy as jnp
 from bearshape import Dimension
 from bearshape.jax import Shaped
 from jax import Array
-from jax.typing import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 from .._shapes import VBatch
 

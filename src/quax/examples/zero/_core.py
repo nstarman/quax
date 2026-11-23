@@ -6,9 +6,9 @@ import jax.core
 import jax.lax as lax
 import jax.numpy as jnp
 from jax import Array
-from jax.typing import ArrayLike
 
 import quax
+from quax._compat import ArrayLike
 
 
 T = TypeVar("T")
